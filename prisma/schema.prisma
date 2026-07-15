@@ -3,7 +3,8 @@
 // Target: Supabase Postgres with the pgvector extension enabled.
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
