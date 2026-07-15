@@ -1,0 +1,107 @@
+/**
+ * Small-model extraction — spec §4.2, rung 2.
+ *
+ * Only called for what rules (rung 1) couldn't resolve: skills, seniority,
+ * role/title mapping when the alias table misses, and Layout B vertical
+ * fields (credentials, CDL class, etc.). Always check the cache first —
+ * `description_hash` means identical postings (same job on 5 boards) never
+ * pay twice, which is most of what keeps this affordable at $1k.
+ *
+ * Uses Haiku-class model per spec — cheap, fast, good enough for structured
+ * extraction. Temperature 0, forced JSON output.
+ */
+
+import { prisma } from "@/lib/prisma";
+import crypto from "crypto";
+
+const EXTRACTION_MODEL = "claude-haiku-4-5-20251001";
+
+export interface LlmExtraction {
+  skills: string[]; // free-text skill names — resolved against the Skill
+                     // taxonomy by resolve-taxonomy.ts, not here
+  seniority: "INTERN" | "JUNIOR" | "MID" | "SENIOR" | "LEAD" | "EXEC" | "NOT_APPLICABLE";
+  roleGuess: string; // free-text normalized title, e.g. "backend engineer"
+  verticalFields: Record<string, unknown> | null; // Layout B extras, when relevant
+}
+
+export function hashDescription(text: string): string {
+  return crypto.createHash("sha256").update(text.trim().toLowerCase()).digest("hex");
+}
+
+const EXTRACTION_PROMPT = `You extract structured hiring data from a job posting. Return ONLY valid JSON, no prose, matching exactly this shape:
+
+{
+  "skills": string[],       // 3-10 concrete skills/tools/technologies mentioned, canonical short names (e.g. "Python" not "experience with Python programming")
+  "seniority": "INTERN" | "JUNIOR" | "MID" | "SENIOR" | "LEAD" | "EXEC" | "NOT_APPLICABLE",
+  "roleGuess": string,      // normalized job function in 2-4 words, lowercase, e.g. "backend engineer"
+  "verticalFields": object | null   // if this is a healthcare or trucking role, extract relevant fields:
+                                     // healthcare: { credentialsRequired: string[], shiftType: string|null, contractLengthWeeks: number|null }
+                                     // trucking: { cdlClass: string|null, endorsements: string[], payStructure: string|null, homeTime: string|null }
+                                     // otherwise: null
+}`;
+
+export async function extractWithLlm(
+  titleRaw: string,
+  descriptionText: string
+): Promise<LlmExtraction> {
+  const hash = hashDescription(`${titleRaw}\n${descriptionText}`);
+
+  // Cache check — this is the line that keeps Slice 2 inside budget.
+  // Reuses any prior extraction for byte-identical title+description text,
+  // regardless of which board it came from.
+  const cached = await prisma.job.findFirst({
+    where: { descriptionHash: hash, titleNormalized: { not: null } },
+    select: { titleNormalized: true, seniority: true, verticalFields: true, skills: { select: { skill: { select: { name: true } } } } },
+  });
+
+  if (cached) {
+    return {
+      skills: cached.skills.map((s) => s.skill.name),
+      seniority: cached.seniority as LlmExtraction["seniority"],
+      roleGuess: cached.titleNormalized || "",
+      verticalFields: (cached.verticalFields as Record<string, unknown>) || null,
+    };
+  }
+
+  const truncatedDescription = descriptionText.slice(0, 4000); // cap tokens in
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY!,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: EXTRACTION_MODEL,
+      max_tokens: 500,
+      temperature: 0,
+      system: EXTRACTION_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: `Title: ${titleRaw}\n\nDescription:\n${truncatedDescription}`,
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`LLM extraction failed: ${res.status} ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  const text = data.content?.find((b: { type: string }) => b.type === "text")?.text || "{}";
+
+  // Model occasionally wraps JSON in a code fence despite instructions —
+  // strip defensively rather than let one malformed response kill the run.
+  const cleaned = text.replace(/```json|```/g, "").trim();
+
+  try {
+    return JSON.parse(cleaned) as LlmExtraction;
+  } catch {
+    // Fail soft — an unparseable extraction shouldn't drop the job from the
+    // index, it should just ship with fewer enriched fields.
+    return { skills: [], seniority: "NOT_APPLICABLE", roleGuess: titleRaw.toLowerCase(), verticalFields: null };
+  }
+}

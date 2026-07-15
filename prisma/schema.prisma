@@ -1,0 +1,373 @@
+// Topezia — Phase 1 database schema
+// Mirrors spec §3 (topezia-phase1-spec.md). Update the spec first, then this file.
+// Target: Supabase Postgres with the pgvector extension enabled.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL") // Supabase: pooled vs direct connection
+  extensions = [vector]
+}
+
+// ─────────────────────────────────────────────
+// §3.3 Taxonomy — seeded once, extended over time.
+// The taxonomy IS the SEO page generator (see §7).
+// ─────────────────────────────────────────────
+
+model Vertical {
+  id          String   @id @default(uuid())
+  slug        String   @unique // e.g. "tech-software"
+  name        String
+  isDeepTier  Boolean  @default(false) // true for the 4-5 launch verticals
+  cardLayout  CardLayout @default(KNOWLEDGE_WORK)
+  roles       Role[]
+  jobs        Job[]
+  createdAt   DateTime @default(now())
+}
+
+enum CardLayout {
+  KNOWLEDGE_WORK   // Layout A: tech, creative
+  STRUCTURED_HOURLY // Layout B: healthcare, trucking
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  slug        String   @unique // seo_slug — drives /jobs/{role-slug}
+  name        String
+  verticalId  String
+  vertical    Vertical @relation(fields: [verticalId], references: [id])
+  aliases     RoleAlias[]
+  jobs        Job[]
+  createdAt   DateTime @default(now())
+}
+
+// Raw title strings → canonical role. Rules-first resolution (§4.2).
+model RoleAlias {
+  id       String @id @default(uuid())
+  rawText  String @unique
+  roleId   String
+  role     Role   @relation(fields: [roleId], references: [id])
+  resolvedBy ResolutionSource @default(RULE)
+}
+
+model Skill {
+  id       String   @id @default(uuid())
+  slug     String   @unique
+  name     String
+  aliases  SkillAlias[]
+  jobSkills JobSkill[]
+  profileSkills ProfileSkill[]
+}
+
+model SkillAlias {
+  id         String @id @default(uuid())
+  rawText    String @unique
+  skillId    String
+  skill      Skill  @relation(fields: [skillId], references: [id])
+  resolvedBy ResolutionSource @default(RULE)
+}
+
+enum ResolutionSource {
+  RULE
+  LLM
+  MANUAL
+}
+
+// ─────────────────────────────────────────────
+// §3.1 Canonical job schema
+// ─────────────────────────────────────────────
+
+enum JobSource {
+  GREENHOUSE
+  LEVER
+  ASHBY
+  WORKABLE
+  SMARTRECRUITERS
+  ADZUNA
+  JOOBLE
+  CPC_FEED
+  JOBPOSTING_SCHEMA
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  HOURLY
+  TEMP
+}
+
+enum SalaryPeriod {
+  YEAR
+  HOUR
+  DAY
+  PER_MILE
+  PROJECT
+}
+
+enum RemoteType {
+  ONSITE
+  HYBRID
+  REMOTE_US
+  REMOTE_GLOBAL
+}
+
+enum Seniority {
+  INTERN
+  JUNIOR
+  MID
+  SENIOR
+  LEAD
+  EXEC
+  NOT_APPLICABLE
+}
+
+enum JobStatus {
+  LIVE
+  EXPIRED
+  SUSPECTED_DEAD
+  DUPLICATE
+}
+
+model Job {
+  id                 String   @id @default(uuid())
+  source             JobSource
+  sourceUrl          String   // canonical click-out destination
+  sourceCompanySlug  String?  // e.g. greenhouse board token
+  externalId         String?  // source's own id, for change detection
+
+  titleRaw           String
+  titleNormalized    String?
+  roleId             String?
+  role               Role?    @relation(fields: [roleId], references: [id])
+  verticalId         String
+  vertical           Vertical @relation(fields: [verticalId], references: [id])
+
+  companyName        String
+  companyDomain       String?
+
+  descriptionRaw     String
+  descriptionHash    String   // sha256 — dedup + cache key, never re-LLM identical text
+
+  skills             JobSkill[]
+  seniority          Seniority @default(NOT_APPLICABLE)
+  employmentType     EmploymentType
+  salaryMin          Int?
+  salaryMax          Int?
+  salaryCurrency     String   @default("USD")
+  salaryPeriod       SalaryPeriod?
+
+  locationRaw        String?
+  locationLat        Float?
+  locationLng        Float?
+  locationState      String?  // drives SEO state pages
+  remoteType         RemoteType
+
+  // §3.2 vertical-specific fields — healthcare credentials, CDL class, etc.
+  verticalFields     Json?
+
+  // pgvector — title + skills + condensed description.
+  // Prisma doesn't natively type `vector`; raw SQL migration adds the column,
+  // see prisma/migrations/xxxx_add_embeddings/migration.sql
+  // embedding        Unsupported("vector(1536)")?
+
+  postedAt           DateTime?
+  firstSeenAt         DateTime @default(now())
+  lastVerifiedAt      DateTime @default(now()) // drives the freshness stamp on cards
+
+  status             JobStatus @default(LIVE)
+  duplicateOfId      String?
+  duplicateOf        Job?     @relation("JobDuplicates", fields: [duplicateOfId], references: [id])
+  duplicates         Job[]    @relation("JobDuplicates")
+
+  cpcFeedId          String?  // revenue attribution
+
+  clicks             JobClick[]
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([status, verticalId])
+  @@index([descriptionHash])
+  @@index([locationState])
+  @@index([roleId])
+}
+
+model JobSkill {
+  jobId      String
+  job        Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  skillId    String
+  skill      Skill  @relation(fields: [skillId], references: [id])
+  isRequired Boolean @default(true) // required vs nice-to-have — feeds honest gap scoring
+
+  @@id([jobId, skillId])
+}
+
+// Ingestion source registry — includes founding-employer careers-page URLs (§4.1, §8)
+model Source {
+  id             String   @id @default(uuid())
+  type           JobSource
+  companySlug    String?
+  careersPageUrl String?
+  isPriority     Boolean  @default(false) // founding-employer flag
+  crawlCadenceHrs Int     @default(24)
+  lastCrawledAt  DateTime?
+  createdAt      DateTime @default(now())
+
+  waitlistSignup WaitlistSignup?
+
+  @@unique([type, companySlug])
+}
+
+// ─────────────────────────────────────────────
+// Founding-employer waitlist (spec §8) — feeds the admin CMS view
+// and doubles as an ingestion source once careers pages are indexed.
+// ─────────────────────────────────────────────
+
+enum HiringVolume {
+  ONE_TO_FIVE
+  SIX_TO_TWENTY
+  TWENTY_PLUS
+}
+
+enum WaitlistStatus {
+  PENDING    // submitted, not yet indexed
+  INDEXED    // careers page pulled into Source table
+  ACTIVATED  // founding-employer status confirmed at launch
+}
+
+model WaitlistSignup {
+  id             String   @id @default(uuid())
+  companyName    String
+  contactName    String
+  email          String
+  phone          String?
+  careersPageUrl String
+  hiringVolume   HiringVolume?
+  verticalSlug   String?  // matches Vertical.slug, "other" allowed as free text fallback
+  status         WaitlistStatus @default(PENDING)
+
+  // set once this submission is enforced against the "first 100" cap (§8)
+  isFoundingMember Boolean @default(false)
+  foundingRank     Int?    // sequential rank at signup time, null if cap already hit
+
+  // link to the ingestion source once indexed — keeps the CMS and the
+  // pipeline pointing at the same record instead of duplicating data
+  sourceId       String?  @unique
+  source         Source?  @relation(fields: [sourceId], references: [id])
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+  @@index([verticalSlug])
+}
+
+// ─────────────────────────────────────────────
+// §3.4 User profile schema
+// ─────────────────────────────────────────────
+
+model Profile {
+  id               String   @id @default(uuid())
+  userId           String   @unique // Supabase auth user id
+
+  resumeFileUrl    String?
+  resumeText       String?
+
+  fullName         String?
+  headlineRoleId   String?
+  seniority        Seniority?
+  yearsExperience  Float?
+  workHistory      Json?    // structured, LLM-parsed
+  education        Json?
+  certifications   String[]
+
+  skills           ProfileSkill[]
+
+  // preferences (§3.4)
+  employmentTypes  EmploymentType[]
+  remoteTypes      RemoteType[]
+  locations        String[]
+  salaryFloor      Int?
+  salaryPeriod     SalaryPeriod?
+  verticalsOptIn   String[] // vertical slugs
+
+  // alternate entry path (trucking questionnaire, §3.4) — same shape, resumeFileUrl null
+  entryPath        EntryPath @default(RESUME)
+
+  // Prisma doesn't natively type `vector`; added via raw migration
+  // embedding      Unsupported("vector(1536)")?
+
+  clicks           JobClick[]
+  saves            JobSave[]
+  dismissals       JobDismissal[]
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+enum EntryPath {
+  RESUME
+  QUESTIONNAIRE
+}
+
+model ProfileSkill {
+  profileId  String
+  profile    Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  skillId    String
+  skill      Skill   @relation(fields: [skillId], references: [id])
+  confidence Float   @default(1.0) // 0–1, drives dashed "confirm?" chip on parse screen
+  source     SkillSource @default(RESUME)
+
+  @@id([profileId, skillId])
+}
+
+enum SkillSource {
+  RESUME
+  CONFIRMED
+  USER_ADDED
+}
+
+// ─────────────────────────────────────────────
+// Signals — ranking fuel (§3.4, §5) and the /go/ redirect log (§6.3)
+// ─────────────────────────────────────────────
+
+model JobClick {
+  id         String   @id @default(uuid())
+  profileId  String
+  profile    Profile  @relation(fields: [profileId], references: [id])
+  jobId      String
+  job        Job      @relation(fields: [jobId], references: [id])
+  matchScore Int?     // score shown at time of click
+  feedPosition Int?   // position in feed at time of click
+  cpcAttributed Boolean @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([jobId])
+  @@index([profileId])
+}
+
+model JobSave {
+  id        String   @id @default(uuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id])
+  jobId     String
+  createdAt DateTime @default(now())
+
+  @@unique([profileId, jobId])
+}
+
+model JobDismissal {
+  id        String   @id @default(uuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id])
+  jobId     String
+  reason    String?  // optional freeform, feeds nightly soft-filter job (§5)
+  createdAt DateTime @default(now())
+
+  @@unique([profileId, jobId])
+}
