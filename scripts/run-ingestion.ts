@@ -25,9 +25,10 @@ import { dedupeJob } from "@/lib/ingestion/dedupe";
 import { JobSource, JobStatus, Prisma } from "@prisma/client";
 import type { CrawledJob } from "@/lib/ingestion/sources/greenhouse";
 
-// Fallback vertical when a role can't be resolved yet — better than
-// crashing the run; gets reassigned once taxonomy resolution improves.
-const UNSORTED_VERTICAL_SLUG = "tech-software";
+// Neutral fallback vertical for jobs neither a resolved role nor the LLM's
+// classification could place. Deliberately a dedicated "unsorted" bucket, not
+// a real category, so unclassifiable jobs don't pollute a live vertical.
+const UNSORTED_VERTICAL_SLUG = "unsorted";
 
 async function crawlSource(type: JobSource, companySlug: string): Promise<CrawledJob[]> {
   switch (type) {
@@ -80,9 +81,21 @@ async function processJob(
   const skillIds = await resolveSkills(llmResult.skills);
 
   const role = roleId ? await prisma.role.findUnique({ where: { id: roleId }, select: { verticalId: true, name: true } }) : null;
-  const verticalId =
-    role?.verticalId ||
-    (await prisma.vertical.findUnique({ where: { slug: UNSORTED_VERTICAL_SLUG } }))!.id;
+
+  // Categorization priority: (1) a resolved taxonomy role is authoritative —
+  // roles are hand-mapped to verticals in the seed; (2) else trust the LLM's
+  // vertical classification when it names a known slug; (3) else "unsorted".
+  let verticalId = role?.verticalId ?? null;
+  if (!verticalId && llmResult.vertical) {
+    const v = await prisma.vertical.findUnique({
+      where: { slug: llmResult.vertical },
+      select: { id: true },
+    });
+    verticalId = v?.id ?? null;
+  }
+  if (!verticalId) {
+    verticalId = (await prisma.vertical.findUnique({ where: { slug: UNSORTED_VERTICAL_SLUG } }))!.id;
+  }
 
   const companyDomain = source.careersPageUrl
     ? new URL(source.careersPageUrl).hostname.replace(/^www\./, "")

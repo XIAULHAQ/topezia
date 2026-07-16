@@ -16,11 +16,29 @@ import crypto from "crypto";
 
 const EXTRACTION_MODEL = "claude-haiku-4-5-20251001";
 
+// The vertical slugs the model may classify into (must match seeded
+// Vertical.slug values, minus the "unsorted" fallback which the pipeline
+// assigns itself — never ask the model to pick it).
+export const CLASSIFIABLE_VERTICALS = [
+  "tech-software",
+  "marketing-creative",
+  "healthcare-allied",
+  "trucking-logistics",
+  "sales",
+  "finance-accounting",
+  "customer-support",
+  "retail-hospitality",
+  "operations-hr",
+] as const;
+
 export interface LlmExtraction {
   skills: string[]; // free-text skill names — resolved against the Skill
                      // taxonomy by resolve-taxonomy.ts, not here
   seniority: "INTERN" | "JUNIOR" | "MID" | "SENIOR" | "LEAD" | "EXEC" | "NOT_APPLICABLE";
   roleGuess: string; // free-text normalized title, e.g. "backend engineer"
+  vertical: string | null; // one of CLASSIFIABLE_VERTICALS, or null if unsure —
+                           // drives categorization when the specific role can't
+                           // be resolved against the taxonomy (validated by caller)
   verticalFields: Record<string, unknown> | null; // Layout B extras, when relevant
 }
 
@@ -34,6 +52,17 @@ const EXTRACTION_PROMPT = `You extract structured hiring data from a job posting
   "skills": string[],       // 3-10 concrete skills/tools/technologies mentioned, canonical short names (e.g. "Python" not "experience with Python programming")
   "seniority": "INTERN" | "JUNIOR" | "MID" | "SENIOR" | "LEAD" | "EXEC" | "NOT_APPLICABLE",
   "roleGuess": string,      // normalized job function in 2-4 words, lowercase, e.g. "backend engineer"
+  "vertical": string,       // the single best-fit category for this job, EXACTLY one of:
+                            //   "tech-software"      (engineering, data, IT, product, design-in-tech)
+                            //   "marketing-creative" (marketing, design, content, brand, PR)
+                            //   "healthcare-allied"  (clinical/allied health: therapy, imaging, lab, pharmacy, nursing)
+                            //   "trucking-logistics" (drivers, dispatch, warehouse, supply chain)
+                            //   "sales"              (account executives, SDRs, sales management, sales engineering)
+                            //   "finance-accounting" (accounting, finance, FP&A, bookkeeping)
+                            //   "customer-support"   (support, customer success)
+                            //   "retail-hospitality" (retail, food service, hospitality, front-of-house)
+                            //   "operations-hr"      (operations, HR/people, recruiting, program/project mgmt, admin)
+                            // Choose the closest fit by the actual work, not the company's industry. Use the exact slug string.
   "verticalFields": object | null   // if this is a healthcare or trucking role, extract relevant fields:
                                      // healthcare: { credentialsRequired: string[], shiftType: string|null, contractLengthWeeks: number|null }
                                      // trucking: { cdlClass: string|null, endorsements: string[], payStructure: string|null, homeTime: string|null }
@@ -51,7 +80,7 @@ export async function extractWithLlm(
   // regardless of which board it came from.
   const cached = await prisma.job.findFirst({
     where: { descriptionHash: hash, titleNormalized: { not: null } },
-    select: { titleNormalized: true, seniority: true, verticalFields: true, skills: { select: { skill: { select: { name: true } } } } },
+    select: { titleNormalized: true, seniority: true, verticalFields: true, vertical: { select: { slug: true } }, skills: { select: { skill: { select: { name: true } } } } },
   });
 
   if (cached) {
@@ -59,6 +88,7 @@ export async function extractWithLlm(
       skills: cached.skills.map((s) => s.skill.name),
       seniority: cached.seniority as LlmExtraction["seniority"],
       roleGuess: cached.titleNormalized || "",
+      vertical: cached.vertical?.slug ?? null,
       verticalFields: (cached.verticalFields as Record<string, unknown>) || null,
     };
   }
@@ -102,6 +132,6 @@ export async function extractWithLlm(
   } catch {
     // Fail soft — an unparseable extraction shouldn't drop the job from the
     // index, it should just ship with fewer enriched fields.
-    return { skills: [], seniority: "NOT_APPLICABLE", roleGuess: titleRaw.toLowerCase(), verticalFields: null };
+    return { skills: [], seniority: "NOT_APPLICABLE", roleGuess: titleRaw.toLowerCase(), vertical: null, verticalFields: null };
   }
 }
