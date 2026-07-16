@@ -30,24 +30,41 @@ export async function embedText(text: string): Promise<number[] | null> {
     return null;
   }
 
-  const res = await fetch("https://api.voyageai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.VOYAGE_API_KEY}`,
-    },
-    body: JSON.stringify({
-      input: text.slice(0, 8000),
-      model: EMBEDDING_MODEL,
-      output_dimension: EMBEDDING_DIM,
-    }),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Embedding request failed: ${res.status} ${await res.text()}`);
+  // Retry on 429 (rate limit) with backoff, then skip rather than fail the
+  // job. Voyage's free tier is 3 RPM / 10K TPM, so a batch run will hit this;
+  // a rate-limited embedding shouldn't drop an otherwise-good job from the
+  // index — it ships LIVE un-embedded and a backfill pass embeds it later.
+  const MAX_ATTEMPTS = 3;
+  let res: Response | null = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    res = await fetch("https://api.voyageai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.VOYAGE_API_KEY}`,
+      },
+      body: JSON.stringify({
+        input: text.slice(0, 8000),
+        model: EMBEDDING_MODEL,
+        output_dimension: EMBEDDING_DIM,
+      }),
+    });
+    if (res.status !== 429) break;
+    if (attempt < MAX_ATTEMPTS) {
+      const waitMs = Number(res.headers.get("retry-after")) * 1000 || attempt * 20_000;
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
   }
 
-  const data = await res.json();
+  if (res!.status === 429) {
+    console.warn("Voyage rate-limited after retries — skipping embedding, will backfill.");
+    return null;
+  }
+  if (!res!.ok) {
+    throw new Error(`Embedding request failed: ${res!.status} ${await res!.text()}`);
+  }
+
+  const data = await res!.json();
   return data.data[0].embedding as number[];
 }
 
