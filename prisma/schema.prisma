@@ -59,6 +59,11 @@ model Skill {
   id       String   @id @default(uuid())
   slug     String   @unique
   name     String
+  // Seed/canonical skills are reviewed=true; skills auto-created from LLM
+  // extraction start reviewed=false (spec §3.3 "behind a review flag") so
+  // unvetted skills can be excluded from SEO pages / gap-skill counts until
+  // a human approves them.
+  reviewed Boolean  @default(false)
   aliases  SkillAlias[]
   jobSkills JobSkill[]
   profileSkills ProfileSkill[]

@@ -112,6 +112,8 @@ export async function resolveSkills(skillNames: string[]): Promise<string[]> {
     // Genuinely new skill — create it. Skills taxonomy is meant to grow;
     // unlike roles, we don't want to silently drop unrecognized skills,
     // since under-counting skills directly weakens matching quality.
+    // reviewed defaults to false (schema) — LLM-discovered skills stay behind
+    // the review flag (spec §3.3) until a human vets them.
     const created = await prisma.skill.create({
       data: { slug, name: trimmed },
     });

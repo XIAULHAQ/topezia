@@ -133,13 +133,15 @@ async function main() {
     "CDL Class A", "CDL Class B", "Hazmat Endorsement", "DOT Compliance",
   ];
 
+  const skillSlugs = skills.map((s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""));
   await prisma.skill.createMany({
-    data: skills.map((s) => ({
-      slug: s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
-      name: s,
-    })),
+    data: skills.map((s, i) => ({ slug: skillSlugs[i], name: s, reviewed: true })),
     skipDuplicates: true,
   });
+  // createMany skips existing rows, so also force reviewed=true on canonical
+  // skills that may already exist as unreviewed (e.g. created by ingestion
+  // before being seeded). LLM-discovered skills stay reviewed=false.
+  await prisma.skill.updateMany({ where: { slug: { in: skillSlugs } }, data: { reviewed: true } });
 
   console.log(`Seeded ${verticals.length} verticals, ${roles.length} roles, ${skills.length} skills.`);
 }
