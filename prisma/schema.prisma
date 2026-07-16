@@ -193,6 +193,7 @@ model Job {
   cpcFeedId          String?  // revenue attribution
 
   clicks             JobClick[]
+  matchScores        MatchScore[]
 
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -305,15 +306,40 @@ model Profile {
   // alternate entry path (trucking questionnaire, §3.4) — same shape, resumeFileUrl null
   entryPath        EntryPath @default(RESUME)
 
+  // Bumped on every profile save; MatchScore rows carry the version they were
+  // computed under, so a profile edit transparently invalidates the cache (§5).
+  matchVersion     String?
+
   // Prisma doesn't natively type `vector`; added via raw migration
-  // embedding      Unsupported("vector(1536)")?
+  // embedding      Unsupported("vector(1024)")?
 
   clicks           JobClick[]
   saves            JobSave[]
   dismissals       JobDismissal[]
+  matchScores      MatchScore[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+// Cached stage-2 rerank output (spec §5: "cached per profile-version × job").
+// One row per (profile, job); re-rank overwrites it and stamps the current
+// matchVersion. A cache hit = row exists with matchVersion == profile.matchVersion.
+model MatchScore {
+  id            String   @id @default(uuid())
+  profileId     String
+  profile       Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  jobId         String
+  job           Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  matchVersion  String
+  score         Int
+  matchedSkills String[]
+  gapSkills     String[]
+  whyLine       String
+  createdAt     DateTime @default(now())
+
+  @@unique([profileId, jobId])
+  @@index([profileId, matchVersion])
 }
 
 enum EntryPath {

@@ -80,10 +80,12 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       salaryFloor: true,
       salaryPeriod: true,
       headlineRoleId: true,
+      matchVersion: true,
       skills: { select: { skill: { select: { name: true } } } },
     },
   });
   if (!profile) return [];
+  const version = profile.matchVersion ?? "unversioned";
 
   const profileSkillNames = profile.skills.map((s) => s.skill.name);
   // Profile.headlineRoleId is a bare fk (no relation defined in schema), so
@@ -153,17 +155,37 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
   const pool = filtered.slice(0, retrieveN);
   const toRerank = pool.slice(0, rerankN);
 
-  // Stage 2 — batched rerank/explain in a single LLM call (cheaper + faster
-  // than one call per job). Falls back to similarity-derived scores on failure.
-  const scores = await rerankBatch(
-    {
-      headline: headlineRoleName,
-      seniority: profile.seniority ?? "NOT_APPLICABLE",
-      yearsExperience: profile.yearsExperience,
-      skills: profileSkillNames,
-    },
-    toRerank
+  // Stage 2 — rerank cache (spec §5). Reuse cached scores stamped with the
+  // current matchVersion; only run the LLM for jobs not yet cached. On a warm
+  // cache this call makes zero LLM requests and zero writes.
+  const cachedRows = await prisma.matchScore.findMany({
+    where: { profileId, matchVersion: version, jobId: { in: toRerank.map((j) => j.id) } },
+    select: { jobId: true, score: true, matchedSkills: true, gapSkills: true, whyLine: true },
+  });
+  const scores = new Map<string, RerankResult>(
+    cachedRows.map((r) => [r.jobId, { score: r.score, matchedSkills: r.matchedSkills, gapSkills: r.gapSkills, whyLine: r.whyLine }])
   );
+
+  const uncached = toRerank.filter((j) => !scores.has(j.id));
+  if (uncached.length > 0) {
+    const fresh = await rerankBatch(
+      {
+        headline: headlineRoleName,
+        seniority: profile.seniority ?? "NOT_APPLICABLE",
+        yearsExperience: profile.yearsExperience,
+        skills: profileSkillNames,
+      },
+      uncached
+    );
+    for (const [jobId, r] of fresh) {
+      scores.set(jobId, r);
+      await prisma.matchScore.upsert({
+        where: { profileId_jobId: { profileId, jobId } },
+        create: { profileId, jobId, matchVersion: version, ...r },
+        update: { matchVersion: version, ...r },
+      });
+    }
+  }
 
   const matches: JobMatch[] = toRerank.map((j) => {
     const r = scores.get(j.id);

@@ -7,6 +7,7 @@
  * embedding the matcher retrieves against (§5 stage 1).
  */
 
+import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import type { EmploymentType, RemoteType, SalaryPeriod, SkillSource } from "@prisma/client";
@@ -58,6 +59,10 @@ export async function createOrUpdateProfile(params: {
     skillConfidence.set(id, Math.max(skillConfidence.get(id) ?? 0, s.confidence));
   }
 
+  // New match version on every save → transparently invalidates cached
+  // rerank scores for this profile (spec §5, see match.ts).
+  const matchVersion = randomUUID();
+
   const profile = await prisma.profile.upsert({
     where: { userId },
     create: {
@@ -78,6 +83,7 @@ export async function createOrUpdateProfile(params: {
       salaryPeriod: preferences.salaryPeriod ?? null,
       verticalsOptIn: preferences.verticalsOptIn ?? [],
       entryPath: "RESUME",
+      matchVersion,
     },
     update: {
       resumeText,
@@ -95,6 +101,7 @@ export async function createOrUpdateProfile(params: {
       salaryFloor: preferences.salaryFloor ?? null,
       salaryPeriod: preferences.salaryPeriod ?? null,
       verticalsOptIn: preferences.verticalsOptIn ?? [],
+      matchVersion,
     },
     select: { id: true },
   });
