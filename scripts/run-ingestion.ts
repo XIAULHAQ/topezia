@@ -22,7 +22,7 @@ import { extractWithLlm, hashDescription } from "@/lib/ingestion/llm-extract";
 import { resolveRole, resolveSkills } from "@/lib/ingestion/resolve-taxonomy";
 import { embedText, buildJobEmbeddingInput, writeJobEmbedding } from "@/lib/ingestion/embed";
 import { dedupeJob } from "@/lib/ingestion/dedupe";
-import { JobSource, JobStatus } from "@prisma/client";
+import { JobSource, JobStatus, Prisma } from "@prisma/client";
 import type { CrawledJob } from "@/lib/ingestion/sources/greenhouse";
 
 // Fallback vertical when a role can't be resolved yet — better than
@@ -60,7 +60,7 @@ async function processJob(
   // Skip re-processing entirely if we've already ingested byte-identical
   // content from ANY source — the cheapest possible dedup check, before
   // even touching the LLM or writing a new row.
-  const existingByHash = await prisma.job.findUnique({
+  const existingByHash = await prisma.job.findFirst({
     where: { descriptionHash },
     select: { id: true },
   });
@@ -110,7 +110,7 @@ async function processJob(
       locationRaw: job.locationRaw,
       locationState: rules.locationState,
       remoteType: rules.remoteType,
-      verticalFields: llmResult.verticalFields || undefined,
+      verticalFields: (llmResult.verticalFields as Prisma.InputJsonValue) || undefined,
       postedAt: job.postedAt,
       status: JobStatus.LIVE,
       skills: {
