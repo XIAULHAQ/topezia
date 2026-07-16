@@ -21,6 +21,23 @@ function slugify(input: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
+// Skill slugs must not collapse distinct technologies. Plain slugify maps
+// "C", "C++", and "C#" all to "c" (punctuation stripped), silently merging
+// three languages into one skill. Map the collision-causing symbols
+// explicitly first. We deliberately do NOT remap ".": seed slugs use the
+// plain form (e.g. "Node.js" -> "node-js"), so remapping it would miss the
+// seeded skill and create a duplicate instead of resolving to it.
+function skillSlug(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/\+\+/g, "pp") // C++ -> cpp
+    .replace(/#/g, "sharp") // C#  -> csharp
+    .replace(/\+/g, "plus") // trailing "+" (e.g. "Notepad++")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
 export async function resolveRole(rawTitle: string, roleGuessFromLlm: string | null): Promise<string | null> {
   // 1. Exact alias match on the raw title (cheapest, most common case for
   //    ATS-sourced jobs where titles are fairly standardized).
@@ -59,6 +76,16 @@ export async function resolveSkills(skillNames: string[]): Promise<string[]> {
     const trimmed = raw.trim();
     if (!trimmed) continue;
 
+    // Guard against junk before it becomes a permanent taxonomy row. A real
+    // skill has at least one letter and isn't a whole sentence. Without this,
+    // symbol-only strings slugified to "" and all collapsed into a single
+    // empty-slug skill, and long LLM ramblings became "skills". (Spec §3.3
+    // wants LLM-discovered skills behind a review flag; a proper gate needs
+    // a schema column and is tracked separately — these guards are the
+    // contained, no-migration version of that intent.)
+    if (trimmed.length > 64) continue;
+    if (!/[a-z]/i.test(trimmed)) continue;
+
     const exact = await prisma.skillAlias.findUnique({
       where: { rawText: trimmed },
       select: { skillId: true },
@@ -68,7 +95,9 @@ export async function resolveSkills(skillNames: string[]): Promise<string[]> {
       continue;
     }
 
-    const slug = slugify(trimmed);
+    const slug = skillSlug(trimmed);
+    if (!slug) continue; // defensive: nothing usable left after normalization
+
     const bySlug = await prisma.skill.findUnique({ where: { slug }, select: { id: true } });
     if (bySlug) {
       await prisma.skillAlias.upsert({
@@ -92,5 +121,9 @@ export async function resolveSkills(skillNames: string[]): Promise<string[]> {
     resolvedIds.push(created.id);
   }
 
-  return resolvedIds;
+  // De-duplicate: two raw names in the same posting can resolve to one skill
+  // ("JavaScript" and "javascript", "AWS" and "aws"). The caller feeds these
+  // straight into a nested JobSkill create whose PK is (jobId, skillId), so a
+  // repeated id would throw a unique-constraint error and fail the whole job.
+  return [...new Set(resolvedIds)];
 }

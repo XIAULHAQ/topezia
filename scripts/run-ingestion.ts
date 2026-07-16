@@ -119,6 +119,22 @@ async function processJob(
     },
   });
 
+  // Embed BEFORE dedup, not after: dedup rule (c) compares the new job's
+  // embedding against other jobs in the same company (dedupe.ts), and its
+  // SQL reads `embedding` for this row. If we embedded after dedup, that
+  // column would still be NULL at dedup time and rule (c) could never fire.
+  // Embeddings are cheap (spec §4.2), so paying for the occasional job that
+  // then turns out to be a duplicate is an acceptable trade for a working
+  // near-duplicate check.
+  const embeddingInput = buildJobEmbeddingInput({
+    titleNormalized: created.titleNormalized,
+    titleRaw: created.titleRaw,
+    skills: llmResult.skills,
+    descriptionText: rules.descriptionText,
+  });
+  const embedding = await embedText(embeddingInput);
+  await writeJobEmbedding(prisma, created.id, embedding);
+
   // Dedup against existing LIVE jobs (fuzzy title + embedding rules) —
   // the exact-hash rule was already handled above before the insert.
   const dedupResult = await dedupeJob({
@@ -137,16 +153,6 @@ async function processJob(
     });
     return { status: "duplicate" as const };
   }
-
-  // Embed last — only live, non-duplicate jobs need to carry the cost.
-  const embeddingInput = buildJobEmbeddingInput({
-    titleNormalized: created.titleNormalized,
-    titleRaw: created.titleRaw,
-    skills: llmResult.skills,
-    descriptionText: rules.descriptionText,
-  });
-  const embedding = await embedText(embeddingInput);
-  await writeJobEmbedding(prisma, created.id, embedding);
 
   return { status: "created" as const, jobId: created.id };
 }

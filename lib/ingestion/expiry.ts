@@ -50,11 +50,16 @@ export async function runExpiryCheck() {
 
   const candidates = await prisma.job.findMany({
     where: {
-      status: JobStatus.LIVE,
+      // Include SUSPECTED_DEAD, not just LIVE: the two-step confirmation
+      // (spec §4.4) demotes a job to SUSPECTED_DEAD on the first dead check
+      // and only EXPIRES it on a second. If we filtered LIVE-only here, a
+      // suspected-dead job would drop out of the candidate set and could
+      // never be confirmed — the confirmation step would be unreachable.
+      status: { in: [JobStatus.LIVE, JobStatus.SUSPECTED_DEAD] },
       lastVerifiedAt: { lt: staleThreshold },
       source: { in: [JobSource.JOBPOSTING_SCHEMA, JobSource.ADZUNA, JobSource.JOOBLE, JobSource.CPC_FEED] },
     },
-    select: { id: true, sourceUrl: true },
+    select: { id: true, sourceUrl: true, status: true },
     take: 500, // batch — run this on a schedule, don't try the whole table at once
   });
 
@@ -68,15 +73,21 @@ export async function runExpiryCheck() {
       // Two-step confirmation before EXPIRED (per spec §4.4: "404/410 ->
       // suspected_dead -> confirm -> expired") — a single failed check
       // could be a transient site issue, not a genuinely closed posting.
-      const current = await prisma.job.findUnique({ where: { id: job.id }, select: { status: true } });
-      if (current?.status === JobStatus.SUSPECTED_DEAD) {
+      // We already selected the current status above, so no extra read.
+      if (job.status === JobStatus.SUSPECTED_DEAD) {
         await prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.EXPIRED } });
         confirmedDead++;
       } else {
         await prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.SUSPECTED_DEAD } });
       }
     } else if (result === "live") {
-      await prisma.job.update({ where: { id: job.id }, data: { lastVerifiedAt: new Date() } });
+      // Alive again — refresh the stamp AND clear any prior SUSPECTED_DEAD
+      // flag, otherwise a job that recovered would keep a fresh timestamp
+      // but stay stuck in SUSPECTED_DEAD.
+      await prisma.job.update({
+        where: { id: job.id },
+        data: { lastVerifiedAt: new Date(), status: JobStatus.LIVE },
+      });
       refreshed++;
     }
     // "unknown" — leave status untouched, will retry next run

@@ -110,9 +110,21 @@ export interface ExtractedSalary {
 
 export function extractSalary(descriptionText: string): ExtractedSalary {
   // Matches: "$120,000 - $150,000", "$120k-$150k", "$45/hr - $60/hr",
-  // "$45 - $60 per hour", "120,000 to 150,000 USD"
+  // "$45 - $60 per hour".
+  //
+  // The leading `$` is REQUIRED (not optional). Without it, this matched any
+  // bare number range in the text — "5-10 years of experience" became
+  // salaryMin 5 / salaryMax 10 (tagged HOURLY by the sub-$500 heuristic),
+  // "8-12 weeks" became a wage, etc. Since salaryMax feeds a hard filter in
+  // the matching engine (spec §5), a fabricated salary is worse than a
+  // missing one — honesty over coverage. A currency sign anchors the match
+  // to something that is actually money.
+  // The `(?:...)` after the first number is non-capturing so capture-group
+  // indices stay 1=min, 2=min-k, 3=max, 4=max-k, 5=suffix. It lets a per-unit
+  // token sit on the FIRST amount too ("$45/hr - $60/hr"), which the dash-only
+  // form otherwise couldn't reach past.
   const rangePattern =
-    /\$?\s?(\d{2,3}(?:,\d{3})?|\d+)(k)?\s?(?:-|to|–)\s?\$?\s?(\d{2,3}(?:,\d{3})?|\d+)(k)?\s?(\/\s?(hr|hour)|per hour|k|USD|\/yr|\/year|annually)?/i;
+    /\$\s?(\d{2,3}(?:,\d{3})?|\d+)(k)?(?:\s?\/\s?(?:hr|hour|yr|year))?\s?(?:-|to|–|—)\s?\$?\s?(\d{2,3}(?:,\d{3})?|\d+)(k)?\s?(\/\s?(hr|hour)|per hour|k|USD|\/yr|\/year|annually)?/i;
 
   const match = descriptionText.match(rangePattern);
   if (!match) return { min: null, max: null, period: null };
@@ -126,6 +138,7 @@ export function extractSalary(descriptionText: string): ExtractedSalary {
   const max = parseNum(match[3], Boolean(match[4]));
 
   if (min < 5 || max < 5) return { min: null, max: null, period: null }; // guards against unrelated number pairs
+  if (max < min) return { min: null, max: null, period: null }; // not a valid ascending range
 
   const suffix = (match[5] || "").toLowerCase();
   const period: ExtractedSalary["period"] =
