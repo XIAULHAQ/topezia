@@ -23,7 +23,10 @@ export default async function Home() {
     <main style={S.page}>
       <header style={S.nav}>
         <div style={S.brand}>topezia</div>
-        <Link href="/waitlist" style={S.navLink}>Hiring? Become a founding employer →</Link>
+        <div style={{ display: "flex", gap: 22, alignItems: "center" }}>
+          <Link href="/login" style={S.navLink}>Log in</Link>
+          <Link href="/waitlist" style={S.navLink}>Hiring? Founding employer →</Link>
+        </div>
       </header>
 
       <section style={S.hero}>

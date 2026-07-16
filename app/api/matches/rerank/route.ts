@@ -8,15 +8,15 @@
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { readAnonUid } from "@/lib/anon-session";
+import { currentIdentity } from "@/lib/identity";
 import { getMatches } from "@/lib/matching/match";
 
 export const maxDuration = 60;
 
 export async function POST() {
-  const uid = readAnonUid();
-  if (!uid) return NextResponse.json({ error: "no-profile" }, { status: 401 });
-  const profile = await prisma.profile.findUnique({ where: { userId: uid }, select: { id: true } });
+  const { userId } = await currentIdentity();
+  if (!userId) return NextResponse.json({ error: "no-profile" }, { status: 401 });
+  const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
   if (!profile) return NextResponse.json({ error: "no-profile" }, { status: 401 });
 
   const matches = await getMatches(profile.id, { rerankN: 12, rerank: true });

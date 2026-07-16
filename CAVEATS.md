@@ -65,8 +65,15 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   retrieved pool isn't shown.
 
 ## Auth & product
-- 🟠 **Job-seeker auth is a stopgap anonymous cookie**, not real Supabase Auth.
-  Clearing cookies loses the profile; no cross-device continuity.
+- 🟠 **Email+password auth built (Supabase Auth), pending config to go live.**
+  Sign up / log in (`/login`), session middleware, identity resolution
+  (auth id → anon cookie fallback), and anon-profile linking on sign-in are all
+  implemented; the anonymous "no account needed to start" flow still works. To
+  activate: (1) put the US project's anon key in Vercel + local `.env`
+  (`NEXT_PUBLIC_SUPABASE_URL` already set to the US project); (2) in the Supabase
+  dashboard enable the Email provider, **disable "Confirm email"** (MVP: no email
+  delivery), and set Site URL + redirect URLs; (3) redeploy. The final signup
+  test is the owner's — I can't create accounts / enter passwords by policy.
 - 🟡 **Résumé entry is text-paste only** — no file/PDF upload yet. The trucking
   8-question questionnaire path (§3.4) isn't built.
 - 🟢 **Root `/` is now the product landing** (hero + CTA into `/onboard`);

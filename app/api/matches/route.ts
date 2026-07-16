@@ -8,31 +8,32 @@
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { readAnonUid } from "@/lib/anon-session";
+import { currentIdentity } from "@/lib/identity";
 import { getMatches, type JobMatch } from "@/lib/matching/match";
 
 export const maxDuration = 60;
 
-async function resolveProfileId(): Promise<string | null> {
-  const uid = readAnonUid();
-  if (!uid) return null;
-  const profile = await prisma.profile.findUnique({ where: { userId: uid }, select: { id: true } });
-  return profile?.id ?? null;
+async function resolveIdentity(): Promise<{ profileId: string | null; authed: boolean }> {
+  const { userId, authed } = await currentIdentity();
+  if (!userId) return { profileId: null, authed };
+  const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
+  return { profileId: profile?.id ?? null, authed };
 }
 
-function respond(matches: JobMatch[], totalLive: number) {
+function respond(matches: JobMatch[], totalLive: number, authed: boolean) {
   return NextResponse.json({
     matches,
     stats: { strong: matches.filter((m) => m.score >= 70).length, totalLive },
     pending: matches.some((m) => m.pending),
+    authed,
   });
 }
 
 export async function GET() {
-  const profileId = await resolveProfileId();
+  const { profileId, authed } = await resolveIdentity();
   if (!profileId) return NextResponse.json({ error: "no-profile" }, { status: 401 });
 
   const matches = await getMatches(profileId, { rerankN: 12, rerank: false });
   const totalLive = await prisma.job.count({ where: { status: "LIVE" } });
-  return respond(matches, totalLive);
+  return respond(matches, totalLive, authed);
 }

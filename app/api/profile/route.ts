@@ -10,7 +10,8 @@ import { randomUUID } from "crypto";
 import { createOrUpdateProfile } from "@/lib/matching/profile";
 import type { ParsedResume } from "@/lib/matching/parse-resume";
 import type { ProfilePreferences } from "@/lib/matching/profile";
-import { ANON_COOKIE, ANON_COOKIE_MAX_AGE, readAnonUid } from "@/lib/anon-session";
+import { ANON_COOKIE, ANON_COOKIE_MAX_AGE } from "@/lib/anon-session";
+import { currentIdentity } from "@/lib/identity";
 
 export const maxDuration = 60;
 
@@ -25,7 +26,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing parsed profile or preferences." }, { status: 400 });
   }
 
-  const uid = readAnonUid() ?? randomUUID();
+  // Signed-in users key their profile to the auth id; anonymous visitors get a
+  // one-off id stored in a cookie (upgraded to the account on later sign-in).
+  const { userId, authed } = await currentIdentity();
+  const uid = userId ?? randomUUID();
 
   try {
     const { profileId, embedded } = await createOrUpdateProfile({
@@ -35,13 +39,15 @@ export async function POST(req: NextRequest) {
       preferences: body.preferences,
     });
     const res = NextResponse.json({ profileId, embedded });
-    res.cookies.set(ANON_COOKIE, uid, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: ANON_COOKIE_MAX_AGE,
-      path: "/",
-    });
+    if (!authed) {
+      res.cookies.set(ANON_COOKIE, uid, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        maxAge: ANON_COOKIE_MAX_AGE,
+        path: "/",
+      });
+    }
     return res;
   } catch (err) {
     console.error("profile save failed:", err);

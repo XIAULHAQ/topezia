@@ -12,8 +12,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { currentIdentity } from "@/lib/identity";
 
 export async function GET(
   req: NextRequest,
@@ -40,47 +39,18 @@ export async function GET(
     return NextResponse.redirect(new URL("/jobs/expired", req.url));
   }
 
-  // Resolve the logged-in profile, if any. Anonymous clicks (pre-signup
-  // browsing, SEO landing pages) still redirect — they just don't log to a
-  // profile. Don't block the redirect on auth.
+  // Resolve the clicker's profile (auth account or anonymous cookie) so the
+  // click is attributed for ranking / CPC signal. Anonymous clicks (SEO landing
+  // pages, pre-signup) still redirect — they just don't log. Never block on this.
   let profileId: string | null = null;
   try {
-    const cookieStore = cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get: (name: string) => cookieStore.get(name)?.value,
-        },
-      }
-    );
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (user) {
-      const profile = await prisma.profile.findUnique({
-        where: { userId: user.id },
-        select: { id: true },
-      });
+    const { userId } = await currentIdentity();
+    if (userId) {
+      const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
       profileId = profile?.id ?? null;
     }
   } catch {
-    // Auth resolution failing should never block the redirect.
-  }
-
-  // Fallback to the anonymous-session profile (pre-auth job seekers, spec §6.1
-  // stopgap) so feed clicks are still attributed for ranking signal.
-  if (!profileId) {
-    try {
-      const uid = cookies().get("topezia_uid")?.value;
-      if (uid) {
-        const profile = await prisma.profile.findUnique({ where: { userId: uid }, select: { id: true } });
-        profileId = profile?.id ?? null;
-      }
-    } catch {
-      // ignore — never block the redirect
-    }
+    // Auth/identity resolution failing should never block the redirect.
   }
 
   if (profileId) {

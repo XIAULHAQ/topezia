@@ -44,6 +44,7 @@ export default function FeedPage() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
+  const [authed, setAuthed] = useState(true); // default true to avoid a flash of the save prompt
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +61,7 @@ export default function FeedPage() {
         if (cancelled) return;
         setMatches(data.matches || []);
         setStats(data.stats || null);
+        setAuthed(data.authed ?? false);
         setLoading(false);
 
         // Stage 2 — enrich the pending cards with real LLM scores + why-lines.
@@ -131,7 +133,11 @@ export default function FeedPage() {
       <header style={S.topbar}>
         <div style={S.brand}>topezia</div>
         <input style={S.refine} placeholder='Refine — e.g. "more remote, less agency work"' disabled title="Conversational refine — coming soon" />
-        <div style={S.avatar}>You</div>
+        {authed ? (
+          <div style={S.avatar}>You</div>
+        ) : (
+          <a href="/login" style={S.saveBtn}>Save matches →</a>
+        )}
       </header>
 
       <div style={S.body}>
@@ -239,6 +245,7 @@ const S: Record<string, CSSProperties> = {
   topbar: { display: "flex", alignItems: "center", gap: 16, padding: "14px 24px", background: "#fff", borderBottom: "1px solid #ececf2", position: "sticky", top: 0, zIndex: 10 },
   refine: { flex: 1, padding: "10px 14px", borderRadius: 999, border: "1px solid #e2e2ea", fontSize: 14, fontFamily: "inherit", background: "#f7f7fb" },
   avatar: { width: 36, height: 36, borderRadius: "50%", background: "#eef0ff", color: INDIGO, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 },
+  saveBtn: { padding: "9px 16px", background: INDIGO, color: "#fff", borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: "none", whiteSpace: "nowrap" },
   body: { maxWidth: 1080, margin: "0 auto", padding: 24, display: "flex", gap: 24, alignItems: "flex-start" },
   feedCol: { flex: 1, minWidth: 0 },
   pills: { display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" },
