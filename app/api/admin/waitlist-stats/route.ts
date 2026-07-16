@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     prisma.waitlistSignup.groupBy({
       by: ["verticalSlug"],
       _count: { _all: true },
-      orderBy: { _count: { _all: "desc" } },
+      orderBy: { _count: { id: "desc" } },
     }),
     prisma.waitlistSignup.findMany({
       orderBy: { createdAt: "desc" },
