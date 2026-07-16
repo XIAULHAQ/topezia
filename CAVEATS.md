@@ -5,16 +5,20 @@ kept current as the build progresses. Ordered by area. Status: 🔴 blocks real
 traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 
 ## Infrastructure & database
-- 🔴 **DB is in Seoul (`ap-northeast-2`), ~1.3s per query.** Very high latency for
-  a US-first product. Ingest runs ~27s/job and feed matching is slow. Move to a
-  US-region Postgres before real traffic.
-- 🟡 **Benign schema drift.** The live DB has `DEFAULT gen_random_uuid()` on all id
-  columns and `DEFAULT ARRAY[]` on Profile array columns that `schema.prisma`
-  doesn't express (harmless — Prisma overrides on insert), but `prisma migrate
-  dev` will report drift. Reconcile with `@default(dbgenerated("gen_random_uuid()"))`.
+- 🟢 **DB migrated to US-East (`us-east-1`).** Was Seoul (~1.3s/query cross-Pacific
+  from Vercel's US functions). New Supabase project built fresh via
+  `prisma migrate deploy` + seed + re-ingest; live site cut over and verified
+  (Vercel now co-located with the DB). Old Seoul project can be deleted.
+- 🟢 **Schema drift gone.** The fresh US DB was built entirely from Prisma
+  migrations (not hand-run SQL), so it has none of the old `gen_random_uuid()` /
+  `ARRAY[]` default drift — `migrate deploy` replayed all 7 migrations clean.
 - 🟡 **Embedding columns are managed via raw migrations**, not `schema.prisma`
   (Prisma can't type `vector`). A future `migrate dev` could try to drop them
   unless declared as `Unsupported("vector(1024)")`.
+- 🟡 **Vercel still has the old Seoul `NEXT_PUBLIC_SUPABASE_URL` / anon key**
+  (DB URLs were updated; these client keys weren't). Harmless — only an unused
+  auth path uses them — but update for tidiness. Also: the old Seoul DB password
+  was changed, so `.env.seoul-backup` won't reconnect (fine; we're off Seoul).
 
 ## Ingestion
 - 🟢 **Company name FIXED.** Greenhouse now auto-fetches the real name from board
@@ -47,9 +51,8 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   call**, so jobs paint immediately. The feed then calls `POST /api/matches/rerank`
   to enrich pending cards with honest scores + why-lines in the background. No
   single request blocks on the ~15s rerank.
-- 🟠 **Stage-1 is still ~7s against the Seoul DB** (retrieval + a few queries).
-  Fine (no timeout risk), but a US-region DB drops it to ~1s — the last big
-  latency lever.
+- 🟢 **Stage-1 latency fixed by the US DB move.** In production (Vercel US-East ↔
+  us-east-1 DB) queries are single-digit ms, so Stage-1 is fast.
 - 🟢 **Rerank caching DONE** (`MatchScore`, per profile-version × job). Warm feed
   loads make zero LLM calls: cold 22s → warm ~6s. Warm is now pure DB latency,
   so it collapses further with a US-region DB.
