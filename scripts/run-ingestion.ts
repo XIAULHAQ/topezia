@@ -46,9 +46,20 @@ async function crawlSource(type: JobSource, companySlug: string): Promise<Crawle
   }
 }
 
+// "dropbox" -> "Dropbox", "acme-corp" -> "Acme Corp" — a readable last-resort
+// display name when no real company name is available.
+function titleCaseSlug(slug: string | null): string | null {
+  if (!slug) return null;
+  return slug
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 async function processJob(
   job: CrawledJob,
-  source: { type: JobSource; companySlug: string | null; careersPageUrl: string | null }
+  source: { type: JobSource; companySlug: string | null; companyName: string | null; careersPageUrl: string | null }
 ) {
   const rules = applyRulesPass({
     titleRaw: job.titleRaw,
@@ -111,7 +122,10 @@ async function processJob(
       titleNormalized: role?.name || llmResult.roleGuess || null,
       roleId,
       verticalId,
-      companyName: companyDomain || source.companySlug || "Unknown", // TODO: extract real company name (Slice 2 follow-up — most ATS responses include it, worth wiring up)
+      // Priority: real name from the ATS (Greenhouse board metadata) → the
+      // Source display override (Ashby/Lever, which don't expose it) →
+      // title-cased slug → domain → "Unknown".
+      companyName: job.companyName || source.companyName || titleCaseSlug(source.companySlug) || companyDomain || "Unknown",
       companyDomain,
       descriptionRaw: job.descriptionRaw,
       descriptionHash,
@@ -209,6 +223,7 @@ async function main() {
           const result = await processJob(job, {
             type: source.type,
             companySlug: source.companySlug,
+            companyName: source.companyName,
             careersPageUrl: source.careersPageUrl,
           });
           if (result.status === "created") created++;

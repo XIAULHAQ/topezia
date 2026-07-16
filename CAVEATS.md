@@ -17,9 +17,12 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   unless declared as `Unsupported("vector(1024)")`.
 
 ## Ingestion
-- 🟠 **Company name is a stub** — falls back to the board slug (e.g. "leverdemo")
-  because ATS list endpoints don't cleanly return a real company name. Needs a
-  display-name on `Source` or a per-board lookup.
+- 🟢 **Company name FIXED.** Greenhouse now auto-fetches the real name from board
+  metadata; Ashby/Lever (which don't expose it) use a `Source.companyName`
+  override; last-resort fallback is a title-cased slug. Existing 49 jobs
+  backfilled (Dropbox, Discord, PostHog, Linear, Lever Demo). Remaining nuance:
+  a newly-discovered Ashby/Lever board with no override shows a title-cased slug
+  until a name is set.
 - 🟡 **Skill sprawl.** LLM extraction coins many skills (49 from 10 jobs, some
   phrases not atomic skills). They're now flagged `reviewed=false` (§3.3), but
   nothing consumes that flag yet — SEO/gap-count features must filter on it.

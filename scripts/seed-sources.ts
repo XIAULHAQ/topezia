@@ -16,12 +16,12 @@
 import { prisma } from "@/lib/prisma";
 import { JobSource } from "@prisma/client";
 
-const SEED_SOURCES: { type: JobSource; companySlug: string }[] = [
-  { type: JobSource.GREENHOUSE, companySlug: "dropbox" },
-  { type: JobSource.GREENHOUSE, companySlug: "discord" },
-  { type: JobSource.ASHBY, companySlug: "posthog" },
-  { type: JobSource.ASHBY, companySlug: "linear" },
-  { type: JobSource.LEVER, companySlug: "leverdemo" },
+const SEED_SOURCES: { type: JobSource; companySlug: string; companyName: string }[] = [
+  { type: JobSource.GREENHOUSE, companySlug: "dropbox", companyName: "Dropbox" },
+  { type: JobSource.GREENHOUSE, companySlug: "discord", companyName: "Discord" },
+  { type: JobSource.ASHBY, companySlug: "posthog", companyName: "PostHog" },
+  { type: JobSource.ASHBY, companySlug: "linear", companyName: "Linear" },
+  { type: JobSource.LEVER, companySlug: "leverdemo", companyName: "Lever Demo" },
 ];
 
 async function main() {
@@ -33,11 +33,11 @@ async function main() {
     });
     await prisma.source.upsert({
       where: { type_companySlug: { type: s.type, companySlug: s.companySlug } },
-      update: {},
-      create: { type: s.type, companySlug: s.companySlug, isPriority: false },
+      update: { companyName: s.companyName },
+      create: { type: s.type, companySlug: s.companySlug, companyName: s.companyName, isPriority: false },
     });
     if (!existing) created++;
-    console.log(`  ${existing ? "exists " : "created"}  ${s.type} / ${s.companySlug}`);
+    console.log(`  ${existing ? "updated" : "created"}  ${s.type} / ${s.companySlug} → ${s.companyName}`);
   }
   const total = await prisma.source.count();
   console.log(`\nDone. ${created} new, ${total} sources total.`);

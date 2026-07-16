@@ -33,6 +33,7 @@ export interface CrawledJob {
   sourceUrl: string;
   locationRaw: string | null;
   postedAt: Date | null;
+  companyName?: string | null; // real company name when the ATS exposes it
   raw: unknown; // kept for debugging / re-processing without re-fetching
 }
 
@@ -55,6 +56,21 @@ export async function crawlGreenhouseBoard(companySlug: string): Promise<Crawled
 
   const data = (await res.json()) as { jobs: RawGreenhouseJob[] };
 
+  // Greenhouse exposes the real company name on the board metadata endpoint
+  // (the per-job payload doesn't carry it). One extra request per board;
+  // non-fatal if it fails — the caller falls back to Source.companyName / slug.
+  let companyName: string | null = null;
+  try {
+    const metaRes = await fetch(`https://boards-api.greenhouse.io/v1/boards/${companySlug}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (metaRes.ok) {
+      companyName = ((await metaRes.json()) as { name?: string }).name ?? null;
+    }
+  } catch {
+    // ignore — company name is a nice-to-have, not worth failing the crawl
+  }
+
   return data.jobs.map((j) => ({
     externalId: String(j.id),
     titleRaw: j.title,
@@ -62,6 +78,7 @@ export async function crawlGreenhouseBoard(companySlug: string): Promise<Crawled
     sourceUrl: j.absolute_url,
     locationRaw: j.location?.name || null,
     postedAt: j.updated_at ? new Date(j.updated_at) : null,
+    companyName,
     raw: j,
   }));
 }

@@ -219,6 +219,7 @@ model Source {
   id             String   @id @default(uuid())
   type           JobSource
   companySlug    String?
+  companyName    String?  // display name; ATS APIs often don't return it (§4)
   careersPageUrl String?
   isPriority     Boolean  @default(false) // founding-employer flag
   crawlCadenceHrs Int     @default(24)
