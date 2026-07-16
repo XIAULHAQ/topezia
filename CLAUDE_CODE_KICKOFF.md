@@ -27,7 +27,7 @@ Everything below was confirmed via direct database queries or live deploy checks
 
 | Layer | Status | Evidence |
 |---|---|---|
-| Schema (16 tables, 12 enums) | ✅ Live in Supabase | Confirmed via row-count queries |
+| Schema (14 models, 12 enums) | ✅ Live in Supabase | Confirmed via row-count queries; verify migration history per §2 |
 | pgvector + pg_trgm extensions | ✅ Enabled | Migration ran successfully |
 | Taxonomy seed | ✅ Live: 8 verticals, 17 roles, 37 aliases, 27 skills | Verified via `SELECT COUNT(*)` on each table |
 | App deployment | ✅ Live on Vercel, auto-deploys on push to `main` | Deployment `c7fc1ad` and later show "Ready" |
@@ -43,54 +43,95 @@ Everything below was confirmed via direct database queries or live deploy checks
 
 ## 2. Prisma migration debt — fix this FIRST
 
-**The problem:** the initial schema was applied by hand-writing raw SQL and
-running it directly in Supabase's SQL editor, because this sandbox's network
-whitelist blocked Prisma CLI's binary downloads (`binaries.prisma.sh` wasn't
-reachable). That means:
+**Corrected account** (an earlier version of this doc got this wrong — the
+paragraph below reflects what's actually true, verified against `git log`
+and the live schema, not what was assumed):
 
-- `prisma/migrations/` contains `000_init_vector_support/` and
-  `001_pg_trgm/` (proper migration folders) plus a loose
-  `hand_written_init.sql` file that is **not** a real Prisma migration —
-  Prisma has no record of having applied it.
-- If you run `prisma migrate dev` in a fresh environment, Prisma will try
-  to create the base tables again and fail (they already exist), or get
-  confused about migration state.
+- There is **no committed base-table migration at all**, in git or
+  otherwise. The SQL that actually created the 14 models / 12 enums was
+  run by hand in Supabase's SQL editor and was never committed to this
+  repo. It now lives at `prisma/manual-sql-log/01_base_schema.sql` — a
+  **historical record of what was actually executed**, not a real Prisma
+  migration. Same for `prisma/manual-sql-log/02_taxonomy_seed.sql` (the
+  taxonomy seed data — also run by hand, also never a tracked migration).
+- The only two real migration folders that exist —
+  `000_init_vector_support` and `001_pg_trgm` — both `ALTER` tables
+  (`Job`, `Profile`) that, from Prisma's point of view, were never created
+  by any migration in this repo's history. If you ran `prisma migrate
+  deploy` on a fresh database right now, it would fail immediately.
+- `prisma/migrations/migration_lock.toml` was missing (Prisma generates
+  this automatically the first time `migrate dev` runs; since that never
+  happened here, it never existed). Added now with `provider = "postgresql"`.
+- `schema.prisma` **does not declare the embedding columns** — they're
+  commented out as `Unsupported("vector(1536)")`. This actually matters for
+  the fix below: it means `000_init_vector_support` and `001_pg_trgm` were
+  never meant to be derived from `schema.prisma` in the first place. They're
+  legitimately hand-written, permanently-manual migrations (a common,
+  accepted pattern for pgvector with Prisma, since Prisma's schema language
+  can't fully express vector columns yet) — not something to fold into a
+  schema-driven baseline.
 
-**The fix**, first thing in your first session:
+**The correct fix** — Prisma's own "baselining an existing database" workflow
+(see https://www.prisma.io/docs/guides/database/baselining), adapted here:
 
 ```bash
-# 1. Confirm your local Prisma CLI can actually reach its engines (it should,
-#    outside the sandbox that authored this):
+# 1. Confirm your local Prisma CLI can actually reach its engines (it
+#    should, outside the sandbox that authored this doc):
 npx prisma --version
 
-# 2. Baseline the existing schema as "already applied" so Prisma's migration
-#    history matches reality. Easiest path: generate a proper initial
-#    migration from the current schema.prisma, then mark it as applied
-#    without re-running it (since the tables already exist):
-npx prisma migrate dev --name init --create-only
-# This creates prisma/migrations/<timestamp>_init/migration.sql from the
-# CURRENT schema.prisma. Diff it against hand_written_init.sql — they should
-# be equivalent (hand_written_init.sql was written to match schema.prisma
-# exactly, but verify).
+# 2. Generate a migration representing the FULL current schema.prisma
+#    (14 models, 12 enums — no vector columns, since those aren't in
+#    schema.prisma) as a single baseline, without running it against the
+#    database (the tables already exist — this just teaches Prisma's
+#    migration history about them):
+mkdir -p prisma/migrations/00000000000000_init
+npx prisma migrate diff \
+  --from-empty \
+  --to-schema-datamodel prisma/schema.prisma \
+  --script > prisma/migrations/00000000000000_init/migration.sql
 
-npx prisma migrate resolve --applied <timestamp>_init
+# 3. Diff that generated file against prisma/manual-sql-log/01_base_schema.sql
+#    — they represent the same 14 models/12 enums and should be equivalent
+#    (naming, ordering, or minor syntax may differ; the DDL should match).
+#    If they diverge meaningfully, trust schema.prisma and investigate why.
 
-# 3. Then mark the vector/trgm migrations as applied too, since those also
-# already ran manually:
+# 4. Mark the baseline as applied (it matches reality already — this just
+#    records that fact in Prisma's _prisma_migrations table):
+npx prisma migrate resolve --applied 00000000000000_init
+
+# 5. Now mark the two vector/trgm migrations as applied too, since those
+#    also already ran manually and sort after the baseline alphabetically:
 npx prisma migrate resolve --applied 000_init_vector_support
 npx prisma migrate resolve --applied 001_pg_trgm
 
-# 4. Verify state is clean:
+# 6. Verify state is clean:
 npx prisma migrate status
 # Should show "Database schema is up to date"
-
-# 5. Delete hand_written_init.sql once the real migration folder replaces it
-# (keep it in git history for reference, just remove from the working tree).
 ```
 
-If `prisma migrate dev` produces SQL that doesn't match `hand_written_init.sql`
-exactly, trust `schema.prisma` as the source of truth and investigate the
-diff — it likely means a small drift crept in during the manual translation.
+After this, `prisma/migrations/` will contain three real, tracked folders
+(`00000000000000_init`, `000_init_vector_support`, `001_pg_trgm`) plus
+`migration_lock.toml` — a fully honest migration history matching what's
+actually in the database. From that point forward, `prisma migrate dev`
+works normally for new changes.
+
+`prisma/manual-sql-log/` can stay as a permanent historical record (it's
+genuinely useful — it's the exact SQL that built production) or be deleted
+once the baseline migration is verified equivalent; your call.
+
+---
+
+## 2a. What was corrected in this doc
+
+An earlier version of this document claimed `hand_written_init.sql` was
+sitting inside `prisma/migrations/` and suggested treating it as a
+quasi-migration to resolve directly. That was wrong on two counts: the file
+was never committed to git at all (confirmed via `git log --all`), and even
+if it had been, it wasn't in a real migration folder Prisma would recognize.
+It also said "16 tables" where the actual count is 14 models / 12 enums.
+Both errors are fixed above. If anything else in this doc turns out to be
+inaccurate when you check it against reality, trust the repo over the doc
+and fix the doc.
 
 ---
 
