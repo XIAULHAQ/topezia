@@ -9,6 +9,7 @@
  * employer accounts.
  */
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 
 type Stats = {
   totalSignups: number;
@@ -220,7 +221,7 @@ function BarRow({ label, value, max }: { label: string; value: number; max: numb
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<string, CSSProperties> = {
   page: {
     minHeight: "100vh",
     background: "#F8FAFC",

@@ -7,6 +7,7 @@
  * dependency assumed) so it runs the moment this scaffold is deployed.
  */
 import { useState } from "react";
+import type { CSSProperties, FormEvent, ReactNode } from "react";
 
 const BRAND = {
   gradientFrom: "#6366F1",
@@ -54,7 +55,7 @@ export default function WaitlistPage() {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setState({ status: "loading" });
     try {
@@ -217,7 +218,7 @@ function Field({
 }: {
   label: string;
   required?: boolean;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <label style={{ display: "block", marginBottom: 14 }}>
@@ -229,7 +230,7 @@ function Field({
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<string, CSSProperties> = {
   page: {
     minHeight: "100vh",
     background: BRAND.bg,
