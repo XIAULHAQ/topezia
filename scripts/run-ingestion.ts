@@ -133,7 +133,11 @@ async function processJob(
     descriptionText: rules.descriptionText,
   });
   const embedding = await embedText(embeddingInput);
-  await writeJobEmbedding(prisma, created.id, embedding);
+  if (embedding) {
+    await writeJobEmbedding(prisma, created.id, embedding);
+  }
+  // embedding === null means no provider is configured yet (see embed.ts) —
+  // the job still ships LIVE and gets embedded later by a backfill pass.
 
   // Dedup against existing LIVE jobs (fuzzy title + embedding rules) —
   // the exact-hash rule was already handled above before the insert.
@@ -161,6 +165,12 @@ async function main() {
   const limitArg = process.argv.find((a) => a.startsWith("--limit="));
   const sourceLimit = limitArg ? parseInt(limitArg.split("=")[1], 10) : undefined;
 
+  // Safety cap for bounded / smoke-test runs: process at most N jobs per
+  // source (the crawler still fetches the whole board in one request, we just
+  // don't push every posting through the LLM). Omit for a full production run.
+  const maxJobsArg = process.argv.find((a) => a.startsWith("--max-jobs-per-source="));
+  const maxJobsPerSource = maxJobsArg ? parseInt(maxJobsArg.split("=")[1], 10) : undefined;
+
   const sources = await prisma.source.findMany({
     where: { companySlug: { not: null } },
     orderBy: [{ isPriority: "desc" }, { createdAt: "asc" }], // founding employers first
@@ -174,8 +184,12 @@ async function main() {
   for (const source of sources) {
     if (!source.companySlug) continue;
     try {
-      const jobs = await crawlSource(source.type, source.companySlug);
-      console.log(`  ${source.companySlug} (${source.type}): ${jobs.length} jobs found`);
+      const allJobs = await crawlSource(source.type, source.companySlug);
+      const jobs = maxJobsPerSource ? allJobs.slice(0, maxJobsPerSource) : allJobs;
+      console.log(
+        `  ${source.companySlug} (${source.type}): ${allJobs.length} jobs found` +
+          (maxJobsPerSource && allJobs.length > jobs.length ? ` (processing first ${jobs.length})` : "")
+      );
 
       for (const job of jobs) {
         try {

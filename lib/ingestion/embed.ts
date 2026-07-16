@@ -12,8 +12,23 @@
 
 const EMBEDDING_MODEL = "voyage-3-lite"; // cheapest tier; upgrade to voyage-3 if match quality needs it
 const EMBEDDING_DIM = 1536; // must match prisma/migrations/000_init_vector_support
+// NOTE: the "Job".embedding column is vector(1536), but no Voyage model emits
+// 1536 dims natively (their Matryoshka sizes are 256/512/1024/2048). Before
+// the first real embedding run, reconcile these: either switch to a model+dim
+// that matches (e.g. voyage-3.5-lite @ 1024) and re-dimension the column while
+// the table is still empty, or keep 1536 with a provider that supports it.
+// Until VOYAGE_API_KEY is set, embedText() no-ops (returns null) so the rest
+// of ingestion still runs — embeddings can be backfilled later.
 
-export async function embedText(text: string): Promise<number[]> {
+export async function embedText(text: string): Promise<number[] | null> {
+  if (!process.env.VOYAGE_API_KEY) {
+    // No embedding provider configured yet. Skip rather than throw: a missing
+    // enrichment key shouldn't drop every job from the index. Vector-based
+    // matching (spec §5) and dedup rule (c) simply stay dormant until a key
+    // exists, then a backfill pass can embed the LIVE jobs that have none.
+    return null;
+  }
+
   const res = await fetch("https://api.voyageai.com/v1/embeddings", {
     method: "POST",
     headers: {
