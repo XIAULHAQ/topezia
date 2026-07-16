@@ -29,15 +29,15 @@ export async function GET(
   });
 
   if (!job) {
-    return NextResponse.redirect(new URL("/jobs?error=not-found", req.url));
+    // Job id we don't recognize — send them back to their feed rather than a
+    // dead page. (The SEO /jobs/* lattice is Slice 4; not built yet.)
+    return NextResponse.redirect(new URL("/feed", req.url));
   }
 
   // Never send a click to a job we already know is dead — fail soft to our
   // own "sorry, this one expired" page instead of a broken external link.
   if (job.status === "EXPIRED" || job.status === "SUSPECTED_DEAD") {
-    return NextResponse.redirect(
-      new URL(`/jobs/expired?jobId=${jobId}`, req.url)
-    );
+    return NextResponse.redirect(new URL("/jobs/expired", req.url));
   }
 
   // Resolve the logged-in profile, if any. Anonymous clicks (pre-signup
