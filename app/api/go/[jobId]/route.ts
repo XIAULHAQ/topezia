@@ -69,6 +69,20 @@ export async function GET(
     // Auth resolution failing should never block the redirect.
   }
 
+  // Fallback to the anonymous-session profile (pre-auth job seekers, spec §6.1
+  // stopgap) so feed clicks are still attributed for ranking signal.
+  if (!profileId) {
+    try {
+      const uid = cookies().get("topezia_uid")?.value;
+      if (uid) {
+        const profile = await prisma.profile.findUnique({ where: { userId: uid }, select: { id: true } });
+        profileId = profile?.id ?? null;
+      }
+    } catch {
+      // ignore — never block the redirect
+    }
+  }
+
   if (profileId) {
     await prisma.jobClick.create({
       data: {
