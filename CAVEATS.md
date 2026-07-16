@@ -55,14 +55,15 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   Clearing cookies loses the profile; no cross-device continuity.
 - 🟡 **Résumé entry is text-paste only** — no file/PDF upload yet. The trucking
   8-question questionnaire path (§3.4) isn't built.
-- 🟡 **`/` redirects to `/waitlist`** (founding-employer). The job-seeker entry is
-  `/onboard`, not yet linked from anywhere public.
+- 🟢 **Root `/` is now the product landing** (hero + CTA into `/onboard`);
+  returning visitors with a profile redirect to `/feed`. The founding-employer
+  waitlist still lives at `/waitlist` (linked from the landing nav).
 - 🟡 **Feed "refine" input is a disabled placeholder**; the "Saved" filter is a
   stub (saves aren't wired).
 - 🟡 **Layout B (structured-hourly cards for healthcare/trucking) isn't built** —
   the feed renders Layout A for everything. Current data is knowledge-work, so
   Layout B is untested.
-- 🟡 **Test artifacts in prod:** a couple of test Profile rows from verification.
+- 🟢 **Test Profile rows cleared** from prod (0 profiles now).
 
 ## Not started (Slice 4, spec §7–9)
 - 🟡 Programmatic SEO pages, sitemap, JobPosting schema emission.
