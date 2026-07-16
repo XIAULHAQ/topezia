@@ -42,20 +42,45 @@ export default function FeedPage() {
   const [stats, setStats] = useState<{ strong: number; totalLive: number } | null>(null);
   const [filter, setFilter] = useState<Filter>("All matches");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
-      const res = await fetch("/api/matches");
-      if (res.status === 401) {
-        router.replace("/onboard");
-        return;
+      try {
+        const res = await fetch("/api/matches");
+        if (res.status === 401) {
+          router.replace("/onboard");
+          return;
+        }
+        if (!res.ok) throw new Error(`server ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+        setMatches(data.matches || []);
+        setStats(data.stats || null);
+        setLoading(false);
+      } catch {
+        if (cancelled) return;
+        setError("Scoring your matches is taking longer than expected — the first load can be slow. Please try again.");
+        setLoading(false);
       }
-      const data = await res.json();
-      setMatches(data.matches || []);
-      setStats(data.stats || null);
-      setLoading(false);
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
+
+  if (error) {
+    return (
+      <main style={S.page}>
+        <div style={S.loadingWrap}>
+          <div style={S.brand}>topezia</div>
+          <p style={{ color: MUTED, margin: "20px 0" }}>{error}</p>
+          <button style={S.retry} onClick={() => window.location.reload()}>Try again</button>
+        </div>
+      </main>
+    );
+  }
 
   const shown = matches.filter((m) => {
     if (filter === "Remote") return m.remoteType.startsWith("REMOTE");
@@ -181,6 +206,7 @@ const S: Record<string, CSSProperties> = {
   page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "'Plus Jakarta Sans', sans-serif", color: INK },
   loadingWrap: { maxWidth: 640, margin: "0 auto", padding: "120px 16px", textAlign: "center" },
   spinner: { width: 36, height: 36, border: `3px solid #e2e2ea`, borderTopColor: INDIGO, borderRadius: "50%", margin: "20px auto", animation: "spin 0.8s linear infinite" },
+  retry: { padding: "12px 24px", background: INDIGO, color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "'Plus Jakarta Sans', sans-serif" },
   brand: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO },
   topbar: { display: "flex", alignItems: "center", gap: 16, padding: "14px 24px", background: "#fff", borderBottom: "1px solid #ececf2", position: "sticky", top: 0, zIndex: 10 },
   refine: { flex: 1, padding: "10px 14px", borderRadius: 999, border: "1px solid #e2e2ea", fontSize: 14, fontFamily: "inherit", background: "#f7f7fb" },

@@ -26,8 +26,9 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟡 **Skill sprawl.** LLM extraction coins many skills (49 from 10 jobs, some
   phrases not atomic skills). They're now flagged `reviewed=false` (§3.3), but
   nothing consumes that flag yet — SEO/gap-count features must filter on it.
-- 🟡 **Per-skill DB queries** in taxonomy resolution — a batching opportunity;
-  a big part of the ~27s/job ingest cost.
+- 🟢 **Skill resolution now batched** (`resolveSkillsMap`) — a fixed handful of
+  queries instead of ~2-3 per skill. Cut profile save from ~21s → ~8s; also
+  speeds ingestion.
 - 🟡 **On LLM/API error a job is skipped and retried next run** (no partial save),
   so a credit lapse or provider outage yields 0 jobs rather than degraded ones.
 - 🟡 **Dedup rule (c)** needs both jobs already embedded; genuine near-duplicate
@@ -40,10 +41,21 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 ## Embeddings & matching
 - 🟠 **Voyage is on the free tier (3 req/min).** Embedding backfills and ingests
   are rate-limited; add a payment method before real volume.
+- 🔴 **First (cold) feed load is ~22s and can exceed the serverless function
+  timeout.** After batching the DB writes, the cold load is dominated by the
+  synchronous LLM rerank (~15s for 12 jobs). On Vercel's Hobby tier (10s limit)
+  this request times out → the feed spins forever AND the cache never gets
+  written, so retries also fail. This is the likely "forever loading" cause.
+  Fixes, in order: (a) raise the function limit — routes set `maxDuration = 60`;
+  confirm the Vercel plan honors it, else upgrade; (b) US-region DB (cuts the
+  DB portion of every request); (c) progressive/async rerank (return Stage-1
+  similarity results instantly, enrich with LLM scores after) — the real
+  architectural fix for a hard 10s limit.
 - 🟢 **Rerank caching DONE** (`MatchScore`, per profile-version × job). Warm feed
-  loads make zero LLM calls: measured cold 34s → warm 7.4s (4.6×). The warm 7.4s
-  is now entirely Seoul-DB round-trips, so it collapses further with a US-region
-  DB (see Infrastructure).
+  loads make zero LLM calls: cold 22s → warm ~6s. Warm is now pure DB latency,
+  so it collapses further with a US-region DB.
+- 🟢 **Feed fails gracefully** — a matches error now shows a "Try again" screen
+  instead of spinning forever.
 - 🟠 **Cache invalidates on profile change only.** A job that's re-ingested or
   edited keeps its cached score/why-line until the seeker's profile is re-saved.
   Acceptable at Phase-1 cadence; revisit if job content changes frequently.

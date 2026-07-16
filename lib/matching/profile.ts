@@ -11,7 +11,7 @@ import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import type { EmploymentType, RemoteType, SalaryPeriod, SkillSource } from "@prisma/client";
-import { resolveRole, resolveSkill } from "@/lib/ingestion/resolve-taxonomy";
+import { resolveRole, resolveSkillsMap } from "@/lib/ingestion/resolve-taxonomy";
 import { embedText, writeProfileEmbedding } from "@/lib/ingestion/embed";
 import type { ParsedResume } from "./parse-resume";
 
@@ -50,11 +50,12 @@ export async function createOrUpdateProfile(params: {
     ? await resolveRole(parsed.headlineRole, parsed.headlineRole)
     : null;
 
-  // Resolve skills, keeping the highest confidence when two raw names collapse
-  // to one canonical skill.
+  // Resolve skills in one batch (fast), keeping the highest confidence when two
+  // raw names collapse to one canonical skill.
+  const idByName = await resolveSkillsMap(parsed.skills.map((s) => s.name));
   const skillConfidence = new Map<string, number>();
   for (const s of parsed.skills) {
-    const id = await resolveSkill(s.name);
+    const id = idByName.get(s.name.trim());
     if (!id) continue;
     skillConfidence.set(id, Math.max(skillConfidence.get(id) ?? 0, s.confidence));
   }

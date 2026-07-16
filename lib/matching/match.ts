@@ -96,31 +96,26 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
 
   // Stage 1 — vector retrieval. Pull a generous candidate pool ordered by
   // cosine similarity, then apply hard filters in JS (small pool, keeps the
-  // SQL free of array-binding). Falls back to recency if the profile has no
-  // embedding yet (e.g. Voyage not configured at parse time).
-  const hasEmbedding = await prisma.$queryRawUnsafe<{ ok: boolean }[]>(
-    `SELECT (embedding IS NOT NULL) AS ok FROM "Profile" WHERE id = $1`,
-    profileId
-  );
-
-  let candidates: CandidateRow[];
+  // SQL free of array-binding). The `AND p.embedding IS NOT NULL` means this
+  // returns 0 rows when the profile has no embedding yet, in which case we fall
+  // back to recency — one fewer round-trip than checking embedding separately.
   const selectCols = `j.id, j."titleRaw", j."titleNormalized", j."companyName", j.source::text AS source,
       j."sourceUrl", j."remoteType", j."employmentType", j."salaryMin", j."salaryMax",
       j."salaryPeriod", j."locationState", j."lastVerifiedAt", j."descriptionRaw",
       v.slug AS "verticalSlug", v."cardLayout"::text AS "cardLayout"`;
 
-  if (hasEmbedding[0]?.ok) {
-    candidates = await prisma.$queryRawUnsafe<CandidateRow[]>(
-      `SELECT ${selectCols}, 1 - (j.embedding <=> p.embedding) AS similarity
-       FROM "Job" j
-       JOIN "Vertical" v ON v.id = j."verticalId"
-       CROSS JOIN "Profile" p
-       WHERE p.id = $1 AND j.status = 'LIVE' AND j.embedding IS NOT NULL
-       ORDER BY j.embedding <=> p.embedding
-       LIMIT 100`,
-      profileId
-    );
-  } else {
+  let candidates = await prisma.$queryRawUnsafe<CandidateRow[]>(
+    `SELECT ${selectCols}, 1 - (j.embedding <=> p.embedding) AS similarity
+     FROM "Job" j
+     JOIN "Vertical" v ON v.id = j."verticalId"
+     CROSS JOIN "Profile" p
+     WHERE p.id = $1 AND p.embedding IS NOT NULL AND j.status = 'LIVE' AND j.embedding IS NOT NULL
+     ORDER BY j.embedding <=> p.embedding
+     LIMIT 100`,
+    profileId
+  );
+
+  if (candidates.length === 0) {
     candidates = await prisma.$queryRawUnsafe<CandidateRow[]>(
       `SELECT ${selectCols}, 0::float8 AS similarity
        FROM "Job" j
@@ -177,12 +172,14 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       },
       uncached
     );
-    for (const [jobId, r] of fresh) {
-      scores.set(jobId, r);
-      await prisma.matchScore.upsert({
-        where: { profileId_jobId: { profileId, jobId } },
-        create: { profileId, jobId, matchVersion: version, ...r },
-        update: { matchVersion: version, ...r },
+    for (const [jobId, r] of fresh) scores.set(jobId, r);
+    // Write the cache in two batched statements instead of one upsert per job
+    // (N sequential round-trips was a big chunk of the cold-load latency).
+    const freshIds = [...fresh.keys()];
+    if (freshIds.length > 0) {
+      await prisma.matchScore.deleteMany({ where: { profileId, jobId: { in: freshIds } } });
+      await prisma.matchScore.createMany({
+        data: freshIds.map((jobId) => ({ profileId, jobId, matchVersion: version, ...fresh.get(jobId)! })),
       });
     }
   }

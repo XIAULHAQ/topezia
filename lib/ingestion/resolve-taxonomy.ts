@@ -115,15 +115,90 @@ export async function resolveSkill(raw: string): Promise<string | null> {
   return created.id;
 }
 
-export async function resolveSkills(skillNames: string[]): Promise<string[]> {
-  const resolvedIds: string[] = [];
-  for (const raw of skillNames) {
-    const id = await resolveSkill(raw);
-    if (id) resolvedIds.push(id);
+/**
+ * Batched skill resolution — maps each (trimmed) raw name to a canonical Skill
+ * id, creating new skills as needed. Uses a fixed handful of queries instead of
+ * ~2-3 per skill, which is what made résumé parse / ingestion slow against a
+ * high-latency DB. Returns a Map so callers that need per-skill data (e.g.
+ * profile confidence) can look ids up by name.
+ */
+export async function resolveSkillsMap(skillNames: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>(); // trimmed name -> skillId
+
+  const cleaned = [...new Set(skillNames.map((n) => n.trim()))].filter(
+    (n) => n && n.length <= 64 && /[a-z]/i.test(n)
+  );
+  if (cleaned.length === 0) return result;
+
+  // 1. Existing aliases (exact raw text).
+  const aliases = await prisma.skillAlias.findMany({
+    where: { rawText: { in: cleaned } },
+    select: { rawText: true, skillId: true },
+  });
+  const aliasMap = new Map(aliases.map((a) => [a.rawText, a.skillId]));
+  const remaining = cleaned.filter((n) => {
+    const id = aliasMap.get(n);
+    if (id) result.set(n, id);
+    return !id;
+  });
+  if (remaining.length === 0) return result;
+
+  // 2. Existing skills by slug.
+  const slugOf = new Map(remaining.map((n) => [n, skillSlug(n)]));
+  const slugs = [...new Set([...slugOf.values()].filter(Boolean))];
+  const bySlug = slugs.length
+    ? await prisma.skill.findMany({ where: { slug: { in: slugs } }, select: { id: true, slug: true } })
+    : [];
+  const slugToId = new Map(bySlug.map((s) => [s.slug, s.id]));
+
+  const newAliases: { rawText: string; skillId: string; resolvedBy: "LLM" }[] = [];
+  const newSkillBySlug = new Map<string, string>(); // slug -> name (first wins)
+  const needsSkill: string[] = [];
+  for (const n of remaining) {
+    const slug = slugOf.get(n)!;
+    if (!slug) continue;
+    const id = slugToId.get(slug);
+    if (id) {
+      result.set(n, id);
+      newAliases.push({ rawText: n, skillId: id, resolvedBy: "LLM" });
+    } else {
+      if (!newSkillBySlug.has(slug)) newSkillBySlug.set(slug, n);
+      needsSkill.push(n);
+    }
   }
-  // De-duplicate: two raw names in the same posting can resolve to one skill
-  // ("JavaScript" and "javascript", "AWS" and "aws"). The caller feeds these
-  // straight into a nested JobSkill create whose PK is (jobId, skillId), so a
-  // repeated id would throw a unique-constraint error and fail the whole job.
-  return [...new Set(resolvedIds)];
+
+  // 3. Create genuinely-new skills in one batch, then fetch their ids.
+  if (newSkillBySlug.size > 0) {
+    await prisma.skill.createMany({
+      data: [...newSkillBySlug.entries()].map(([slug, name]) => ({ slug, name })),
+      skipDuplicates: true,
+    });
+    const created = await prisma.skill.findMany({
+      where: { slug: { in: [...newSkillBySlug.keys()] } },
+      select: { id: true, slug: true },
+    });
+    const createdSlugToId = new Map(created.map((s) => [s.slug, s.id]));
+    for (const n of needsSkill) {
+      const id = createdSlugToId.get(slugOf.get(n)!);
+      if (id) {
+        result.set(n, id);
+        newAliases.push({ rawText: n, skillId: id, resolvedBy: "LLM" });
+      }
+    }
+  }
+
+  // 4. Persist all the new aliases in one batch.
+  if (newAliases.length > 0) {
+    await prisma.skillAlias.createMany({ data: newAliases, skipDuplicates: true });
+  }
+
+  return result;
+}
+
+export async function resolveSkills(skillNames: string[]): Promise<string[]> {
+  const map = await resolveSkillsMap(skillNames);
+  // De-duplicate: two raw names can resolve to one skill ("JavaScript" and
+  // "javascript"). The caller feeds these into a nested JobSkill create whose
+  // PK is (jobId, skillId), so a repeated id would violate the constraint.
+  return [...new Set(map.values())];
 }
