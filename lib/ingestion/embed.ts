@@ -97,3 +97,13 @@ export async function writeJobEmbedding(prisma: import("@prisma/client").PrismaC
     jobId
   );
 }
+
+/** Same as writeJobEmbedding, for the Profile table (spec §3.4, §5 retrieval). */
+export async function writeProfileEmbedding(prisma: import("@prisma/client").PrismaClient, profileId: string, embedding: number[]) {
+  const vectorLiteral = `[${embedding.join(",")}]`;
+  await prisma.$executeRawUnsafe(
+    `UPDATE "Profile" SET embedding = $1::vector WHERE id = $2`,
+    vectorLiteral,
+    profileId
+  );
+}

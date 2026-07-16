@@ -69,60 +69,58 @@ export async function resolveRole(rawTitle: string, roleGuessFromLlm: string | n
   return null;
 }
 
-export async function resolveSkills(skillNames: string[]): Promise<string[]> {
-  const resolvedIds: string[] = [];
+/**
+ * Resolve a single raw skill name to a canonical Skill id, creating it
+ * (reviewed=false, behind the §3.3 review flag) when genuinely new. Returns
+ * null for junk the taxonomy shouldn't absorb.
+ */
+export async function resolveSkill(raw: string): Promise<string | null> {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
 
-  for (const raw of skillNames) {
-    const trimmed = raw.trim();
-    if (!trimmed) continue;
+  // Guard against junk before it becomes a permanent taxonomy row. A real
+  // skill has at least one letter and isn't a whole sentence. Without this,
+  // symbol-only strings slugified to "" and all collapsed into a single
+  // empty-slug skill, and long LLM ramblings became "skills".
+  if (trimmed.length > 64) return null;
+  if (!/[a-z]/i.test(trimmed)) return null;
 
-    // Guard against junk before it becomes a permanent taxonomy row. A real
-    // skill has at least one letter and isn't a whole sentence. Without this,
-    // symbol-only strings slugified to "" and all collapsed into a single
-    // empty-slug skill, and long LLM ramblings became "skills". (Spec §3.3
-    // wants LLM-discovered skills behind a review flag; a proper gate needs
-    // a schema column and is tracked separately — these guards are the
-    // contained, no-migration version of that intent.)
-    if (trimmed.length > 64) continue;
-    if (!/[a-z]/i.test(trimmed)) continue;
+  const exact = await prisma.skillAlias.findUnique({
+    where: { rawText: trimmed },
+    select: { skillId: true },
+  });
+  if (exact) return exact.skillId;
 
-    const exact = await prisma.skillAlias.findUnique({
+  const slug = skillSlug(trimmed);
+  if (!slug) return null; // defensive: nothing usable left after normalization
+
+  const bySlug = await prisma.skill.findUnique({ where: { slug }, select: { id: true } });
+  if (bySlug) {
+    await prisma.skillAlias.upsert({
       where: { rawText: trimmed },
-      select: { skillId: true },
+      update: {},
+      create: { rawText: trimmed, skillId: bySlug.id, resolvedBy: "LLM" },
     });
-    if (exact) {
-      resolvedIds.push(exact.skillId);
-      continue;
-    }
-
-    const slug = skillSlug(trimmed);
-    if (!slug) continue; // defensive: nothing usable left after normalization
-
-    const bySlug = await prisma.skill.findUnique({ where: { slug }, select: { id: true } });
-    if (bySlug) {
-      await prisma.skillAlias.upsert({
-        where: { rawText: trimmed },
-        update: {},
-        create: { rawText: trimmed, skillId: bySlug.id, resolvedBy: "LLM" },
-      });
-      resolvedIds.push(bySlug.id);
-      continue;
-    }
-
-    // Genuinely new skill — create it. Skills taxonomy is meant to grow;
-    // unlike roles, we don't want to silently drop unrecognized skills,
-    // since under-counting skills directly weakens matching quality.
-    // reviewed defaults to false (schema) — LLM-discovered skills stay behind
-    // the review flag (spec §3.3) until a human vets them.
-    const created = await prisma.skill.create({
-      data: { slug, name: trimmed },
-    });
-    await prisma.skillAlias.create({
-      data: { rawText: trimmed, skillId: created.id, resolvedBy: "LLM" },
-    });
-    resolvedIds.push(created.id);
+    return bySlug.id;
   }
 
+  // Genuinely new skill — create it. Skills taxonomy is meant to grow; unlike
+  // roles, we don't want to silently drop unrecognized skills, since
+  // under-counting skills directly weakens matching quality. reviewed defaults
+  // to false (schema) — stays behind the review flag (spec §3.3) until vetted.
+  const created = await prisma.skill.create({ data: { slug, name: trimmed } });
+  await prisma.skillAlias.create({
+    data: { rawText: trimmed, skillId: created.id, resolvedBy: "LLM" },
+  });
+  return created.id;
+}
+
+export async function resolveSkills(skillNames: string[]): Promise<string[]> {
+  const resolvedIds: string[] = [];
+  for (const raw of skillNames) {
+    const id = await resolveSkill(raw);
+    if (id) resolvedIds.push(id);
+  }
   // De-duplicate: two raw names in the same posting can resolve to one skill
   // ("JavaScript" and "javascript", "AWS" and "aws"). The caller feeds these
   // straight into a nested JobSkill create whose PK is (jobId, skillId), so a
