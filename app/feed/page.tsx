@@ -19,7 +19,7 @@ type Match = {
   source: string; sourceUrl: string; remoteType: string; employmentType: string;
   salaryMin: number | null; salaryMax: number | null; salaryPeriod: string | null;
   locationState: string | null; lastVerifiedAt: string; similarity: number; score: number;
-  matchedSkills: string[]; gapSkills: string[]; whyLine: string;
+  matchedSkills: string[]; gapSkills: string[]; whyLine: string; pending: boolean;
 };
 
 const FILTERS = ["All matches", "Remote", "Hourly", "Saved"] as const;
@@ -43,11 +43,13 @@ export default function FeedPage() {
   const [filter, setFilter] = useState<Filter>("All matches");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
+  const [enriching, setEnriching] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        // Stage 1 — fast: jobs appear in ~2s with provisional scores.
         const res = await fetch("/api/matches");
         if (res.status === 401) {
           router.replace("/onboard");
@@ -59,6 +61,23 @@ export default function FeedPage() {
         setMatches(data.matches || []);
         setStats(data.stats || null);
         setLoading(false);
+
+        // Stage 2 — enrich the pending cards with real LLM scores + why-lines.
+        if (data.pending) {
+          setEnriching(true);
+          try {
+            const r2 = await fetch("/api/matches/rerank", { method: "POST" });
+            if (r2.ok) {
+              const d2 = await r2.json();
+              if (!cancelled) {
+                setMatches(d2.matches || []);
+                setStats(d2.stats || null);
+              }
+            }
+          } finally {
+            if (!cancelled) setEnriching(false);
+          }
+        }
       } catch {
         if (cancelled) return;
         setError("Scoring your matches is taking longer than expected — the first load can be slow. Please try again.");
@@ -108,6 +127,7 @@ export default function FeedPage() {
 
   return (
     <main style={S.page}>
+      <style>{"@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}"}</style>
       <header style={S.topbar}>
         <div style={S.brand}>topezia</div>
         <input style={S.refine} placeholder='Refine — e.g. "more remote, less agency work"' disabled title="Conversational refine — coming soon" />
@@ -125,6 +145,12 @@ export default function FeedPage() {
             ))}
           </div>
 
+          {enriching && (
+            <div style={S.enriching}>
+              <span style={S.enrichDot} /> Scoring your fit and writing why-lines…
+            </div>
+          )}
+
           {shown.length === 0 && (
             <div style={S.empty}>
               {filter === "Saved" ? "Saving jobs is coming soon." : "No matches in this view yet — try “All matches”, or widen your preferences."}
@@ -132,7 +158,7 @@ export default function FeedPage() {
           )}
 
           {shown.map((m, i) => {
-            const low = m.score < 70;
+            const low = !m.pending && m.score < 70;
             const open = expanded[m.jobId];
             return (
               <div key={m.jobId} style={low && !open ? S.cardLow : S.card}>
@@ -143,10 +169,12 @@ export default function FeedPage() {
                       {m.company} · {m.locationState || label(m.remoteType)} · {label(m.employmentType)}
                     </div>
                   </div>
-                  <div style={{ ...S.score, color: scoreColor(m.score) }}>{m.score}</div>
+                  <div style={{ ...S.score, color: m.pending ? "#c7c7d1" : scoreColor(m.score) }}>{m.score}</div>
                 </div>
 
-                {low && !open ? (
+                {m.pending ? (
+                  <p style={S.scoring}>Scoring your fit…</p>
+                ) : low && !open ? (
                   <button style={S.whyLow} onClick={() => setExpanded({ ...expanded, [m.jobId]: true })}>Why low?</button>
                 ) : (
                   <>
@@ -223,6 +251,9 @@ const S: Record<string, CSSProperties> = {
   jobMeta: { color: MUTED, fontSize: 14, marginTop: 3 },
   score: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 30, lineHeight: 1 },
   why: { fontSize: 15, lineHeight: 1.5, margin: "12px 0", color: "#374151" },
+  scoring: { fontSize: 14, color: "#9ca3af", margin: "10px 0", fontStyle: "italic" },
+  enriching: { display: "flex", alignItems: "center", gap: 8, background: "#eef0ff", color: INDIGO, padding: "10px 14px", borderRadius: 10, fontSize: 14, fontWeight: 600, marginBottom: 14 },
+  enrichDot: { width: 10, height: 10, borderRadius: "50%", background: INDIGO, animation: "pulse 1s ease-in-out infinite", display: "inline-block" },
   chips: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 },
   chipHave: { padding: "4px 9px", background: "#ecfdf5", color: "#059669", border: "1px solid #a7f3d0", borderRadius: 999, fontSize: 13, fontWeight: 600 },
   chipGap: { padding: "4px 9px", background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a", borderRadius: 999, fontSize: 13, fontWeight: 600 },

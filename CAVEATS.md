@@ -41,16 +41,15 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 ## Embeddings & matching
 - 🟠 **Voyage is on the free tier (3 req/min).** Embedding backfills and ingests
   are rate-limited; add a payment method before real volume.
-- 🔴 **First (cold) feed load is ~22s and can exceed the serverless function
-  timeout.** After batching the DB writes, the cold load is dominated by the
-  synchronous LLM rerank (~15s for 12 jobs). On Vercel's Hobby tier (10s limit)
-  this request times out → the feed spins forever AND the cache never gets
-  written, so retries also fail. This is the likely "forever loading" cause.
-  Fixes, in order: (a) raise the function limit — routes set `maxDuration = 60`;
-  confirm the Vercel plan honors it, else upgrade; (b) US-region DB (cuts the
-  DB portion of every request); (c) progressive/async rerank (return Stage-1
-  similarity results instantly, enrich with LLM scores after) — the real
-  architectural fix for a hard 10s limit.
+- 🟢 **Progressive loading DONE — no more "forever loading."** `GET /api/matches`
+  now returns Stage-1 (retrieval + hard filters + cached scores; uncached come
+  back with a provisional similarity score and `pending=true`) with **no LLM
+  call**, so jobs paint immediately. The feed then calls `POST /api/matches/rerank`
+  to enrich pending cards with honest scores + why-lines in the background. No
+  single request blocks on the ~15s rerank.
+- 🟠 **Stage-1 is still ~7s against the Seoul DB** (retrieval + a few queries).
+  Fine (no timeout risk), but a US-region DB drops it to ~1s — the last big
+  latency lever.
 - 🟢 **Rerank caching DONE** (`MatchScore`, per profile-version × job). Warm feed
   loads make zero LLM calls: cold 22s → warm ~6s. Warm is now pure DB latency,
   so it collapses further with a US-region DB.

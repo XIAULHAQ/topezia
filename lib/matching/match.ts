@@ -35,10 +35,11 @@ export interface JobMatch {
   locationState: string | null;
   lastVerifiedAt: Date;
   similarity: number; // 0-1 cosine
-  score: number; // 0-100 rerank
+  score: number; // 0-100 (rerank when scored, else provisional from similarity)
   matchedSkills: string[];
   gapSkills: string[];
   whyLine: string;
+  pending: boolean; // true = not yet LLM-scored (provisional); enriched by rerank pass
 }
 
 interface CandidateRow {
@@ -64,11 +65,13 @@ interface CandidateRow {
 export interface MatchOptions {
   retrieveN?: number; // candidates kept after hard filters (default 30)
   rerankN?: number; // how many of those get an LLM score (default 12)
+  rerank?: boolean; // false = Stage-1 only (fast, provisional scores, no LLM)
 }
 
 export async function getMatches(profileId: string, opts: MatchOptions = {}): Promise<JobMatch[]> {
   const retrieveN = opts.retrieveN ?? 30;
   const rerankN = opts.rerankN ?? 12;
+  const rerank = opts.rerank ?? true;
 
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
@@ -162,7 +165,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
   );
 
   const uncached = toRerank.filter((j) => !scores.has(j.id));
-  if (uncached.length > 0) {
+  if (rerank && uncached.length > 0) {
     const fresh = await rerankBatch(
       {
         headline: headlineRoleName,
@@ -202,10 +205,12 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       locationState: j.locationState,
       lastVerifiedAt: j.lastVerifiedAt,
       similarity: j.similarity,
+      // Provisional score from cosine similarity until the LLM rerank lands.
       score: r?.score ?? Math.round(j.similarity * 100),
       matchedSkills: r?.matchedSkills ?? [],
       gapSkills: r?.gapSkills ?? [],
       whyLine: r?.whyLine ?? "",
+      pending: !r,
     };
   });
 
