@@ -4,6 +4,7 @@ import type { SeoPage, SeoJob } from "@/lib/seo/pages";
 import { countrySlugFor } from "@/lib/seo/pages";
 import { decodeHtmlEntities } from "@/lib/sanitize";
 import AlertCapture from "./AlertCapture";
+import SiteNav from "@/app/_components/SiteNav";
 
 const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
@@ -91,10 +92,7 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
     <main style={S.page}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd(page)) }} />
 
-      <header style={S.nav}>
-        <Link href="/" style={S.brand}>topezia</Link>
-        <Link href="/login" style={S.navLink}>Log in</Link>
-      </header>
+      <SiteNav />
 
       <div style={S.wrap}>
         <h1 style={S.h1}>{page.heading}</h1>

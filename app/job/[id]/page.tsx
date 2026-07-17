@@ -16,7 +16,7 @@ import type { CSSProperties } from "react";
 import { prisma } from "@/lib/prisma";
 import { sanitizeJobHtml, renderJobDescription } from "@/lib/sanitize";
 import { MIN_JOBS_FOR_PAGE } from "@/lib/seo/pages";
-import JobNav from "./job-nav";
+import SiteNav from "@/app/_components/SiteNav";
 
 const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
@@ -129,7 +129,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
     <main style={S.page}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
-      <JobNav />
+      <SiteNav />
 
       <div style={S.wrap}>
         {parent && (

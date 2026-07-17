@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Header nav for the job detail page.
+ * Shared header nav for the public job pages (detail + SEO listings).
  *
  * The page itself is statically cached (SEO), so it can't know your session
  * server-side without going dynamic. This hydrates after load and shows the
@@ -16,7 +16,7 @@ import { createClient } from "@/lib/supabase/client";
 const INDIGO = "#4f46e5";
 const MUTED = "#6b7280";
 
-export default function JobNav() {
+export default function SiteNav() {
   const [authed, setAuthed] = useState<boolean | null>(null);
 
   useEffect(() => {
