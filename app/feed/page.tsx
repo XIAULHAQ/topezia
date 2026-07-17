@@ -153,7 +153,10 @@ export default function FeedPage() {
       <style>{"@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}"}</style>
       <header style={S.topbar}>
         <div style={S.brand}>topezia</div>
-        <input style={S.refine} placeholder='Refine — e.g. "more remote, less agency work"' disabled title="Conversational refine — coming soon" />
+        <div style={S.refine} title="Conversational refine — coming soon" aria-disabled="true">
+          <span style={S.refineText}>Refine — e.g. &quot;more remote, less agency work&quot;</span>
+          <span style={S.soon}>Soon</span>
+        </div>
         <nav style={S.navLinks}>
           <a href="/profile" style={S.navLink}>Profile</a>
           <a href="/settings" style={S.navLink}>Settings</a>
@@ -273,7 +276,9 @@ const S: Record<string, CSSProperties> = {
   retry: { padding: "12px 24px", background: INDIGO, color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "'Plus Jakarta Sans', sans-serif" },
   brand: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO },
   topbar: { display: "flex", alignItems: "center", gap: 16, padding: "14px 24px", background: "#fff", borderBottom: "1px solid #ececf2", position: "sticky", top: 0, zIndex: 10 },
-  refine: { flex: 1, padding: "10px 14px", borderRadius: 999, border: "1px solid #e2e2ea", fontSize: 14, fontFamily: "inherit", background: "#f7f7fb" },
+  refine: { flex: 1, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 12px 10px 14px", borderRadius: 999, border: "1px dashed #d4d4dc", fontSize: 14, background: "transparent", cursor: "default" },
+  refineText: { color: "#a1a1aa", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  soon: { flexShrink: 0, fontSize: 11, fontWeight: 700, color: MUTED, background: "#ececf2", borderRadius: 999, padding: "2px 8px" },
   navLinks: { display: "flex", gap: 16, alignItems: "center" },
   navLink: { color: MUTED, textDecoration: "none", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" },
   avatar: { width: 36, height: 36, borderRadius: "50%", background: "#eef0ff", color: INDIGO, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 },
