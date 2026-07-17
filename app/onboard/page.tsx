@@ -36,6 +36,8 @@ export default function OnboardPage() {
   const router = useRouter();
   const [step, setStep] = useState<"paste" | "confirm">("paste");
   const [resumeText, setResumeText] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,11 +63,34 @@ export default function OnboardPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Parse failed");
+      if (data.resumeText) setResumeText(data.resumeText);
       setParsed(data.parsed);
       setSkills(data.parsed.skills || []);
       setStep("confirm");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function doParseFile(file: File) {
+    setLoading(true);
+    setError(null);
+    setFileName(file.name);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/parse", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Couldn't read that file");
+      if (data.resumeText) setResumeText(data.resumeText);
+      setParsed(data.parsed);
+      setSkills(data.parsed.skills || []);
+      setStep("confirm");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+      setFileName(null);
     } finally {
       setLoading(false);
     }
@@ -109,19 +134,56 @@ export default function OnboardPage() {
           <>
             <h1 style={S.h1}>Upload your résumé once.</h1>
             <p style={S.sub}>
-              Paste your résumé below. We&apos;ll read it, show you only the jobs actually worth your
-              time — and tell you why.
+              Drop in your résumé — we&apos;ll read it, then show you only the jobs actually worth
+              your time, and tell you why.
             </p>
-            <textarea
-              style={S.textarea}
-              placeholder="Paste your full résumé text here…"
-              value={resumeText}
-              onChange={(e) => setResumeText(e.target.value)}
-            />
+
+            <label
+              style={dragging ? S.dropzoneActive : S.dropzone}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                const f = e.dataTransfer.files?.[0];
+                if (f && !loading) doParseFile(f);
+              }}
+            >
+              <input
+                type="file"
+                accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                style={{ display: "none" }}
+                disabled={loading}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) doParseFile(f); }}
+              />
+              <div style={S.dropIcon}>📄</div>
+              <div style={S.dropTitle}>
+                {loading && fileName ? `Reading ${fileName}…` : "Drop your résumé here, or click to browse"}
+              </div>
+              <div style={S.dropSub}>PDF, DOCX or plain text — up to 4MB. We read it and don&apos;t keep the file.</div>
+            </label>
+
+            {/* LinkedIn has no profile API for apps like us — Sign in with
+                LinkedIn returns only name/email/photo. Exporting the profile to
+                PDF is the honest equivalent, so point people at it. */}
+            <p style={S.hint}>
+              Only have LinkedIn? Open your profile → <strong>More</strong> → <strong>Save to PDF</strong>, and drop that in.
+            </p>
+
+            <details style={S.details}>
+              <summary style={S.summary}>…or paste the text instead</summary>
+              <textarea
+                style={S.textarea}
+                placeholder="Paste your full résumé text here…"
+                value={resumeText}
+                onChange={(e) => setResumeText(e.target.value)}
+              />
+              <button style={btn(loading || resumeText.trim().length < 40)} onClick={doParse} disabled={loading || resumeText.trim().length < 40}>
+                {loading ? "Reading your résumé…" : "Parse pasted text"}
+              </button>
+            </details>
+
             {error && <p style={S.error}>{error}</p>}
-            <button style={btn(loading || resumeText.trim().length < 40)} onClick={doParse} disabled={loading || resumeText.trim().length < 40}>
-              {loading ? "Reading your résumé…" : "Parse my résumé"}
-            </button>
           </>
         )}
 
@@ -223,6 +285,14 @@ const S: Record<string, CSSProperties> = {
   brand: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, marginBottom: 28 },
   h1: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 30, margin: "0 0 8px" },
   sub: { color: MUTED, fontSize: 16, margin: "0 0 20px", lineHeight: 1.5 },
+  dropzone: { display: "block", border: "2px dashed #d9dcff", background: "#fff", borderRadius: 16, padding: "36px 24px", textAlign: "center", cursor: "pointer", transition: "all .15s" },
+  dropzoneActive: { display: "block", border: `2px dashed ${INDIGO}`, background: "#eef0ff", borderRadius: 16, padding: "36px 24px", textAlign: "center", cursor: "pointer" },
+  dropIcon: { fontSize: 30, marginBottom: 8 },
+  dropTitle: { fontFamily: "'Sora', sans-serif", fontWeight: 700, fontSize: 16, marginBottom: 6 },
+  dropSub: { color: MUTED, fontSize: 13 },
+  hint: { color: MUTED, fontSize: 13, textAlign: "center", marginTop: 12, lineHeight: 1.5 },
+  details: { marginTop: 18 },
+  summary: { color: INDIGO, fontSize: 14, fontWeight: 700, cursor: "pointer", marginBottom: 10 },
   textarea: { width: "100%", minHeight: 240, padding: 16, fontSize: 14, borderRadius: 12, border: "1px solid #e2e2ea", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" },
   card: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 20, marginBottom: 16 },
   cardLabel: { fontSize: 13, fontWeight: 700, color: MUTED, marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.4 },

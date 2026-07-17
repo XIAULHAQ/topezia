@@ -110,8 +110,24 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   rely on.
 - 🟡 **No password reset / logout UI yet.** Supabase supports reset out of the
   box but it needs email delivery (same dependency as above).
-- 🟡 **Résumé entry is text-paste only** — no file/PDF upload yet. The trucking
-  8-question questionnaire path (§3.4) isn't built.
+- 🟢 **Résumé upload BUILT** — PDF / DOCX / txt, drag-and-drop, parsed in memory
+  and **never stored** (a résumé is sensitive personal data; we only need the
+  text, so keeping the file is liability with no upside — `resumeFileUrl` stays
+  null). Scanned/image PDFs, oversized files and wrong types get real messages,
+  not a 500. Paste remains as a fallback.
+- 🟠 **"Connect LinkedIn" is not buildable as envisioned.** LinkedIn has no
+  profile-import API for apps like us — "Sign in with LinkedIn" returns only
+  name/email/photo, not work history or skills; full access needs a Talent
+  Solutions partnership, and scraping violates their ToS. The honest equivalent,
+  now shipped: the user exports their own profile (More → Save to PDF) and drops
+  it into the uploader. Onboarding says exactly that.
+- 🟡 **The trucking 8-question questionnaire path (§3.4) isn't built.**
+- 🟡 **Parse gaps vs. the product vision:** no industries, no candidate location,
+  and skills carry extraction *confidence* ("did the résumé really say this?")
+  rather than *proficiency* ("how good are they?") — different things.
+- 🟡 **Preference gaps:** "locations you'd consider" exists in the schema but
+  onboarding never asks (hardcoded `[]`); no visa/work-authorization question;
+  salary is a floor, not a range.
 - 🟢 **Root `/` is now the product landing** (hero + CTA into `/onboard`);
   returning visitors with a profile redirect to `/feed`. The founding-employer
   waitlist still lives at `/waitlist` (linked from the landing nav).
