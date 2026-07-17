@@ -496,4 +496,16 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟡 **Roadmap "certs" are description-text ILIKE counts.** "CKA in 41 postings"
   is a substring match on descriptionRaw — real, but it'd also catch a passing
   mention or a coincidental substring. Good enough to surface; not a curated
-  requirements parse.
+  requirements parse.- 🟢 **Vercel VOYAGE_API_KEY added + all profiles backfilled.** Prod was missing
+  the key, so every profile created on the live site shipped with no embedding
+  and matched on recency — a US backend engineer was shown Indian security roles.
+  Key now on Vercel (verified: prod profile creation returns embedded:true), and
+  scripts/backfill-profile-embeddings.ts embedded the 6 pre-existing profiles
+  (real ones included). Verified: the backend-engineer profile went from Meesho
+  security roles to 12/12 engineering matches (Palantir/PostHog/Xero, scores
+  82-84). The script is resumable (embedding IS NULL only) and bumps matchVersion
+  so the stale recency-based MatchScore cache is dropped.
+- 🟡 **The feed "Refine" box was a disabled placeholder that looked active** —
+  owner tried to filter with it. Now a dashed "Soon" pill, clearly not-yet-built.
+  The real filters are the pills (All matches / Remote / Hourly). "Saved" also
+  still returns empty (saves not wired).
