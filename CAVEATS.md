@@ -65,15 +65,21 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   retrieved pool isn't shown.
 
 ## Auth & product
-- 🟠 **Email+password auth built (Supabase Auth), pending config to go live.**
-  Sign up / log in (`/login`), session middleware, identity resolution
-  (auth id → anon cookie fallback), and anon-profile linking on sign-in are all
-  implemented; the anonymous "no account needed to start" flow still works. To
-  activate: (1) put the US project's anon key in Vercel + local `.env`
-  (`NEXT_PUBLIC_SUPABASE_URL` already set to the US project); (2) in the Supabase
-  dashboard enable the Email provider, **disable "Confirm email"** (MVP: no email
-  delivery), and set Site URL + redirect URLs; (3) redeploy. The final signup
-  test is the owner's — I can't create accounts / enter passwords by policy.
+- 🟢 **Real email+password auth is LIVE and verified in production.** Supabase
+  Auth (email provider on, signups allowed, confirm-email off → instant signup,
+  no email delivery needed). `/login`, session middleware, identity resolution
+  (auth id → anon cookie fallback), and anon-profile linking all working;
+  the anonymous "no account needed to start" flow is preserved. Verified live:
+  account created and the pre-signup anonymous profile (13 skills, 12 cached
+  match scores) migrated onto it — profiles now survive cookie-clears and work
+  cross-device.
+- 🟡 **Signup emails are unverified** (confirm-email is off for a frictionless
+  MVP), so people can register a typo'd or someone else's address. Turn "Confirm
+  email" back on once a real email provider (Resend/Brevo, spec §9) is wired for
+  Slice 4 alerts — Supabase's built-in free-tier email is too rate-limited to
+  rely on.
+- 🟡 **No password reset / logout UI yet.** Supabase supports reset out of the
+  box but it needs email delivery (same dependency as above).
 - 🟡 **Résumé entry is text-paste only** — no file/PDF upload yet. The trucking
   8-question questionnaire path (§3.4) isn't built.
 - 🟢 **Root `/` is now the product landing** (hero + CTA into `/onboard`);
