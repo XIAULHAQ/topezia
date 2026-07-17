@@ -326,6 +326,7 @@ model Profile {
   workAuthorization WorkAuthorization @default(NOT_SPECIFIED)
   country          String?  // ISO-2, derived from currentLocation; scopes the feed
   verticalsOptIn   String[] // vertical slugs
+  tier             MemberTier @default(FREE) // paywall stub — see MemberTier
 
   // alternate entry path (trucking questionnaire, §3.4) — same shape, resumeFileUrl null
   entryPath        EntryPath @default(RESUME)
@@ -397,6 +398,12 @@ enum SkillProficiency {
   PROFICIENT // used regularly
   ADVANCED // deep, sustained use
   EXPERT // leads/teaches others in it
+}
+
+enum MemberTier {
+  FREE
+  PREMIUM // reserved: gates the deep roadmap + tracking. Everything is FREE now;
+          // this exists so flipping the paywall later is a config change, not a migration.
 }
 
 enum WorkAuthorization {

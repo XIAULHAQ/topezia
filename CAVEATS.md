@@ -436,4 +436,17 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   Added single-segment place pages (/jobs/germany, /jobs/california) as the hub
   targets — full-name slugs, so "canada" and "california" don't collide the way
   the 2-letter codes would. Browser-verified: hub → Germany chip → "Jobs in
-  Germany" (77), no console errors. In sitemap at priority 0.9.
+  Germany" (77), no console errors. In sitemap at priority 0.9.- 🟢 **Editable profile page shipped (/profile, Panel 1).** Until now the ONLY
+  way to change a profile was re-uploading a résumé — now every structured field
+  is editable in place, and each carries a provenance badge (from your résumé /
+  we inferred / you added), derived from the skill source + confidence we
+  already store. Saving bumps matchVersion (cache invalidated) and re-embeds
+  when headline/skills change. Hand-edits preserve a skill's original source —
+  a résumé skill stays "from your résumé" after you tweak its level. New
+  MemberTier flag (migration 013) stubs the roadmap paywall; nothing reads it
+  yet, everyone is FREE. Verified in-browser end to end: Kubernetes → familiar
+  persisted with RESUME provenance intact and matchVersion bumped.
+- 🟡 **Still no logout / password-reset UI, and /settings is a dead link.** The
+  profile page links to /settings (data export, delete, alert management) which
+  isn't built yet — next slice. Profile edit is the core; settings is the
+  load-bearing-but-unglamorous half.

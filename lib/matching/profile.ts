@@ -157,3 +157,125 @@ export async function createOrUpdateProfile(params: {
 
   return { profileId: profile.id, embedded: Boolean(embedding) };
 }
+
+
+export interface ProfileFieldEdit {
+  headline?: string | null;
+  seniority?: import("@prisma/client").Seniority;
+  yearsExperience?: number | null;
+  currentLocation?: string | null;
+  industries?: string[];
+  employmentTypes?: EmploymentType[];
+  remoteTypes?: RemoteType[];
+  locations?: string[];
+  salaryFloor?: number | null;
+  salaryTarget?: number | null;
+  salaryPeriod?: SalaryPeriod | null;
+  workAuthorization?: WorkAuthorization;
+  skills?: { name: string; proficiency: import("@prisma/client").SkillProficiency | null; source?: SkillSource }[];
+}
+
+/**
+ * Edit a profile's structured fields directly — the profile page's save path.
+ *
+ * Distinct from createOrUpdateProfile, which rebuilds everything from a fresh
+ * résumé parse. This applies a partial edit to an existing profile: only the
+ * keys present in `edit` change. Any edit that touches the matcher's inputs
+ * (headline, skills) re-embeds; every edit bumps matchVersion so cached scores
+ * are invalidated (§5). Skills edited by hand are marked source=MANUAL and
+ * confidence 1.0 — the user asserting a skill is the strongest signal there is.
+ */
+export async function updateProfileFields(
+  userId: string,
+  edit: ProfileFieldEdit
+): Promise<{ profileId: string; embedded: boolean } | null> {
+  const existing = await prisma.profile.findUnique({
+    where: { userId },
+    select: { id: true, headlineRoleId: true, workHistory: true },
+  });
+  if (!existing) return null;
+
+  const data: Prisma.ProfileUpdateInput = { matchVersion: randomUUID() };
+
+  if (edit.headline !== undefined) {
+    data.headlineRoleId = edit.headline ? await resolveRole(edit.headline, edit.headline) : null;
+  }
+  if (edit.seniority !== undefined) data.seniority = edit.seniority;
+  if (edit.yearsExperience !== undefined) data.yearsExperience = edit.yearsExperience;
+  if (edit.currentLocation !== undefined) {
+    data.currentLocation = edit.currentLocation;
+    data.country = extractCountry(edit.currentLocation); // keep feed scope honest
+  }
+  if (edit.industries !== undefined) data.industries = edit.industries;
+  if (edit.employmentTypes !== undefined) data.employmentTypes = edit.employmentTypes;
+  if (edit.remoteTypes !== undefined) data.remoteTypes = edit.remoteTypes;
+  if (edit.locations !== undefined) data.locations = edit.locations;
+  if (edit.salaryFloor !== undefined) data.salaryFloor = edit.salaryFloor;
+  if (edit.salaryTarget !== undefined) data.salaryTarget = edit.salaryTarget;
+  if (edit.salaryPeriod !== undefined) data.salaryPeriod = edit.salaryPeriod;
+  if (edit.workAuthorization !== undefined) data.workAuthorization = edit.workAuthorization;
+
+  await prisma.profile.update({ where: { id: existing.id }, data });
+
+  let skillNames: string[] | null = null;
+  if (edit.skills !== undefined) {
+    // Preserve provenance: a skill already on the profile keeps its source and
+    // confidence (so the "you told us / we inferred" badge survives an edit);
+    // one the user just typed is USER_ADDED at confidence 1.0 — asserting a
+    // skill is the strongest signal there is.
+    const prior = await prisma.profileSkill.findMany({
+      where: { profileId: existing.id },
+      select: { skillId: true, source: true, confidence: true },
+    });
+    const priorById = new Map(prior.map((p) => [p.skillId, p]));
+    const idByName = await resolveSkillsMap(edit.skills.map((s) => s.name));
+    const bySkill = new Map<string, { proficiency: import("@prisma/client").SkillProficiency | null; source: SkillSource; confidence: number }>();
+    for (const s of edit.skills) {
+      const id = idByName.get(s.name.trim());
+      if (!id || bySkill.has(id)) continue;
+      const was = priorById.get(id);
+      bySkill.set(id, {
+        proficiency: s.proficiency,
+        source: was?.source ?? s.source ?? ("USER_ADDED" as SkillSource),
+        confidence: was?.confidence ?? 1.0,
+      });
+    }
+    await prisma.profileSkill.deleteMany({ where: { profileId: existing.id } });
+    if (bySkill.size > 0) {
+      await prisma.profileSkill.createMany({
+        data: [...bySkill.entries()].map(([skillId, v]) => ({
+          profileId: existing.id, skillId, confidence: v.confidence, proficiency: v.proficiency, source: v.source,
+        })),
+        skipDuplicates: true,
+      });
+    }
+    skillNames = edit.skills.map((s) => s.name);
+  }
+
+  // Re-embed only when an input the embedding is built from changed.
+  let embedded = false;
+  if (edit.headline !== undefined || edit.skills !== undefined) {
+    const roleName = data.headlineRoleId !== undefined
+      ? edit.headline ?? ""
+      : existing.headlineRoleId
+        ? (await prisma.role.findUnique({ where: { id: existing.headlineRoleId }, select: { name: true } }))?.name ?? ""
+        : "";
+    if (skillNames === null) {
+      const cur = await prisma.profileSkill.findMany({ where: { profileId: existing.id }, select: { skill: { select: { name: true } } } });
+      skillNames = cur.map((c) => c.skill.name);
+    }
+    const history = (existing.workHistory as { title: string; company: string }[] | null) ?? [];
+    const input = buildProfileEmbeddingInput({
+      headlineRole: roleName,
+      skills: skillNames.map((name) => ({ name, confidence: 1, proficiency: null })),
+      workHistory: history,
+    } as ParsedResume);
+    const embedding = await embedText(input);
+    if (embedding) {
+      await writeProfileEmbedding(prisma, existing.id, embedding);
+      embedded = true;
+    }
+  }
+
+  return { profileId: existing.id, embedded };
+}
