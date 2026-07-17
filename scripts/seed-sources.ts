@@ -16,12 +16,16 @@
 import { prisma } from "@/lib/prisma";
 import { JobSource } from "@prisma/client";
 
+// Real, live boards only. NOTE: `leverdemo` was removed — it's Lever's own
+// sample board, so it served fake postings ("Account Executive (copy)", four
+// identical "Account Executive" rows). It exercised the Lever crawler, but demo
+// data must never reach real users or an alert email. The Lever crawler itself
+// is verified working; it just needs a real Lever board added here before launch.
 const SEED_SOURCES: { type: JobSource; companySlug: string; companyName: string }[] = [
   { type: JobSource.GREENHOUSE, companySlug: "dropbox", companyName: "Dropbox" },
   { type: JobSource.GREENHOUSE, companySlug: "discord", companyName: "Discord" },
   { type: JobSource.ASHBY, companySlug: "posthog", companyName: "PostHog" },
   { type: JobSource.ASHBY, companySlug: "linear", companyName: "Linear" },
-  { type: JobSource.LEVER, companySlug: "leverdemo", companyName: "Lever Demo" },
 ];
 
 async function main() {

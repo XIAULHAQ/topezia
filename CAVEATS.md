@@ -20,6 +20,21 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   auth path uses them — but update for tidiness. Also: the old Seoul DB password
   was changed, so `.env.seoul-backup` won't reconnect (fine; we're off Seoul).
 
+## Job detail page (product change vs. spec)
+- 🟢 **`/job/{id}` detail page BUILT.** Feed, SEO pages and alert emails now land
+  people on OUR page; "Apply on company site" goes out through the tracked `/go`
+  redirect (feed score/position carried through, so the ranking signal survives).
+  Third-party description HTML is sanitized (rendering it raw would be an XSS
+  hole); plain-text sources get paragraphs rebuilt from newlines.
+- 🟠 **This deviates from the spec.** §1/§6.3 say "send users straight to the
+  source". We now show the job first and apply out — still neutral (the
+  application always happens at the employer), and it's what every serious
+  aggregator does, but **topezia-phase1-spec.md should be updated to match**,
+  per the repo's own "fix the spec first" rule.
+- 🟡 **Job pages aren't in the sitemap.** Republishing full descriptions raises
+  duplicate-content and ATS-ToS questions worth a decision before indexing
+  thousands of them. They're crawlable via the SEO pages either way.
+
 ## Ingestion
 - 🟢 **Company name FIXED.** Greenhouse now auto-fetches the real name from board
   metadata; Ashby/Lever (which don't expose it) use a `Source.companyName`
@@ -27,6 +42,17 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   backfilled (Dropbox, Discord, PostHog, Linear, Lever Demo). Remaining nuance:
   a newly-discovered Ashby/Lever board with no override shows a title-cased slug
   until a name is set.
+- 🔴 **No live Lever source.** `leverdemo` was removed — it's Lever's own sample
+  board, so it served fake postings ("Account Executive (copy)", four identical
+  "Account Executive" rows) that reached a real alert email. The Lever crawler is
+  verified working; it needs a **real** Lever board added to `seed-sources.ts`
+  before launch. Current live sources: Greenhouse (dropbox, discord) + Ashby
+  (posthog, linear) = 39 real jobs.
+- 🟠 **Ashby descriptions are stored as plain text.** The crawler prefers
+  `descriptionPlain` over `descriptionHtml`, so detail pages lose real lists and
+  headings (we rebuild paragraphs from newlines as a fallback). Switch to
+  `descriptionHtml` at the next full re-ingest — changing it now would re-hash
+  every Ashby job and duplicate them.
 - 🟡 **Skill sprawl.** LLM extraction coins many skills (49 from 10 jobs, some
   phrases not atomic skills). They're now flagged `reviewed=false` (§3.3), but
   nothing consumes that flag yet — SEO/gap-count features must filter on it.

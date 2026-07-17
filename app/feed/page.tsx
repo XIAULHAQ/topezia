@@ -199,7 +199,7 @@ export default function FeedPage() {
                 <div style={S.cardFoot}>
                   <span style={S.fresh}>● {freshness(m.lastVerifiedAt)}</span>
                   <span style={S.via}>via {label(m.source)} → applies on company site</span>
-                  <a style={S.viewBtn} href={`/go/${m.jobId}?score=${m.score}&pos=${i + 1}`} target="_blank" rel="noreferrer">View job</a>
+                  <a style={S.viewBtn} href={`/job/${m.jobId}?score=${m.score}&pos=${i + 1}`}>View job</a>
                 </div>
               </div>
             );

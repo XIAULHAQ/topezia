@@ -87,7 +87,7 @@ export function renderAlertEmail(
       (j) => `<tr><td style="padding:12px 0;border-bottom:1px solid #ececf2;">
         <div style="font-weight:700;font-size:16px;color:#1a1a2e;">${escapeHtml(j.titleRaw)}</div>
         <div style="color:#6b7280;font-size:14px;margin-top:2px;">${escapeHtml(j.companyName)} · ${escapeHtml(j.locationState || j.remoteType.replace(/_/g, " ").toLowerCase())}</div>
-        <a href="${base}/go/${j.id}" style="display:inline-block;margin-top:8px;color:#4f46e5;font-weight:700;font-size:14px;text-decoration:none;">View job →</a>
+        <a href="${base}/job/${j.id}" style="display:inline-block;margin-top:8px;color:#4f46e5;font-weight:700;font-size:14px;text-decoration:none;">View job →</a>
       </td></tr>`
     )
     .join("");

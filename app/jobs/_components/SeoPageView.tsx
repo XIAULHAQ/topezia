@@ -87,7 +87,7 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
                     {pay ? ` · ${pay}` : ""}
                   </div>
                 </div>
-                <a style={S.viewBtn} href={`/go/${j.id}`} target="_blank" rel="noreferrer">View job</a>
+                <a style={S.viewBtn} href={`/job/${j.id}`}>View job</a>
               </div>
               <div style={S.fresh}>● {freshness(j.lastVerifiedAt)} · via {label(j.source)}</div>
             </div>
