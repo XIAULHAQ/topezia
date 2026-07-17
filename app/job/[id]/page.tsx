@@ -16,6 +16,7 @@ import type { CSSProperties } from "react";
 import { prisma } from "@/lib/prisma";
 import { sanitizeJobHtml, renderJobDescription } from "@/lib/sanitize";
 import { MIN_JOBS_FOR_PAGE } from "@/lib/seo/pages";
+import JobNav from "./job-nav";
 
 const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
@@ -32,7 +33,7 @@ async function getJob(id: string) {
     where: { id },
     select: {
       id: true, titleRaw: true, titleNormalized: true, companyName: true, descriptionRaw: true,
-      locationRaw: true, locationState: true, remoteType: true, employmentType: true, seniority: true,
+      locationRaw: true, locationState: true, country: true, remoteType: true, employmentType: true, seniority: true,
       salaryMin: true, salaryMax: true, salaryPeriod: true, postedAt: true, lastVerifiedAt: true,
       status: true, source: true, sourceUrl: true, roleId: true, verticalId: true,
       vertical: { select: { name: true, slug: true } },
@@ -109,9 +110,16 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
     datePosted: (job.postedAt ?? job.lastVerifiedAt).toISOString(),
     employmentType: job.employmentType,
     hiringOrganization: { "@type": "Organization", name: job.companyName },
-    jobLocation: job.remoteType.startsWith("REMOTE")
-      ? { "@type": "Place", address: { "@type": "PostalAddress", addressCountry: "US" } }
-      : { "@type": "Place", address: { "@type": "PostalAddress", addressRegion: job.locationState ?? undefined, addressCountry: "US" } },
+    // Use the job's real country, and omit it when unknown — hardcoding "US"
+    // told Google every UK/German posting was American.
+    jobLocation: {
+      "@type": "Place",
+      address: {
+        "@type": "PostalAddress",
+        ...(job.remoteType.startsWith("REMOTE") ? {} : { addressRegion: job.locationState ?? undefined }),
+        ...(job.country ? { addressCountry: job.country } : {}),
+      },
+    },
     ...(job.remoteType.startsWith("REMOTE") ? { jobLocationType: "TELECOMMUTE" } : {}),
     directApply: false,
     url: job.sourceUrl,
@@ -121,10 +129,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
     <main style={S.page}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
-      <header style={S.nav}>
-        <Link href="/" style={S.brand}>topezia</Link>
-        <Link href="/login" style={S.navLink}>Log in</Link>
-      </header>
+      <JobNav />
 
       <div style={S.wrap}>
         {parent && (
