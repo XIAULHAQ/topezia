@@ -446,7 +446,16 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   MemberTier flag (migration 013) stubs the roadmap paywall; nothing reads it
   yet, everyone is FREE. Verified in-browser end to end: Kubernetes → familiar
   persisted with RESUME provenance intact and matchVersion bumped.
-- 🟡 **Still no logout / password-reset UI, and /settings is a dead link.** The
-  profile page links to /settings (data export, delete, alert management) which
-  isn't built yet — next slice. Profile edit is the core; settings is the
-  load-bearing-but-unglamorous half.
+- 🟢 **Settings + data control shipped (/settings).** Export data (JSON
+  download), delete stored résumé text, unsubscribe alerts, delete account.
+  Delete-account deletes the non-cascading signals (JobClick/JobSave/
+  JobDismissal) explicitly in a transaction before the profile — a naive
+  profile.delete() would FK-error for any user who's clicked a job. Verified:
+  résumé-text delete cleared the text and kept the profile; account delete on a
+  throwaway profile with all child types removed everything cleanly.
+- 🔴 **Delete account does NOT delete the Supabase auth user.** It removes the
+  profile and all its data, but the auth account survives (needs the
+  service-role key, not wired). A signed-in user who "deletes" can still sign in
+  to an empty state. True account deletion needs a server-role admin call.
+- 🟡 **Still no logout / password-reset UI.** Auth exists (login works) but
+  there's no sign-out button anywhere and no reset flow.
