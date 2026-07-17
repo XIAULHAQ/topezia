@@ -154,11 +154,15 @@ export default function FeedPage() {
       <header style={S.topbar}>
         <div style={S.brand}>topezia</div>
         <input style={S.refine} placeholder='Refine — e.g. "more remote, less agency work"' disabled title="Conversational refine — coming soon" />
-        {authed ? (
-          <div style={S.avatar}>You</div>
-        ) : (
-          <a href="/login" style={S.saveBtn}>Save matches →</a>
-        )}
+        <nav style={S.navLinks}>
+          <a href="/profile" style={S.navLink}>Profile</a>
+          <a href="/settings" style={S.navLink}>Settings</a>
+          {authed ? (
+            <a href="/profile" style={{ ...S.avatar, textDecoration: "none" }}>You</a>
+          ) : (
+            <a href="/login" style={S.saveBtn}>Save matches →</a>
+          )}
+        </nav>
       </header>
 
       <div style={S.body}>
@@ -270,6 +274,8 @@ const S: Record<string, CSSProperties> = {
   brand: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO },
   topbar: { display: "flex", alignItems: "center", gap: 16, padding: "14px 24px", background: "#fff", borderBottom: "1px solid #ececf2", position: "sticky", top: 0, zIndex: 10 },
   refine: { flex: 1, padding: "10px 14px", borderRadius: 999, border: "1px solid #e2e2ea", fontSize: 14, fontFamily: "inherit", background: "#f7f7fb" },
+  navLinks: { display: "flex", gap: 16, alignItems: "center" },
+  navLink: { color: MUTED, textDecoration: "none", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" },
   avatar: { width: 36, height: 36, borderRadius: "50%", background: "#eef0ff", color: INDIGO, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 },
   saveBtn: { padding: "9px 16px", background: INDIGO, color: "#fff", borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: "none", whiteSpace: "nowrap" },
   body: { maxWidth: 1080, margin: "0 auto", padding: 24, display: "flex", gap: 24, alignItems: "flex-start" },
