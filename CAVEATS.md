@@ -92,7 +92,28 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   Layout B is untested.
 - 🟢 **Test Profile rows cleared** from prod (0 profiles now).
 
-## Not started (Slice 4, spec §7–9)
-- 🟡 Programmatic SEO pages, sitemap, JobPosting schema emission.
-- 🟡 Email alerts (Resend/Brevo).
-- 🟡 CPC-feed monetization (Talent.com / Jooble / Appcast) + affiliate slots.
+## Slice 4 (spec §7–9)
+- 🟢 **Programmatic SEO engine BUILT** (§7): `/jobs/{role|vertical}`,
+  `/jobs/remote-{role}`, `/jobs/{role}/{state}`, the ≥5-live-jobs floor
+  (auto-publish/unpublish, evaluated per request), `sitemap.xml` (self-pruning),
+  `robots.txt`, JobPosting JSON-LD, the role↔state↔remote internal-link lattice,
+  and absolute canonicals. Verified: 3 pages publish today (tech-software 24,
+  sales 19, account-executive 13); thin ones correctly 404.
+- 🔴 **`NEXT_PUBLIC_SITE_URL` must be updated in Vercel** to
+  `https://www.topezia.com` (it's still `https://topezia.com`, which 308-redirects
+  to www). Until then, production canonicals and every sitemap URL point at the
+  non-canonical host.
+- 🟡 **Only 3 SEO pages exist until ingestion scales** — by design (the anti-thin
+  rule). The launch target is 2–4k pages; that's gated on job volume, not code.
+- 🟡 **Page intros are templated, not LLM-written** (§7 wants a cached, monthly-
+  regenerated LLM intro per page so pages aren't near-duplicates). Fine at 3
+  pages; needed before publishing thousands.
+- 🟡 **No email-alert capture above the fold yet** — that slot currently holds a
+  résumé CTA. Needs the alerts system below.
+- 🟡 **Freshness not enforced on display.** Spec §4.4 says never show anything
+  unverified >48h; neither the feed nor SEO pages filter on `lastVerifiedAt`
+  (they'd empty out without the ingestion cron running). Wire this up when the
+  cron is turned on at launch.
+- 🟡 Email alerts (Resend/Brevo) — not started; needs a provider account.
+- 🟡 CPC-feed monetization (Talent.com / Jooble / Appcast) + affiliate slots —
+  not started; needs external feed accounts.

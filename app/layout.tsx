@@ -2,6 +2,10 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
+  // Resolves relative canonical/OG URLs in child pages to absolute ones —
+  // without this, canonicals emit as "/jobs/foo", which search engines
+  // shouldn't have to guess at. Must match the canonical host (www).
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com"),
   title: "Topezia",
   description: "AI-matched jobs, aggregated from everywhere. One resume, honest matches.",
 };
