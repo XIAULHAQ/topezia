@@ -396,3 +396,21 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   "Backend Engineer – Core Systems" rows, both DUPLICATE, pointing at each
   other). Now tie-breaks on id, so the verdict is identical whichever side asks;
   the demote is also guarded on status=LIVE. Verified: exactly one survivor.
+- 🟢 **Cron now uses the fast path.** `Ingest jobs` passes `--concurrency=8
+  --skip-embeddings` by default (scheduled runs included), with dispatch inputs
+  for concurrency, `--only=<slugs>`, a per-source cap, and an `inline_embeddings`
+  escape hatch. Without this the schedule would have embedded inline and stalled
+  on Voyage's 3 RPM inside a 60-minute budget. New `Backfill embeddings`
+  workflow (04/10/16/22 UTC, 55-min budget, resumable) gives those jobs their
+  vectors afterwards. All 5 workflow files YAML-linted.
+- 🟡 **Jobs are LIVE before they are embedded.** That is the deliberate trade:
+  they appear in the feed immediately but rank on recency, not similarity, until
+  the backfill reaches them. At Voyage free tier that is ~140 jobs per 55-minute
+  run — with ~1,242 jobs, roughly 9 runs (~2 days) to catch up from cold. A paid
+  Voyage tier collapses this to minutes; it is the single highest-value
+  unblock left.
+- 🟡 **Production ingest speed is still UNMEASURED.** Everything so far was timed
+  over a ~1-2.8s-per-query link from Pakistan. The runner should be far faster
+  (LLM-bound, not DB-bound) but that is an expectation, not a number — trigger
+  `Ingest jobs` from the Actions tab and read the "Xms/job wall-clock" line the
+  script now prints.

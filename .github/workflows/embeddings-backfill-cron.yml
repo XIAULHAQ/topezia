@@ -1,0 +1,55 @@
+# Fill in embeddings for jobs that shipped without one (spec §5 stage 1).
+#
+# Split from `Ingest jobs` on purpose: Voyage's free tier is 3 RPM, so
+# embedding inline makes every ingest worker sit in 20-40s backoff and destroys
+# the crawl's concurrency. Ingest ships jobs LIVE immediately; this pass gives
+# them their vector afterwards. Until it runs, those jobs still appear — the
+# matcher falls back to recency — they just don't rank on similarity.
+#
+# Resumable by construction (only touches embedding IS NULL), so a run that
+# times out simply continues next time. At 3 RPM this clears ~140 jobs per
+# 50-minute run; a paid Voyage tier makes --delay-ms far smaller and the whole
+# thing a non-issue.
+name: Backfill embeddings
+
+on:
+  schedule:
+    - cron: "0 4,10,16,22 * * *" # after each ingest, then keep chipping away
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max jobs to embed this run (blank = as many as fit)"
+        required: false
+        default: ""
+      delay_ms:
+        description: "Delay between Voyage calls (21000 = free tier 3 RPM)"
+        required: false
+        default: "21000"
+
+concurrency:
+  group: embeddings-backfill
+  cancel-in-progress: false # two backfills would race for the same rate limit
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Backfill embeddings
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+        run: |
+          ARGS="--delay-ms=${{ inputs.delay_ms || '21000' }}"
+          if [ -n "${{ inputs.limit }}" ]; then
+            ARGS="$ARGS --limit=${{ inputs.limit }}"
+          fi
+          echo "npx tsx scripts/backfill-embeddings.ts $ARGS"
+          npx tsx scripts/backfill-embeddings.ts $ARGS

@@ -8,6 +8,12 @@
 # `lastVerifiedAt` fresh, which is what lets the feed and SEO pages honestly
 # claim "verified live Xh ago". Re-crawling costs almost nothing: unchanged
 # postings hit the description-hash cache and never reach the LLM.
+#
+# Embeddings are NOT done here. Voyage's free tier is 3 RPM and embed.ts backs
+# off 20-40s on a 429, so inline embeddings leave every concurrent worker
+# blocked and would blow the 60-minute budget. `Backfill embeddings` fills them
+# in out of band; jobs ship LIVE meanwhile and the matcher falls back to
+# recency until they land.
 name: Ingest jobs
 
 on:
@@ -19,6 +25,19 @@ on:
         description: "Cap jobs processed per source (blank = all)"
         required: false
         default: ""
+      only:
+        description: "Only these board slugs, comma-separated (blank = all)"
+        required: false
+        default: ""
+      concurrency:
+        description: "Jobs processed in parallel per board"
+        required: false
+        default: "8"
+      inline_embeddings:
+        description: "Embed during the crawl (slow: Voyage free tier is 3 RPM)"
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: ingest
@@ -42,8 +61,15 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
         run: |
-          if [ -n "${{ inputs.max_jobs_per_source }}" ]; then
-            npx tsx scripts/run-ingestion.ts --max-jobs-per-source=${{ inputs.max_jobs_per_source }}
-          else
-            npm run ingest
+          ARGS="--concurrency=${{ inputs.concurrency || '8' }}"
+          if [ "${{ inputs.inline_embeddings }}" != "true" ]; then
+            ARGS="$ARGS --skip-embeddings"
           fi
+          if [ -n "${{ inputs.max_jobs_per_source }}" ]; then
+            ARGS="$ARGS --max-jobs-per-source=${{ inputs.max_jobs_per_source }}"
+          fi
+          if [ -n "${{ inputs.only }}" ]; then
+            ARGS="$ARGS --only=${{ inputs.only }}"
+          fi
+          echo "npx tsx scripts/run-ingestion.ts $ARGS"
+          npx tsx scripts/run-ingestion.ts $ARGS
