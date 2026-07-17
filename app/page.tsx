@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import { ANON_COOKIE } from "@/lib/anon-session";
+import { currentIdentity } from "@/lib/identity";
 import type { CSSProperties } from "react";
 
 const INDIGO = "#4f46e5";
@@ -13,9 +12,9 @@ const MUTED = "#6b7280";
 // profile go straight to their feed; everyone else gets the landing + CTA into
 // the résumé flow. The founding-employer waitlist still lives at /waitlist.
 export default async function Home() {
-  const uid = cookies().get(ANON_COOKIE)?.value;
-  if (uid) {
-    const profile = await prisma.profile.findUnique({ where: { userId: uid }, select: { id: true } });
+  const { userId } = await currentIdentity();
+  if (userId) {
+    const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
     if (profile) redirect("/feed");
   }
 

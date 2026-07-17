@@ -103,6 +103,10 @@ export default function FeedPage() {
     );
   }
 
+  // Until the rerank lands, every score is a provisional similarity number, so
+  // "strong matches" would read 0 for reasons that have nothing to do with fit.
+  const statsReady = stats !== null && !enriching && !matches.some((m) => m.pending);
+
   const shown = matches.filter((m) => {
     if (filter === "Remote") return m.remoteType.startsWith("REMOTE");
     if (filter === "Hourly") return m.salaryPeriod === "HOUR" || m.employmentType === "HOURLY";
@@ -216,7 +220,11 @@ export default function FeedPage() {
           </div>
           <div style={S.railCard}>
             <div style={S.railH}>Right now</div>
-            <p style={S.railBig}><b style={{ color: INDIGO }}>{stats?.strong ?? 0}</b> strong matches</p>
+            <p style={S.railBig}>
+              {statsReady
+                ? <><b style={{ color: INDIGO }}>{stats!.strong}</b> strong matches</>
+                : <><b style={S.railPending}>—</b> <span style={{ color: MUTED }}>counting strong matches…</span></>}
+            </p>
             <p style={S.railP}>over {stats?.totalLive ?? 0} verified jobs</p>
           </div>
           {topGaps.length > 0 && (
@@ -238,6 +246,7 @@ export default function FeedPage() {
 
 const S: Record<string, CSSProperties> = {
   page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "'Plus Jakarta Sans', sans-serif", color: INK },
+  railPending: { color: "#c7c7d1" } as const,
   loadingWrap: { maxWidth: 640, margin: "0 auto", padding: "120px 16px", textAlign: "center" },
   spinner: { width: 36, height: 36, border: `3px solid #e2e2ea`, borderTopColor: INDIGO, borderRadius: "50%", margin: "20px auto", animation: "spin 0.8s linear infinite" },
   retry: { padding: "12px 24px", background: INDIGO, color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "'Plus Jakarta Sans', sans-serif" },
