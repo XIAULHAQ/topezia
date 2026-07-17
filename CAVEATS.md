@@ -336,10 +336,12 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   US/Europe-centric and missed Pakistan — which is where our own test profile
   lives. An unlisted country silently becomes null (permissive, so it shows
   everything rather than nothing). Consider a real ISO-3166 library.
-- 🔴 **Voyage free tier is now a launch blocker, not a nuisance.** 3 RPM against
-  ~1,242 jobs is ~7 hours of embedding for one full ingest, and the boards
-  refresh continuously. Add a payment method before launch or the feed cannot
-  keep up with its own sources.
+- 🟢 **Voyage is on a paid tier — the 3 RPM cap is GONE (verified 2026-07-17:
+  6 concurrent calls, 0 rate-limited).** Backfill default dropped 21,000ms →
+  250ms in both the script and the workflow. This mattered before the next
+  scheduled backfill: at the old default the ~1,100 jobs from a full crawl would
+  have taken days. All 139 live jobs embedded; **100% retrievable by the
+  matcher**, up from 46%.
 - 🟢 **Location parsing rebuilt for the world: 25% → 2% unresolved** over 2,474
   real location strings from 14 non-US boards. Global boards name a CITY, not a
   country ("Berlin", "London - The River Building HQ", "AU - Sydney",
@@ -403,14 +405,22 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   on Voyage's 3 RPM inside a 60-minute budget. New `Backfill embeddings`
   workflow (04/10/16/22 UTC, 55-min budget, resumable) gives those jobs their
   vectors afterwards. All 5 workflow files YAML-linted.
-- 🟡 **Jobs are LIVE before they are embedded.** That is the deliberate trade:
-  they appear in the feed immediately but rank on recency, not similarity, until
-  the backfill reaches them. At Voyage free tier that is ~140 jobs per 55-minute
-  run — with ~1,242 jobs, roughly 9 runs (~2 days) to catch up from cold. A paid
-  Voyage tier collapses this to minutes; it is the single highest-value
-  unblock left.
+- 🟡 **Jobs are LIVE before they are embedded** — still the deliberate trade
+  (ingest stays fast, embeddings follow), but on the paid tier the gap is
+  minutes rather than days. Jobs without an embedding are invisible to stage-1
+  retrieval, so they appear in the feed but cannot be matched until backfilled.
 - 🟡 **Production ingest speed is still UNMEASURED.** Everything so far was timed
   over a ~1-2.8s-per-query link from Pakistan. The runner should be far faster
   (LLM-bound, not DB-bound) but that is an expectation, not a number — trigger
   `Ingest jobs` from the Actions tab and read the "Xms/job wall-clock" line the
   script now prints.
+- 🔴 **The inventory gap is now concrete, and it is the owner's own profile.**
+  A seeker in Islamabad (a real profile in the DB) gets **3 matches, scored
+  8-18** — the geography filter is correct, there is simply nothing there. India
+  jobs (meesho, 42) do NOT qualify a Pakistan-based seeker: different country,
+  and we don't pretend otherwise. Every source is a US/EU/AU/IN board. Global
+  coverage still needs sources per market; the filter and the pages are ready
+  for them.
+- 🟡 **Backfill was ~4s/job locally** (75 jobs in 5 min) — that is DB write
+  latency from Pakistan, not Voyage (which answered in ~850ms concurrently).
+  Expect it far faster on the runner. Same lesson as ingest: time it there.

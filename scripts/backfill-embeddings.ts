@@ -1,16 +1,17 @@
 /**
  * Backfill embeddings for LIVE jobs that don't have one yet.
  *
- * Run: npx tsx scripts/backfill-embeddings.ts [--limit=N] [--delay-ms=21000]
+ * Run: npx tsx scripts/backfill-embeddings.ts [--limit=N] [--delay-ms=250]
  *
  * Ingestion can run with embeddings skipped (no Voyage key, or to avoid
  * free-tier rate limits slowing the crawl); this pass fills them in. It's
  * resumable — only touches jobs where embedding IS NULL — so it can be run
  * repeatedly until caught up.
  *
- * Throttled for Voyage's free tier (3 RPM / 10K TPM): a delay between calls
- * keeps us under the limit and avoids burning time on 429 retries. Bump the
- * limit / drop the delay once a paid Voyage tier lifts the rate cap.
+ * Voyage is on a paid tier now, so the 3 RPM free-tier cap is gone (verified
+ * 2026-07-17: 6 concurrent calls, 0 rate-limited). The delay defaults to 250ms
+ * as light politeness rather than a hard throttle — pass --delay-ms=21000 if a
+ * key ever drops back to the free tier, where 429s cost 20-40s of backoff each.
  */
 
 import { prisma } from "@/lib/prisma";
@@ -23,7 +24,7 @@ async function main() {
   const limitArg = process.argv.find((a) => a.startsWith("--limit="));
   const limit = limitArg ? parseInt(limitArg.split("=")[1], 10) : undefined;
   const delayArg = process.argv.find((a) => a.startsWith("--delay-ms="));
-  const delayMs = delayArg ? parseInt(delayArg.split("=")[1], 10) : 21_000;
+  const delayMs = delayArg ? parseInt(delayArg.split("=")[1], 10) : 250;
 
   const ids = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `SELECT id FROM "Job" WHERE embedding IS NULL AND status = 'LIVE' ORDER BY "createdAt" ASC ${

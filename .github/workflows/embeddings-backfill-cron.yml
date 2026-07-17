@@ -7,9 +7,9 @@
 # matcher falls back to recency — they just don't rank on similarity.
 #
 # Resumable by construction (only touches embedding IS NULL), so a run that
-# times out simply continues next time. At 3 RPM this clears ~140 jobs per
-# 50-minute run; a paid Voyage tier makes --delay-ms far smaller and the whole
-# thing a non-issue.
+# times out simply continues next time. Voyage is on a paid tier, so the 3 RPM
+# cap is gone and a full catch-up is minutes, not days — the schedule is now a
+# safety net rather than the mechanism.
 name: Backfill embeddings
 
 on:
@@ -22,9 +22,9 @@ on:
         required: false
         default: ""
       delay_ms:
-        description: "Delay between Voyage calls (21000 = free tier 3 RPM)"
+        description: "Delay between Voyage calls (250 = paid tier; 21000 = free tier 3 RPM)"
         required: false
-        default: "21000"
+        default: "250"
 
 concurrency:
   group: embeddings-backfill
@@ -47,7 +47,7 @@ jobs:
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
         run: |
-          ARGS="--delay-ms=${{ inputs.delay_ms || '21000' }}"
+          ARGS="--delay-ms=${{ inputs.delay_ms || '250' }}"
           if [ -n "${{ inputs.limit }}" ]; then
             ARGS="$ARGS --limit=${{ inputs.limit }}"
           fi
