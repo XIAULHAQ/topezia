@@ -26,11 +26,9 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   redirect (feed score/position carried through, so the ranking signal survives).
   Third-party description HTML is sanitized (rendering it raw would be an XSS
   hole); plain-text sources get paragraphs rebuilt from newlines.
-- 🟠 **This deviates from the spec.** §1/§6.3 say "send users straight to the
-  source". We now show the job first and apply out — still neutral (the
-  application always happens at the employer), and it's what every serious
-  aggregator does, but **topezia-phase1-spec.md should be updated to match**,
-  per the repo's own "fix the spec first" rule.
+- 🟢 **Spec updated to match** (§1 pillar 2 reworded, §6.2 card footer, new §6.4
+  "Job detail page"). Neutrality now reads as "we never own the application",
+  not "never render the job".
 - 🟡 **Job pages aren't in the sitemap.** Republishing full descriptions raises
   duplicate-content and ATS-ToS questions worth a decision before indexing
   thousands of them. They're crawlable via the SEO pages either way.

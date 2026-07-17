@@ -1,0 +1,33 @@
+# Freshness / expiry checking (spec §4.4).
+#
+# "Dead links are the #1 complaint about every aggregator." This is that
+# fanaticism, on a timer. ATS jobs are re-verified by the ingest crawl itself;
+# this pass HEAD/GETs crawled + aggregator/CPC listings and walks them through
+# suspected_dead → expired.
+name: Expiry check
+
+on:
+  schedule:
+    - cron: "30 3 * * *" # 03:30 UTC daily
+  workflow_dispatch:
+
+concurrency:
+  group: expiry
+  cancel-in-progress: false
+
+jobs:
+  expiry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - name: Run expiry check
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: npm run expiry-check

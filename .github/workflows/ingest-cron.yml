@@ -1,0 +1,49 @@
+# Scheduled job ingestion (spec §4).
+#
+# Runs here, NOT as a Vercel function: crawling + LLM extraction blows straight
+# past Vercel's serverless timeout. GitHub Actions gives us free minutes and a
+# real 60-minute budget.
+#
+# Twice daily matches the spec's cadence for deep verticals (§4.4) and keeps
+# `lastVerifiedAt` fresh, which is what lets the feed and SEO pages honestly
+# claim "verified live Xh ago". Re-crawling costs almost nothing: unchanged
+# postings hit the description-hash cache and never reach the LLM.
+name: Ingest jobs
+
+on:
+  schedule:
+    - cron: "0 2,14 * * *" # 02:00 and 14:00 UTC
+  workflow_dispatch:
+    inputs:
+      max_jobs_per_source:
+        description: "Cap jobs processed per source (blank = all)"
+        required: false
+        default: ""
+
+concurrency:
+  group: ingest
+  cancel-in-progress: false # never run two ingests at once
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci # postinstall runs `prisma generate`
+      - name: Run ingestion
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+        run: |
+          if [ -n "${{ inputs.max_jobs_per_source }}" ]; then
+            npx tsx scripts/run-ingestion.ts --max-jobs-per-source=${{ inputs.max_jobs_per_source }}
+          else
+            npm run ingest
+          fi

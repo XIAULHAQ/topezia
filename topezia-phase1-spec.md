@@ -15,7 +15,7 @@
 
 **Positioning pillars (these drive UX decisions):**
 1. **Honesty** — real match scores including low ones, visible skill gaps, "why this fits / why it doesn't."
-2. **Neutrality** — we send users straight to the source; no application trapping.
+2. **Neutrality** — we show you the job, then send you to the employer to apply. The application *always* happens at the source; we never sit in the middle of it, and we never trap it. (Revised: originally "send users straight to the source". We now show a job detail page first — bouncing people off-site on the very first click meant we could never show the match reasoning that is the entire product. Neutrality is about not owning the application, not about refusing to render the job.)
 3. **One profile, zero résumé tailoring** — the parse + per-job why-lines do the tailoring cognitively.
 4. **Freshness** — aggressive expiry checking; every card shows "verified live Xh ago."
 
@@ -188,7 +188,7 @@ Design language: Topezia brand (indigo primary, Sora headings, Plus Jakarta Sans
 
 - Top bar: logo · conversational refine input ("more remote, less agency work" — parsed by small model into filter deltas) · avatar.
 - Filter pills with live counts: All matches · Remote · Hourly · Saved.
-- **Job card (Layout A):** title, company · location · type; match score (big, honest); skill chips green(have)/amber(gap); why-line; footer = freshness stamp + source line ("via Greenhouse → applies on company site") + save + **View job** (tracked redirect → source).
+- **Job card (Layout A):** title, company · location · type; match score (big, honest); skill chips green(have)/amber(gap); why-line; footer = freshness stamp + source line ("via Greenhouse → applies on company site") + save + **View job** (→ the job detail page, §6.4).
 - **Job card (Layout B):** adds credential/CDL chips, shift or home-time, pay structure; drops why-line to one shorter clause.
 - Low-score cards render compact with "Why low?" expander.
 - **Right rail (the whole profile surface in Phase 1):**
@@ -200,6 +200,18 @@ Design language: Topezia brand (indigo primary, Sora headings, Plus Jakarta Sans
 ### 6.3 Click-out
 
 `/go/{job_id}` redirect: logs click (user, job, position in feed, score), fires CPC attribution when applicable, 302 → `source_url`. This route is the revenue and the ranking signal — build it early, test it hard.
+
+It is now reached from the **Apply** button on the job detail page (§6.4) rather than directly from the feed card. Feed score/position ride along as query params, so the ranking signal is unchanged. `/go/` stays `Disallow`ed in robots.txt — it's a redirect, not a page.
+
+### 6.4 Job detail page — `/job/{job_id}`
+
+Where **View job** lands, from the feed, the SEO pages (§7) and alert emails (§9). Singular `/job/` so it can't collide with the `/jobs/*` SEO lattice.
+
+- Anatomy: title, company · location · type · pay; freshness stamp + source line; skill chips; the full job description; and **Apply on company site →** (top and bottom) which goes out via `/go/{id}`, with the honest note "Applies at {company} — we never sit between you and the employer."
+- Carries a match CTA ("Is this actually worth your time?") for visitors without a profile — this page is the main SEO entry point for someone who has never heard of us.
+- Expired/dead jobs render a "this role has closed" banner instead of an Apply button, rather than 404ing — an SEO-landed visitor deserves an explanation.
+- **Descriptions are third-party HTML and MUST be sanitized** before render. Greenhouse in particular returns the description *entity-encoded*, and Ashby returns plain text; all three shapes have to be handled or the page shows raw markup (or worse, executes it).
+- Not currently in sitemap.xml: republishing full descriptions has duplicate-content and ATS-ToS implications worth deciding deliberately before indexing thousands of them.
 
 ---
 

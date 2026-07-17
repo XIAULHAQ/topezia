@@ -1,0 +1,48 @@
+# Email job alerts (spec §7 capture, §9 delivery).
+#
+# Runs AFTER the 14:00 ingest so there's actually something new to send.
+# The sender is deliberately quiet: alerts with no new matching jobs send
+# nothing, and only double-opt-in-confirmed, non-unsubscribed addresses are
+# ever mailed. Sending is idempotent-ish via lastSentAt + the frequency window,
+# so an accidental re-run won't spam anyone.
+name: Send job alerts
+
+on:
+  schedule:
+    - cron: "0 15 * * *" # 15:00 UTC daily, an hour after ingest
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Compose but don't send"
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: alerts
+  cancel-in-progress: false # never double-send
+
+jobs:
+  alerts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - name: Send alerts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_FROM_EMAIL: ${{ secrets.ALERT_FROM_EMAIL }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            npm run send-alerts -- --dry-run
+          else
+            npm run send-alerts
+          fi
