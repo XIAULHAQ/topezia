@@ -15,6 +15,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { decodeHtmlEntities } from "@/lib/sanitize";
 import type { EmploymentType, RemoteType, SalaryPeriod } from "@prisma/client";
 
 const RERANK_MODEL = "claude-haiku-4-5-20251001";
@@ -240,6 +241,35 @@ interface RerankResult {
   whyLine: string;
 }
 
+
+/**
+ * Scrub clauses a job seeker should never read.
+ *
+ * The rerank prompt forbids these, but instructions alone don't hold: the model
+ * still compares near-identical postings ("identical to the other PostHog
+ * role") and still remarks that the excerpt we hand it cuts off. Both are
+ * artifacts of OUR pipeline — the reader sees one card and has no idea another
+ * posting or a longer description exists. So enforce it deterministically
+ * instead of hoping.
+ *
+ * Clause-level, not line-level: these lines usually pair a genuinely useful
+ * observation with a junk aside, and dropping the whole line would throw away
+ * the good half. Only touches lines that actually offend.
+ */
+const WHYLINE_JUNK =
+  /(\bthe other\b|\banother (role|job|posting)\b|\bidentical\b|\bsame (role|job|posting)\b|as above|previous(ly)? (job|role)|\b[0-9a-f]{8}(-[0-9a-f]{4})?\b)|(truncat|incomplete|cuts? off|\bexcerpt\b|\bsnippet\b|not enough (detail|info)|(description|posting) (is )?(short|limited|partial))/i;
+
+export function cleanWhyLine(line: string): string {
+  if (!WHYLINE_JUNK.test(line)) return line;
+  const clauses = line
+    .split(/\s*[;—]\s*|\s*,\s*(?=(?:though|but|although)\b)/i)
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0 && !WHYLINE_JUNK.test(c));
+  if (clauses.length === 0) return ""; // nothing honest left to say
+  const out = clauses.join("; ").replace(/[;,]\s*$/, "");
+  return out.charAt(0).toUpperCase() + out.slice(1) + (/[.!?]$/.test(out) ? "" : ".");
+}
+
 const RERANK_PROMPT = `You are an honest job-matching reranker for a job seeker. For each job, score fit 0-100 and explain it. Return ONLY a JSON array, one object per job, in the same order:
 [ { "jobId": string, "score": number, "matchedSkills": string[], "gapSkills": string[], "whyLine": string } ]
 
@@ -255,7 +285,12 @@ Weigh: skill overlap (required skills matter most), seniority fit, sensible next
 - If the candidate needs visa sponsorship, mention it in whyLine ONLY when the posting itself speaks to sponsorship or work authorization. Never assume from the company or country, and never lower a score over sponsorship the posting is silent about.
 - matchedSkills: the candidate's skills this job actually wants.
 - gapSkills: important skills the job wants that the candidate lacks. Never inflate; empty array if none.
-- whyLine: ONE plain-language sentence citing specifics (e.g. "Your caching and latency work is exactly what the post emphasizes"). For weak fits, say why honestly.`;
+- whyLine: ONE plain-language sentence citing specifics (e.g. "Your caching and latency work is exactly what the post emphasizes"). For weak fits, say why honestly.
+  The reader sees this ONE job on ONE card, with no idea the others exist. So:
+  never mention jobId or any id, and never describe a job by comparing it to
+  another job in this batch ("identical to job 33728f50", "same as the one
+  above") — that is meaningless to them. Judge each job only against the
+  CANDIDATE. Write it as if it is the only job you scored.`;
 
 async function rerankBatch(
   profile: {
@@ -277,7 +312,7 @@ async function rerankBatch(
   const jobsPayload = jobs.map((j) => ({
     jobId: j.id,
     title: j.titleNormalized || j.titleRaw,
-    description: stripToSnippet(j.descriptionRaw, 500),
+    description: stripToSnippet(j.descriptionRaw, 2000),
   }));
 
   const userMsg = `CANDIDATE:
@@ -320,7 +355,7 @@ ${JSON.stringify(jobsPayload)}`;
         score: Math.max(0, Math.min(100, Math.round(r.score))),
         matchedSkills: Array.isArray(r.matchedSkills) ? r.matchedSkills : [],
         gapSkills: Array.isArray(r.gapSkills) ? r.gapSkills : [],
-        whyLine: typeof r.whyLine === "string" ? r.whyLine : "",
+        whyLine: cleanWhyLine(typeof r.whyLine === "string" ? r.whyLine : ""),
       });
     }
   } catch {
@@ -330,7 +365,11 @@ ${JSON.stringify(jobsPayload)}`;
 }
 
 function stripToSnippet(html: string, max: number): string {
-  return html
+  // Decode BEFORE stripping tags. Greenhouse serves entity-encoded HTML, so its
+  // tags arrive as literal "&lt;h2&gt;" text that the tag regex cannot match —
+  // strip-first left the snippet as ~100% markup noise and the reranker scored
+  // every Greenhouse job on its title alone. Same trap as lib/sanitize.ts.
+  return decodeHtmlEntities(html)
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
     .replace(/\s+/g, " ")

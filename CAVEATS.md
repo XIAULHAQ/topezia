@@ -256,7 +256,28 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   as distinct). Every crawler sets externalId today and there are 0 NULLs live;
   ingestion falls back to matching on sourceUrl if one ever appears. A new
   crawler that omits externalId would silently lose this protection.
-- 🟡 **Why-lines can reference internal job ids.** The reranker sees jobIds and
-  wrote "Identical to job 33728f50" into user-facing copy. The duplicate that
-  prompted it is gone, but nothing stops the model from citing an id again —
-  the prompt should forbid it.
+- 🟢 **Reranker was scoring every Greenhouse job on its title alone — FIXED.**
+  `stripToSnippet` stripped HTML tags before decoding entities, and Greenhouse
+  serves entity-encoded HTML, so its tags arrived as literal `&lt;h2&gt;` text
+  the tag regex couldn't match. The reranker's whole 500-char window was markup
+  noise (`&lt;h2 class=&quot;p1&quot;&gt;…`) with ZERO job content. Exactly the
+  decode-before-strip trap already fixed in lib/sanitize.ts — the matching path
+  was never fixed. Now decodes first; snippet raised 500→2000 chars since it's
+  real prose now. Why-line quality is visibly different: the model now cites
+  "Discord's Notifications team uses Elixir and Python—languages you don't
+  list" where it used to say it couldn't assess the role.
+- 🟢 **Why-lines are scrubbed deterministically (`cleanWhyLine`).** The reranker
+  leaked internal job ids ("Identical to job 33728f50"), compared jobs against
+  others in the same batch ("identical to the other PostHog role"), and
+  complained our excerpt was truncated — all meaningless to someone reading one
+  card. Prompt instructions alone did NOT hold: after adding them, 2 of 12
+  why-lines still offended. The scrubber drops offending CLAUSES (keeping the
+  useful half of the sentence) and is unit-tested against the real offenders.
+  Verified live: 12 scored, 0 bad, 0 empty.
+- 🟡 **Lesson: verify with tests that would actually fail.** My first check for
+  id-leaks reported "0 leaking" because the regex only matched the literal
+  "identical to" — it missed "Identical skill overlap to the other PostHog
+  role" sitting in its own output. A passing test proved nothing.
+- 🟡 **Cached why-lines from before this fix survive** until a profile's
+  matchVersion changes (MatchScore is keyed on it). Existing profiles keep the
+  old markup-blind scores until they re-save or the cache is cleared.
