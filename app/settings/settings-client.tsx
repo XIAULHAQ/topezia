@@ -3,6 +3,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 
 const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
@@ -72,6 +73,17 @@ export default function SettingsClient() {
     }
   }
 
+  async function signOut() {
+    setBusy("signout");
+    try {
+      await createClient().auth.signOut();
+      router.push("/");
+    } catch {
+      setError("Couldn't sign out — try again.");
+      setBusy(null);
+    }
+  }
+
   async function deleteAccount() {
     setBusy("delete");
     try {
@@ -99,7 +111,10 @@ export default function SettingsClient() {
 
       <div style={S.wrap}>
         <h1 style={S.h1}>Settings</h1>
-        <p style={S.sub}>{acct.authed && acct.email ? `Signed in as ${acct.email}.` : "You're using Topezia without an account — everything lives in this browser."}</p>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 24 }}>
+          <p style={{ ...S.sub, margin: 0 }}>{acct.authed && acct.email ? `Signed in as ${acct.email}.` : "You're using Topezia without an account — everything lives in this browser."}</p>
+          {acct.authed && <button style={S.btn} disabled={busy !== null} onClick={signOut}>{busy === "signout" ? "Signing out…" : "Sign out"}</button>}
+        </div>
 
         <section style={S.card}>
           <div style={S.cardLabel}>Job alerts</div>

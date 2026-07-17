@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { ANON_COOKIE } from "@/lib/anon-session";
 
 async function emailOf(): Promise<string | null> {
@@ -94,9 +95,9 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ error: "Unknown action." }, { status: 400 });
 }
 
-/** Delete the account: the profile and everything tied to it. */
+/** Delete the account: the profile, everything tied to it, and the auth user. */
 export async function DELETE() {
-  const { userId } = await currentIdentity();
+  const { userId, authed } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "No account." }, { status: 401 });
 
   const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
@@ -112,11 +113,26 @@ export async function DELETE() {
     prisma.profile.delete({ where: { id: profile.id } }),
   ]);
 
-  // Note: for a signed-in user this deletes the profile and all its data, but
-  // NOT the Supabase auth account itself — that needs the service-role key,
-  // which isn't wired here. The user can still sign in; they'd just have no
-  // profile. Flagged in CAVEATS.
-  const res = NextResponse.json({ ok: true });
+  // For a signed-in user, remove the Supabase auth user too — a "delete my
+  // account" that leaves you able to sign back in isn't a real deletion. Needs
+  // the service-role key (server-only). If it isn't configured, the profile
+  // data is still gone; we just couldn't remove the login. authUserDeleted
+  // reports which happened.
+  let authUserDeleted = false;
+  if (authed) {
+    const admin = createAdminClient();
+    if (admin) {
+      const { error } = await admin.auth.admin.deleteUser(userId);
+      if (error) console.error("auth user delete failed:", error.message);
+      else authUserDeleted = true;
+    } else {
+      console.warn("account deleted but SUPABASE_SERVICE_ROLE_KEY not set — auth user survives");
+    }
+    // End the current session regardless, so they're signed out immediately.
+    try { await createClient().auth.signOut(); } catch { /* best effort */ }
+  }
+
+  const res = NextResponse.json({ ok: true, authUserDeleted });
   res.cookies.set(ANON_COOKIE, "", { maxAge: 0, path: "/" });
   return res;
 }

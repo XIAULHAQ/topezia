@@ -453,9 +453,23 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   profile.delete() would FK-error for any user who's clicked a job. Verified:
   résumé-text delete cleared the text and kept the profile; account delete on a
   throwaway profile with all child types removed everything cleanly.
-- 🔴 **Delete account does NOT delete the Supabase auth user.** It removes the
-  profile and all its data, but the auth account survives (needs the
-  service-role key, not wired). A signed-in user who "deletes" can still sign in
-  to an empty state. True account deletion needs a server-role admin call.
-- 🟡 **Still no logout / password-reset UI.** Auth exists (login works) but
-  there's no sign-out button anywhere and no reset flow.
+- 🟢 **Real account deletion wired (needs one env var to fully activate).**
+  DELETE /api/account now calls Supabase admin.deleteUser for signed-in users
+  via a server-only admin client (lib/supabase/admin.ts), then signs them out.
+  It degrades gracefully: if SUPABASE_SERVICE_ROLE_KEY isn't set it still
+  deletes ALL profile data and reports authUserDeleted:false. **ACTION: add
+  SUPABASE_SERVICE_ROLE_KEY (Supabase → Settings → API → service_role) to .env
+  and Vercel** so the login itself is removed, not just the data. The key is
+  server-only — never NEXT_PUBLIC.
+- 🟢 **Logout + password reset shipped.** Sign-out button in /settings for
+  authed users; "Forgot password?" on /login → resetPasswordForEmail → /reset
+  page that sets a new password from the recovery session. Verified in-browser:
+  /reset guards a stale/direct visit ("link invalid or expired"), the
+  forgot-password link shows only in login mode, and triggering it returns the
+  success notice (resetPasswordForEmail resolved with no error).
+- 🟡 **Two authed flows are build-verified but NOT exercised end-to-end** — the
+  sign-out button and real auth-user deletion both need a live signed-in
+  session, which requires creating an account / entering a password (something
+  the assistant can't do). Owner should click through both once after adding
+  the service-role key. The password-reset SEND path is verified; clicking the
+  emailed link → new password is not (needs a real inbox).

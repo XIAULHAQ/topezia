@@ -24,6 +24,25 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  async function forgotPassword() {
+    setError(null);
+    setNotice(null);
+    if (!email) { setError("Enter your email first, then tap reset."); return; }
+    setLoading(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset`,
+      });
+      if (error) throw error;
+      setNotice("If that email has an account, a reset link is on its way.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't send a reset email.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -77,6 +96,12 @@ export default function LoginPage() {
         <button style={btn(loading)} type="submit" disabled={loading}>
           {loading ? "…" : mode === "signup" ? "Create account" : "Log in"}
         </button>
+
+        {mode === "login" && (
+          <p style={{ ...S.toggle, marginTop: 12 }}>
+            <button type="button" style={S.toggleBtn} onClick={forgotPassword} disabled={loading}>Forgot password?</button>
+          </p>
+        )}
 
         <p style={S.toggle}>
           {mode === "signup" ? "Already have an account?" : "New here?"}{" "}
