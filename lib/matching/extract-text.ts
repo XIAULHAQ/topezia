@@ -47,16 +47,16 @@ export async function extractResumeText(file: {
 
   try {
     if (ext === ".pdf" || file.type === "application/pdf") {
-      // Import inside the branch: these are heavy (pdf-parse pulls in pdfjs),
-      // and a DOCX upload shouldn't pay to load a PDF engine.
-      const { PDFParse } = await import("pdf-parse");
-      const parser = new PDFParse({ data: new Uint8Array(file.buffer) });
-      try {
-        const result = await parser.getText();
-        text = result.text ?? "";
-      } finally {
-        await parser.destroy(); // pdfjs holds workers/memory open otherwise
-      }
+      // unpdf over pdf-parse: pdf-parse pulls in the browser build of pdfjs,
+      // which references DOM globals (DOMMatrix, Path2D) that don't exist in a
+      // Vercel serverless function — so every PDF upload threw
+      // "DOMMatrix is not defined" in production while working locally. unpdf
+      // wraps a serverless build of pdfjs made for Node/edge/worker runtimes.
+      // Imported inside the branch so a DOCX upload doesn't load the PDF engine.
+      const { extractText, getDocumentProxy } = await import("unpdf");
+      const pdf = await getDocumentProxy(new Uint8Array(file.buffer));
+      const result = await extractText(pdf, { mergePages: true });
+      text = result.text ?? "";
     } else if (ext === ".docx" || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
       const mammoth = await import("mammoth");
       const result = await mammoth.extractRawText({ buffer: file.buffer });
@@ -72,13 +72,9 @@ export async function extractResumeText(file: {
     // swallowing the actual error makes this impossible to debug.
     console.error("resume extraction failed:", err);
     // A corrupt/encrypted file shouldn't 500 — tell the person what to do.
-    const friendly = new ResumeExtractError(
+    throw new ResumeExtractError(
       "We couldn't read that file. If it's a scanned or password-protected PDF, try exporting a fresh copy — or paste the text instead."
     );
-    // TEMP DIAGNOSTIC: keep the original cause so the API can surface why PDF
-    // extraction fails in serverless (works locally). Revert once fixed.
-    (friendly as { cause?: string }).cause = `${(err as Error)?.name}: ${(err as Error)?.message}`;
-    throw friendly;
   }
 
   const clean = tidy(text);
