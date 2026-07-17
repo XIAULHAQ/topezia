@@ -202,11 +202,13 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   run (cap 2/source) crawled all 4 sources from GitHub Actions — reaching the US
   DB and resolving both the Anthropic and Voyage keys from secrets (39 → 43
   jobs). Scheduled runs will work unattended.
-- 🟡 **`RESEND_API_KEY` / `ALERT_FROM_EMAIL` also need adding to Vercel** —
-  they're only in local `.env`, so the live alert-signup form can't send its
-  confirmation email yet.
-- 🟡 **No alert email has ever actually been sent** — verified by dry-run only,
-  since sending real email needs the verified domain + the owner's go-ahead.
+- 🟢 **`RESEND_API_KEY` / `ALERT_FROM_EMAIL` are live on Vercel and PROVEN.** A
+  real POST to `/api/alerts` on www.topezia.com returned `200 {ok, pending:true}`,
+  which the route only returns after Resend accepts the confirmation email — so
+  the keys resolve in production and the live signup form genuinely works.
+- 🟡 **The double opt-in CONFIRM step hasn't been exercised in production.** The
+  send half is proven (above); clicking the emailed confirm link — which flips
+  the pending row to active — has only ever been tested locally.
 - 🟡 CPC-feed monetization (Talent.com / Jooble / Appcast) + affiliate slots —
   not started; needs external feed accounts.
 - 🟢 **Résumé parse now extracts proficiency, industries and location.** Skills
