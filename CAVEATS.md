@@ -236,3 +236,27 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟡 **LinkedIn "connect" is still a PDF export, not an integration.** The
   onboard screen tells the user to use LinkedIn's own More → Save to PDF and
   upload it. There is no LinkedIn API auth — that needs a Partner-tier app.
+- 🟢 **Job dedup now keys on identity, not content (migration 010).** Ingestion
+  used to ask "have I seen this?" by hashing the NORMALIZED description, which
+  made dedup a function of our own extraction code. When the Greenhouse
+  entity-decoding fix changed how descriptions normalize, previously-ingested
+  Greenhouse jobs hashed differently, looked new, and were inserted again — 4
+  duplicate rows, 9% of the live feed, and the reranker noticed before we did
+  ("Identical to job 33728f50" in a why-line). With cron ingesting twice daily,
+  the next normalization change would have duplicated every affected source.
+  Identity is now (source, sourceCompanySlug, externalId) — the source's own id
+  — backed by a unique index, and a known posting whose text changed is UPDATED
+  in place. Proven: an ingest that would have created 6 duplicates reported
+  "Created: 0, Refreshed: 6" with the row count unchanged; a second run was
+  fully idempotent (0 LLM calls); and a direct duplicate INSERT is rejected by
+  the DB. Historical dupes cleared by `scripts/dedupe-identity.ts` (dry-run by
+  default, `--apply` to act; reassigns JobClicks rather than dropping CPC
+  attribution).
+- 🟡 **Rows with a NULL externalId are not constrained** (Postgres treats NULLs
+  as distinct). Every crawler sets externalId today and there are 0 NULLs live;
+  ingestion falls back to matching on sourceUrl if one ever appears. A new
+  crawler that omits externalId would silently lose this protection.
+- 🟡 **Why-lines can reference internal job ids.** The reranker sees jobIds and
+  wrote "Identical to job 33728f50" into user-facing copy. The duplicate that
+  prompted it is gone, but nothing stops the model from citing an id again —
+  the prompt should forbid it.

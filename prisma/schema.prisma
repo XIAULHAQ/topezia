@@ -198,6 +198,11 @@ model Job {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  // One row per posting, keyed on the source's OWN stable id. The old dedup
+  // keyed on a hash of the normalized description, which made "have we seen
+  // this?" depend on our extraction code — changing normalization made every
+  // job look new and duplicated the feed. Identity can't drift that way.
+  @@unique([source, sourceCompanySlug, externalId])
   @@index([status, verticalId])
   @@index([descriptionHash])
   @@index([locationState])

@@ -69,19 +69,35 @@ async function processJob(
 
   const descriptionHash = hashDescription(`${job.titleRaw}\n${rules.descriptionText}`);
 
-  // Skip re-processing entirely if we've already ingested byte-identical
-  // content from ANY source — the cheapest possible dedup check, before
-  // even touching the LLM or writing a new row.
-  const existingByHash = await prisma.job.findFirst({
-    where: { descriptionHash },
-    select: { id: true },
-  });
-  if (existingByHash) {
-    await prisma.job.update({
-      where: { id: existingByHash.id },
-      data: { lastVerifiedAt: new Date() },
-    });
+  // Have we already got this exact posting? Identity is the source's OWN id —
+  // NOT a hash of our normalized text. Hashing made "have we seen this?" a
+  // function of our extraction code: when the Greenhouse entity-decoding fix
+  // changed how descriptions normalize, every previously-ingested Greenhouse
+  // job hashed differently, looked new, and got inserted a second time. A
+  // unique index now backs this lookup (migration 010).
+  const existing = job.externalId
+    ? await prisma.job.findFirst({
+        where: { source: source.type, sourceCompanySlug: source.companySlug, externalId: job.externalId },
+        select: { id: true, descriptionHash: true },
+      })
+    : // No stable id from this source — fall back to the click-out URL, which
+      // is the next most stable thing we have.
+      await prisma.job.findFirst({ where: { sourceUrl: job.sourceUrl }, select: { id: true, descriptionHash: true } });
+
+  // Known posting, unchanged text: just say we saw it. No LLM, no write churn.
+  if (existing && existing.descriptionHash === descriptionHash) {
+    await prisma.job.update({ where: { id: existing.id }, data: { lastVerifiedAt: new Date() } });
     return { status: "already-current" as const };
+  }
+
+  // Unknown posting, but we've seen byte-identical content from ANY source —
+  // the cheapest cross-source dedup, before touching the LLM.
+  if (!existing) {
+    const existingByHash = await prisma.job.findFirst({ where: { descriptionHash }, select: { id: true } });
+    if (existingByHash) {
+      await prisma.job.update({ where: { id: existingByHash.id }, data: { lastVerifiedAt: new Date() } });
+      return { status: "already-current" as const };
+    }
   }
 
   // Rung 2: LLM fills what rules couldn't (skills, seniority, role guess,
@@ -112,8 +128,10 @@ async function processJob(
     ? new URL(source.careersPageUrl).hostname.replace(/^www\./, "")
     : null;
 
-  const created = await prisma.job.create({
-    data: {
+  // Known posting whose text changed (edited by the employer, or our own
+  // normalization changed) -> refresh the row. Creating a second one is what
+  // duplicated the feed.
+  const data = {
       source: source.type,
       sourceUrl: job.sourceUrl,
       sourceCompanySlug: source.companySlug,
@@ -140,11 +158,25 @@ async function processJob(
       verticalFields: (llmResult.verticalFields as Prisma.InputJsonValue) || undefined,
       postedAt: job.postedAt,
       status: JobStatus.LIVE,
-      skills: {
-        create: skillIds.map((skillId) => ({ skillId, isRequired: true })),
+  };
+
+  let created;
+  if (existing) {
+    // Replace skills wholesale — the re-extraction is authoritative.
+    await prisma.jobSkill.deleteMany({ where: { jobId: existing.id } });
+    created = await prisma.job.update({
+      where: { id: existing.id },
+      data: {
+        ...data,
+        lastVerifiedAt: new Date(),
+        skills: { create: skillIds.map((skillId) => ({ skillId, isRequired: true })) },
       },
-    },
-  });
+    });
+  } else {
+    created = await prisma.job.create({
+      data: { ...data, skills: { create: skillIds.map((skillId) => ({ skillId, isRequired: true })) } },
+    });
+  }
 
   // Embed BEFORE dedup, not after: dedup rule (c) compares the new job's
   // embedding against other jobs in the same company (dedupe.ts), and its
@@ -185,7 +217,7 @@ async function processJob(
     return { status: "duplicate" as const };
   }
 
-  return { status: "created" as const, jobId: created.id };
+  return { status: existing ? ("refreshed" as const) : ("created" as const), jobId: created.id };
 }
 
 async function main() {
@@ -206,7 +238,7 @@ async function main() {
 
   console.log(`Ingesting ${sources.length} sources (${sources.filter((s) => s.isPriority).length} priority)...`);
 
-  let created = 0, duplicates = 0, alreadyCurrent = 0, failed = 0;
+  let created = 0, refreshed = 0, duplicates = 0, alreadyCurrent = 0, failed = 0;
 
   for (const source of sources) {
     if (!source.companySlug) continue;
@@ -227,6 +259,7 @@ async function main() {
             careersPageUrl: source.careersPageUrl,
           });
           if (result.status === "created") created++;
+          else if (result.status === "refreshed") refreshed++;
           else if (result.status === "duplicate") duplicates++;
           else alreadyCurrent++;
         } catch (err) {
@@ -244,7 +277,7 @@ async function main() {
     }
   }
 
-  console.log(`\nDone. Created: ${created}, Duplicates: ${duplicates}, Already current: ${alreadyCurrent}, Failed: ${failed}`);
+  console.log(`\nDone. Created: ${created}, Refreshed: ${refreshed}, Duplicates: ${duplicates}, Already current: ${alreadyCurrent}, Failed: ${failed}`);
   await prisma.$disconnect();
 }
 
