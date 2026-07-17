@@ -281,3 +281,19 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟡 **Cached why-lines from before this fix survive** until a profile's
   matchVersion changes (MatchScore is keyed on it). Existing profiles keep the
   old markup-blind scores until they re-save or the cache is cleared.
+- 🟢 **Location→state parsing was substring-matching — FIXED.** `"Washington,
+  D.C."` contained "washington" and resolved to **WA**, filing a real Palantir
+  D.C. posting under Washington state — the wrong side of the country, on a
+  feature whose whole point is local relevance. Same class of bug: "West
+  Virginia" → VA (because "virginia" was tested first), "Kansas City, Missouri"
+  → KS, "Delaware, Ohio" → DE. Now matches whole comma-components right-to-left
+  instead of substrings, handles D.C. explicitly, and is unit-tested over 24
+  cases including the non-US ones that must stay null. DC added to the SEO state
+  map so /jobs/{role}/dc renders. Existing rows re-parsed: 2 corrected.
+- 🟡 **Multi-location postings with an identical title+description collapse.**
+  Ingestion's cross-source "byte-identical content" check keys on
+  hash(title + description) with no location, so Palantir's "Administrative
+  Business Partner" posted in several cities is treated as one job (1 of 4 was
+  skipped as already-current this run). Fine for true cross-posting, wrong for
+  a genuinely different location — someone in NY could miss the NY posting
+  because we kept the London one. Include location in that hash.

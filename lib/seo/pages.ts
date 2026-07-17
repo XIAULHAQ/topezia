@@ -60,6 +60,7 @@ const STATE_NAMES: Record<string, string> = {
   OK:"Oklahoma",OR:"Oregon",PA:"Pennsylvania",RI:"Rhode Island",SC:"South Carolina",SD:"South Dakota",
   TN:"Tennessee",TX:"Texas",UT:"Utah",VT:"Vermont",VA:"Virginia",WA:"Washington",WV:"West Virginia",
   WI:"Wisconsin",WY:"Wyoming",
+  DC:"Washington, D.C.", // not a state; ingestion emits it and DC is a real job market
 };
 export const stateName = (abbr: string) => STATE_NAMES[abbr.toUpperCase()] ?? abbr.toUpperCase();
 

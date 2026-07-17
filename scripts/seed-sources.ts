@@ -18,14 +18,22 @@ import { JobSource } from "@prisma/client";
 
 // Real, live boards only. NOTE: `leverdemo` was removed — it's Lever's own
 // sample board, so it served fake postings ("Account Executive (copy)", four
-// identical "Account Executive" rows). It exercised the Lever crawler, but demo
-// data must never reach real users or an alert email. The Lever crawler itself
-// is verified working; it just needs a real Lever board added here before launch.
+// identical "Account Executive" rows). Demo data must never reach real users or
+// an alert email. `palantir` replaces it as the real Lever board.
+//
+// Beware: a dead Lever board returns HTTP 200 with an EMPTY array, not a 404
+// (netflix, plaid and mistral all do this today). A crawler that silently
+// returns 0 looks identical to a healthy board with nothing new, so re-verify
+// the slug before blaming the crawler.
 const SEED_SOURCES: { type: JobSource; companySlug: string; companyName: string }[] = [
   { type: JobSource.GREENHOUSE, companySlug: "dropbox", companyName: "Dropbox" },
   { type: JobSource.GREENHOUSE, companySlug: "discord", companyName: "Discord" },
   { type: JobSource.ASHBY, companySlug: "posthog", companyName: "PostHog" },
   { type: JobSource.ASHBY, companySlug: "linear", companyName: "Linear" },
+  // 273 postings, 203 US (New York, Washington DC, Palo Alto), newest 2 days
+  // old at seed time. Verified 2026-07-17: 0 missing fields, 0 duplicate
+  // externalIds, no "(copy)" placeholders — i.e. everything leverdemo wasn't.
+  { type: JobSource.LEVER, companySlug: "palantir", companyName: "Palantir Technologies" },
 ];
 
 async function main() {

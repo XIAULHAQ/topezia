@@ -15,6 +15,7 @@ const US_STATE_ABBR = [
   "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
   "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
   "VA","WA","WV","WI","WY",
+  "DC", // not a state, but a real place people search for
 ];
 
 const STATE_NAME_TO_ABBR: Record<string, string> = {
@@ -55,16 +56,26 @@ export function extractLocationState(locationRaw: string | null): string | null 
   if (!locationRaw) return null;
   const cleaned = locationRaw.trim();
 
-  // "City, ST" or "City, ST, USA"
-  const abbrMatch = cleaned.match(/,\s*([A-Z]{2})\b/);
-  if (abbrMatch && US_STATE_ABBR.includes(abbrMatch[1])) {
-    return abbrMatch[1];
-  }
+  // DC first: "Washington, D.C." contains the substring "washington" and would
+  // otherwise resolve to Washington STATE — a real Palantir posting in D.C. was
+  // being filed under WA, i.e. the wrong side of the country.
+  if (/(^|[\s,])d\.?c\.?([\s,]|$)|district of columbia/i.test(cleaned)) return "DC";
 
-  // "City, Full State Name"
-  const lower = cleaned.toLowerCase();
-  for (const [name, abbr] of Object.entries(STATE_NAME_TO_ABBR)) {
-    if (lower.includes(name)) return abbr;
+  // Match components, not substrings, and read right-to-left because the state
+  // sits at the end ("City, ST", "City, State, Country"). Substring matching
+  // made "Kansas City, Missouri" → KS, "Delaware, Ohio" → DE, and (because
+  // "virginia" was tested before "west virginia") "West Virginia" → VA.
+  const parts = cleaned.split(",").map((p) => p.trim()).filter(Boolean);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i];
+
+    // "CA", "CA 94301", "CA USA"
+    const abbr = part.match(/^([A-Z]{2})\b/);
+    if (abbr && US_STATE_ABBR.includes(abbr[1])) return abbr[1];
+
+    // The component must BE the state name, never merely contain it.
+    const named = STATE_NAME_TO_ABBR[part.toLowerCase()];
+    if (named) return named;
   }
 
   return null;
