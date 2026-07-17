@@ -472,4 +472,28 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   session, which requires creating an account / entering a password (something
   the assistant can't do). Owner should click through both once after adding
   the service-role key. The password-reset SEND path is verified; clicking the
-  emailed link → new password is not (needs a real inbox).
+  emailed link → new password is not (needs a real inbox).- 🟢 **Panels 3 + 4 shipped: honesty mirror + roadmap on /profile.** Both are
+  pure corpus-diffs (lib/matching/insights.ts) — every number counted from live
+  postings in the user's field that they could actually take (country-eligible).
+  Mirror: skill coverage %, seniority fit (at/above vs below your level), the
+  single most-wanted skill you lack. Roadmap: ranked skill gaps + certs named in
+  postings, first two free (the diagnosis), the rest tagged premium (tier flag,
+  everyone FREE now). Verified in-browser on the backend persona: 14% coverage,
+  20 roles at/above Lead, TypeScript wanted in 34%, Kubernetes shown as
+  "familiar → advanced" (proficiency-aware), CKA in 41 postings.
+- 🔴 **We deliberately did NOT build the salary-anchored roadmap.** Only ~6% of
+  live postings (73 of 1,135) carry salary, and years-of-experience isn't
+  extracted at all — so "$180k target, jobs ask X, average 11 years" from the
+  mockup would have been fabricated. The roadmap anchors on skills/seniority/
+  certs instead (100% / 100% / description-text coverage). If a real salary
+  data source lands, add that lens then — do not fake it.
+- 🟡 **Insights scope to ROLE when it has ≥20 eligible jobs, else the vertical
+  (labelled "broad").** A US backend engineer has <20 US-eligible backend
+  postings (most are in Europe), so their mirror widens to "tech & software
+  (broad)" — which surfaces some frontend skills (TypeScript, React) as gaps.
+  Honest (they ARE common in the field) but diluted; sharper role-level gaps
+  need more per-role, per-country volume.
+- 🟡 **Roadmap "certs" are description-text ILIKE counts.** "CKA in 41 postings"
+  is a substring match on descriptionRaw — real, but it'd also catch a passing
+  mention or a coincidental substring. Good enough to surface; not a curated
+  requirements parse.

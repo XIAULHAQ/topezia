@@ -1,0 +1,194 @@
+/**
+ * Profile insights — the honesty mirror (Panel 3) and roadmap (Panel 4).
+ *
+ * Both are the same move: diff the person against the real job corpus. Nothing
+ * here is invented — every number is counted from live postings in the user's
+ * field that they could actually take (country-eligible).
+ *
+ * Deliberately NOT salary-denominated: only ~6% of postings list pay, so a
+ * salary "market median" would be noise, and years-of-experience isn't
+ * extracted from postings at all. We anchor on what the corpus actually holds:
+ * skills (100% coverage, ~8/job), seniority (100%), and certifications named in
+ * the description text. If a real salary-data source lands later, add that lens
+ * then — don't fake it now.
+ */
+import { prisma } from "@/lib/prisma";
+
+const SENIORITY_RANK: Record<string, number> = {
+  INTERN: 1, JUNIOR: 2, MID: 3, SENIOR: 4, LEAD: 5, EXEC: 6, NOT_APPLICABLE: 0,
+};
+
+// Certs worth counting when they appear in a posting. The number is "postings
+// that name it", never a claim that the cert causes an outcome.
+const CERT_PATTERNS: { label: string; like: string }[] = [
+  { label: "CKA (Kubernetes)", like: "%CKA%" },
+  { label: "AWS certification", like: "%AWS Certified%" },
+  { label: "CPA", like: "%CPA%" },
+  { label: "CFA", like: "%CFA%" },
+  { label: "PMP", like: "%PMP%" },
+  { label: "CISSP", like: "%CISSP%" },
+  { label: "Salesforce certification", like: "%Salesforce Certified%" },
+  { label: "Google Cloud certification", like: "%Google Cloud Certified%" },
+  { label: "Azure certification", like: "%Azure Certified%" },
+  { label: "SHRM / HR certification", like: "%SHRM%" },
+];
+
+export interface SkillGap {
+  skill: string;
+  jobsWanting: number; // postings in your field that ask for it
+  pct: number; // of your target jobs
+  youHave: string | null; // your proficiency, or null if you don't list it
+}
+
+export interface ProfileInsights {
+  fieldLabel: string | null; // "backend engineer roles", or null if we can't scope
+  targetJobs: number; // eligible postings in your field
+  seniority: { level: string; atOrAbove: number; below: number } | null;
+  coveragePct: number | null; // share of skills your field asks for that you have
+  skillGaps: SkillGap[]; // most-wanted skills you lack or are only familiar with
+  certs: { label: string; jobs: number }[]; // certs named in your field's postings
+  premiumFrom: number; // index into skillGaps: below this is free, at/after is premium
+}
+
+/**
+ * Eligible-in-your-field job ids for a profile.
+ *
+ * "Your field" = the vertical of your headline role (falls back to every
+ * vertical your skills touch). "Eligible" mirrors the feed: same country, a
+ * global-remote job, or a posting whose country we couldn't determine — never
+ * hide on absence of evidence.
+ */
+const ROLE_SCOPE_MIN = 20; // below this, the role is too thin — widen to its vertical
+
+async function targetJobIds(p: {
+  country: string | null;
+  headlineRoleId: string | null;
+  skillIds: string[];
+}): Promise<{ ids: string[]; verticalId: string | null; scope: "role" | "vertical" | "none"; label: string | null }> {
+  const eligibility = {
+    OR: [
+      ...(p.country ? [{ country: p.country }] : []),
+      { country: null },
+      { remoteScope: "GLOBAL" as const },
+    ],
+  };
+
+  // Prefer the person's ACTUAL role — "backend engineer" jobs, not the whole
+  // "tech & software" vertical, which would surface frontend skills as gaps for
+  // a backend engineer. Fall back to the vertical only when the role is too thin
+  // to say anything (e.g. a niche title with 4 postings).
+  if (p.headlineRoleId) {
+    const role = await prisma.role.findUnique({ where: { id: p.headlineRoleId }, select: { verticalId: true, name: true } });
+    const roleJobs = await prisma.job.findMany({
+      where: { status: "LIVE", roleId: p.headlineRoleId, ...eligibility },
+      select: { id: true },
+      take: 4000,
+    });
+    if (roleJobs.length >= ROLE_SCOPE_MIN) {
+      return { ids: roleJobs.map((r) => r.id), verticalId: role?.verticalId ?? null, scope: "role", label: role?.name?.toLowerCase() ?? null };
+    }
+    if (role?.verticalId) {
+      const vJobs = await prisma.job.findMany({ where: { status: "LIVE", verticalId: role.verticalId, ...eligibility }, select: { id: true }, take: 4000 });
+      const vName = (await prisma.vertical.findUnique({ where: { id: role.verticalId }, select: { name: true } }))?.name?.toLowerCase() ?? null;
+      return { ids: vJobs.map((r) => r.id), verticalId: role.verticalId, scope: "vertical", label: vName };
+    }
+  }
+  return { ids: [], verticalId: null, scope: "none", label: null };
+}
+
+export async function getProfileInsights(profileId: string): Promise<ProfileInsights | null> {
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: {
+      country: true, headlineRoleId: true, seniority: true,
+      skills: { select: { skillId: true, proficiency: true, skill: { select: { name: true } } } },
+    },
+  });
+  if (!profile) return null;
+
+  const mySkills = new Map(profile.skills.map((s) => [s.skillId, s.proficiency]));
+  const { ids, scope, label } = await targetJobIds({
+    country: profile.country,
+    headlineRoleId: profile.headlineRoleId,
+    skillIds: [...mySkills.keys()],
+  });
+
+  const empty: ProfileInsights = {
+    fieldLabel: null, targetJobs: ids.length, seniority: null, coveragePct: null,
+    skillGaps: [], certs: [], premiumFrom: 2,
+  };
+  if (ids.length < 5) return empty; // too thin to say anything honest
+
+  const fieldLabel = label ? `${label} roles${scope === "vertical" ? " (broad)" : ""}` : null;
+
+  // Skill demand across your field: how many target postings ask for each skill.
+  const demand = await prisma.jobSkill.groupBy({
+    by: ["skillId"],
+    where: { jobId: { in: ids } },
+    _count: { jobId: true },
+  });
+  const skillNames = new Map(
+    (await prisma.skill.findMany({ where: { id: { in: demand.map((d) => d.skillId) } }, select: { id: true, name: true } }))
+      .map((s) => [s.id, s.name])
+  );
+
+  const STRONG = new Set(["PROFICIENT", "ADVANCED", "EXPERT"]);
+  const gaps: SkillGap[] = demand
+    .map((d) => {
+      const mine = mySkills.has(d.skillId) ? mySkills.get(d.skillId) ?? null : null;
+      const covered = mine !== null && STRONG.has(mine);
+      return { skillId: d.skillId, jobsWanting: d._count.jobId, mine, covered };
+    })
+    .filter((d) => !d.covered && d.jobsWanting >= Math.max(3, ids.length * 0.08)) // must be genuinely common
+    .sort((a, b) => b.jobsWanting - a.jobsWanting)
+    .slice(0, 6)
+    .map((d) => ({
+      skill: skillNames.get(d.skillId) ?? "—",
+      jobsWanting: d.jobsWanting,
+      pct: Math.round((d.jobsWanting / ids.length) * 100),
+      youHave: d.mine,
+    }));
+
+  // Coverage: of the distinct skills your field asks for (that matter), how many
+  // do you already have at any level?
+  const wanted = demand.filter((d) => d._count.jobId >= Math.max(3, ids.length * 0.08));
+  const haveCount = wanted.filter((d) => mySkills.has(d.skillId)).length;
+  const coveragePct = wanted.length ? Math.round((haveCount / wanted.length) * 100) : null;
+
+  // Seniority fit, from the enum every posting carries.
+  let seniority: ProfileInsights["seniority"] = null;
+  if (profile.seniority) {
+    const myRank = SENIORITY_RANK[profile.seniority] ?? 0;
+    const bySen = await prisma.job.groupBy({ by: ["seniority"], where: { id: { in: ids } }, _count: { id: true } });
+    let atOrAbove = 0, below = 0;
+    for (const b of bySen) {
+      const r = SENIORITY_RANK[b.seniority] ?? 0;
+      if (r === 0) continue;
+      if (r >= myRank) atOrAbove += b._count.id; else below += b._count.id;
+    }
+    seniority = { level: profile.seniority, atOrAbove, below };
+  }
+
+  // Certs named in your field's postings — counted, not recommended. One query
+  // per pattern, run in parallel: sequential round-trips made this the slowest
+  // part of the endpoint.
+  const certCounts = await Promise.all(
+    CERT_PATTERNS.map((c) =>
+      prisma.$queryRawUnsafe<{ n: number }[]>(
+        `SELECT COUNT(*)::int AS n FROM "Job" WHERE id = ANY($1::text[]) AND "descriptionRaw" ILIKE $2`,
+        ids, c.like
+      ).then((rows) => ({ label: c.label, jobs: rows[0].n }))
+    )
+  );
+  const certs = certCounts.filter((c) => c.jobs >= 3).sort((a, b) => b.jobs - a.jobs);
+
+  return {
+    fieldLabel,
+    targetJobs: ids.length,
+    seniority,
+    coveragePct,
+    skillGaps: gaps,
+    certs: certs.slice(0, 4),
+    premiumFrom: 2, // first 2 gaps free (the diagnosis); the rest is premium later
+  };
+}

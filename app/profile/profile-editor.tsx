@@ -28,6 +28,17 @@ interface Profile {
   skills: Skill[];
 }
 
+interface SkillGap { skill: string; jobsWanting: number; pct: number; youHave: string | null }
+interface Insights {
+  fieldLabel: string | null;
+  targetJobs: number;
+  seniority: { level: string; atOrAbove: number; below: number } | null;
+  coveragePct: number | null;
+  skillGaps: SkillGap[];
+  certs: { label: string; jobs: number }[];
+  premiumFrom: number;
+}
+
 const SENIORITIES = ["INTERN", "JUNIOR", "MID", "SENIOR", "LEAD", "EXEC", "NOT_APPLICABLE"];
 const PROFICIENCIES = ["FAMILIAR", "PROFICIENT", "ADVANCED", "EXPERT"];
 const WORK_TYPES = ["FULL_TIME", "PART_TIME", "CONTRACT", "HOURLY", "TEMPORARY"];
@@ -60,6 +71,8 @@ export default function ProfileEditor() {
   const [newSkill, setNewSkill] = useState("");
   const [industriesText, setIndustriesText] = useState("");
   const [locationsText, setLocationsText] = useState("");
+  const [insights, setInsights] = useState<Insights | null>(null);
+  const [tier, setTier] = useState<string>("FREE");
 
   useEffect(() => {
     (async () => {
@@ -73,6 +86,16 @@ export default function ProfileEditor() {
       } catch {
         setError("Couldn't load your profile.");
       }
+    })();
+    // Insights load separately — they're a nice-to-have, never block the editor.
+    (async () => {
+      try {
+        const res = await fetch("/api/profile/insights");
+        if (!res.ok) return;
+        const data = await res.json();
+        setInsights(data.insights);
+        setTier(data.tier ?? "FREE");
+      } catch { /* insights are optional */ }
     })();
   }, []);
 
@@ -133,6 +156,62 @@ export default function ProfileEditor() {
           {p.tier === "PREMIUM" && <span style={S.tier}>Premium</span>}
         </div>
         <p style={S.sub}>Edit anything. The badges show where we got it — your résumé, our inference, or your own hand. Saving re-scores your matches.</p>
+
+        {insights && insights.targetJobs >= 5 && insights.skillGaps.length > 0 && (
+          <>
+            <section style={S.card}>
+              <div style={S.cardLabel}>Where you stand · you against {insights.targetJobs} {insights.fieldLabel ?? "jobs"}</div>
+              <div style={S.statGrid}>
+                <div style={S.stat}>
+                  <div style={S.statNum}>{insights.coveragePct ?? "—"}%</div>
+                  <div style={S.statLabel}>of the skills your field asks for, you already have</div>
+                </div>
+                {insights.seniority && (
+                  <div style={S.stat}>
+                    <div style={S.statNum}>{insights.seniority.atOrAbove}</div>
+                    <div style={S.statLabel}>roles at or above your level ({label(insights.seniority.level)}); {insights.seniority.below} below</div>
+                  </div>
+                )}
+                <div style={S.stat}>
+                  <div style={S.statNum}>{insights.skillGaps[0].pct}%</div>
+                  <div style={S.statLabel}>want {insights.skillGaps[0].skill}{insights.skillGaps[0].youHave ? ` — you're only ${insights.skillGaps[0].youHave.toLowerCase()}` : ", which you don't list"}</div>
+                </div>
+              </div>
+            </section>
+
+            <section style={S.card}>
+              <div style={S.cardLabel}>Your roadmap · what these jobs ask that you don&apos;t have yet</div>
+              <div style={S.diagnosis}>
+                <i className="ti" aria-hidden="true" />
+                Biggest lever: <strong>{insights.skillGaps[0].skill}</strong> — named in {insights.skillGaps[0].pct}% of {insights.fieldLabel ?? "these roles"}.
+              </div>
+              {insights.skillGaps.map((g, i) => {
+                const premium = i >= insights.premiumFrom && tier !== "PREMIUM";
+                return (
+                  <div key={g.skill} style={S.step}>
+                    <div style={{ flex: 1 }}>
+                      <div style={S.stepTitle}>
+                        {g.youHave ? `Take ${g.skill} from ${g.youHave.toLowerCase()} to advanced` : `Add ${g.skill}`}
+                      </div>
+                      <div style={S.stepMeta}>named in {g.pct}% of your field · {g.youHave ? `you're ${g.youHave.toLowerCase()}` : "not on your profile"}</div>
+                    </div>
+                    {i === 0 ? <span style={S.freeTag}>biggest gap</span> : premium ? <span style={S.premTag}>premium</span> : null}
+                  </div>
+                );
+              })}
+              {insights.certs.length > 0 && (
+                <div style={S.step}>
+                  <div style={{ flex: 1 }}>
+                    <div style={S.stepTitle}>{insights.certs[0].label}</div>
+                    <div style={S.stepMeta}>named in {insights.certs[0].jobs} of your field&apos;s postings</div>
+                  </div>
+                  {tier !== "PREMIUM" && <span style={S.premTag}>premium</span>}
+                </div>
+              )}
+              <div style={S.foot}>Every step is counted from real postings, never invented. Free while we&apos;re new — the tag shows where premium will fall later.</div>
+            </section>
+          </>
+        )}
 
         <section style={S.card}>
           <div style={S.cardLabel}>You look like a</div>
@@ -232,6 +311,17 @@ const S: Record<string, CSSProperties> = {
   tier: { fontSize: 12, fontWeight: 700, color: "#7a3cff", background: "#f0eaff", padding: "4px 12px", borderRadius: 20 },
   sub: { color: MUTED, fontSize: 15, lineHeight: 1.55, margin: "0 0 24px" },
   card: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 20, marginBottom: 16 },
+  statGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 },
+  stat: { background: "#f7f7fb", borderRadius: 10, padding: 14 },
+  statNum: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 26, color: INDIGO },
+  statLabel: { fontSize: 12, color: MUTED, lineHeight: 1.4, marginTop: 4 },
+  diagnosis: { background: "#eef0ff", borderRadius: 10, padding: "12px 14px", fontSize: 14, color: "#3a34a8", lineHeight: 1.5, marginBottom: 14 },
+  step: { display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderTop: "1px solid #f2f2f5" },
+  stepTitle: { fontSize: 14, color: INK },
+  stepMeta: { fontSize: 12, color: MUTED, marginTop: 2 },
+  freeTag: { fontSize: 11, color: MUTED, whiteSpace: "nowrap" },
+  premTag: { fontSize: 11, padding: "2px 9px", borderRadius: 12, background: "#f0eaff", color: "#7a3cff", whiteSpace: "nowrap" },
+  foot: { fontSize: 12, color: MUTED, borderTop: "1px solid #f2f2f5", marginTop: 6, paddingTop: 12, lineHeight: 1.45 },
   cardLabel: { fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: MUTED, marginBottom: 12 },
   row: { display: "flex", gap: 10 },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, margin: "14px 0 0" },
