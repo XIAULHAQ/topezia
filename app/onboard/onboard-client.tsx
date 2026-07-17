@@ -40,7 +40,15 @@ const PARSE_TIPS = [
 const PARSE_STEPS = ["Reading the text", "Pulling out skills and history", "Working out seniority and fit", "Almost there"];
 
 const WORK_TYPES = ["FULL_TIME", "PART_TIME", "CONTRACT", "HOURLY", "TEMP"];
-const REMOTE_TYPES = ["ONSITE", "HYBRID", "REMOTE_US", "REMOTE_GLOBAL"];
+// The RemoteType values describe a JOB's scope, not a person's preference —
+// asking someone to tick "Remote US" vs "Remote Global" is asking them to think
+// in our schema. One "Remote" chip covers every remote scope; whether they're
+// actually eligible for a given one is decided by country, not by this answer.
+const REMOTE_CHOICES: { label: string; values: string[] }[] = [
+  { label: "In office", values: ["ONSITE"] },
+  { label: "Hybrid", values: ["HYBRID"] },
+  { label: "Remote", values: ["REMOTE_US", "REMOTE_GLOBAL", "REMOTE_INTL"] },
+];
 const label = (s: string) =>
   s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
 
@@ -292,9 +300,20 @@ export default function OnboardClient() {
               </div>
               <div style={S.qLabel}>Location / remote</div>
               <div style={S.chips}>
-                {REMOTE_TYPES.map((r) => (
-                  <button key={r} style={remote.includes(r) ? S.pillOn : S.pillOff} onClick={() => toggle(remote, r, setRemote)}>{label(r)}</button>
-                ))}
+                {REMOTE_CHOICES.map((c) => {
+                  const on = c.values.every((v) => remote.includes(v));
+                  return (
+                    <button
+                      key={c.label}
+                      style={on ? S.pillOn : S.pillOff}
+                      onClick={() =>
+                        setRemote(on ? remote.filter((v) => !c.values.includes(v)) : [...new Set([...remote, ...c.values])])
+                      }
+                    >
+                      {c.label}
+                    </button>
+                  );
+                })}
               </div>
               <div style={S.qLabel}>Where would you consider working? (optional)</div>
               <input

@@ -23,7 +23,17 @@
 
 ## 2. Launch market and verticals
 
-**Market:** United States, English only.
+**Market:** Global index, personal feed. We ingest jobs from anywhere; each
+seeker's feed is scoped to where they can actually work — country derived from
+their résumé, plus remote scope (`GLOBAL` / region / country) on the job.
+Eligibility filtering is one-directional: only positive evidence of a mismatch
+hides a job, because failing to parse a location is our bug, not the seeker's.
+
+US remains the deepest market (SEO state pages, USD salaries, US work
+authorization), and job supply outside the US is currently near zero — the
+sources are US/EU boards, so a seeker in e.g. Pakistan sees almost nothing.
+Global coverage needs global SOURCES, not just this filter. English-only still
+holds in practice: we have no language detection.
 
 **Deep verticals (ingestion depth + SEO seeding + beta recruiting):**
 | # | Vertical | Role | Notes |

@@ -33,6 +33,89 @@ const STATE_NAME_TO_ABBR: Record<string, string> = {
   "west virginia": "WV", wisconsin: "WI", wyoming: "WY",
 };
 
+// Metro phrases that carry no state token. Without these, "San Francisco Bay
+// Area" resolves to no state and no country — which would hide real US jobs
+// once the feed filters on geography. Only distinctive multi-word phrases:
+// bare "bay area" would swallow "Tampa Bay area".
+const US_METRO_TO_STATE: Record<string, string> = {
+  "san francisco bay area": "CA", "silicon valley": "CA", "greater los angeles": "CA",
+  "new york city": "NY", nyc: "NY", "greater boston": "MA", "greater seattle": "WA",
+  "greater chicago": "IL", "greater denver": "CO", "greater atlanta": "GA",
+};
+
+// Country names -> ISO-3166 alpha-2. Full names only (plus the few unambiguous
+// abbreviations); matching "CA" as Canada would collide with California.
+// Deliberately NOT here: Georgia, which is a US state far more often than the
+// country on these boards.
+const COUNTRY_NAME_TO_ISO: Record<string, string> = {
+  "united states": "US", "united states of america": "US", usa: "US", "u.s.": "US",
+  "u.s.a.": "US", us: "US",
+  "united kingdom": "GB", uk: "GB", "u.k.": "GB", england: "GB", scotland: "GB",
+  wales: "GB", "northern ireland": "GB", "great britain": "GB",
+  canada: "CA", mexico: "MX", ireland: "IE", poland: "PL", germany: "DE",
+  france: "FR", spain: "ES", portugal: "PT", netherlands: "NL", "the netherlands": "NL",
+  belgium: "BE", italy: "IT", sweden: "SE", norway: "NO", denmark: "DK",
+  finland: "FI", iceland: "IS", switzerland: "CH", austria: "AT", greece: "GR",
+  hungary: "HU", romania: "RO", bulgaria: "BG", croatia: "HR", slovenia: "SI",
+  slovakia: "SK", serbia: "RS", "bosnia and herzegovina": "BA", albania: "AL",
+  estonia: "EE", latvia: "LV", lithuania: "LT", czechia: "CZ", "czech republic": "CZ",
+  ukraine: "UA", moldova: "MD", belarus: "BY", russia: "RU", turkey: "TR", türkiye: "TR",
+  cyprus: "CY", malta: "MT", luxembourg: "LU",
+  india: "IN", pakistan: "PK", bangladesh: "BD", "sri lanka": "LK", nepal: "NP",
+  china: "CN", "hong kong": "HK", taiwan: "TW", japan: "JP", "south korea": "KR",
+  korea: "KR", singapore: "SG", malaysia: "MY", indonesia: "ID", thailand: "TH",
+  vietnam: "VN", philippines: "PH", "the philippines": "PH",
+  australia: "AU", "new zealand": "NZ",
+  brazil: "BR", argentina: "AR", chile: "CL", colombia: "CO", peru: "PE",
+  uruguay: "UY", ecuador: "EC", "costa rica": "CR", panama: "PA", guatemala: "GT",
+  "dominican republic": "DO",
+  israel: "IL", uae: "AE", "united arab emirates": "AE", "saudi arabia": "SA",
+  qatar: "QA", kuwait: "KW", bahrain: "BH", oman: "OM", jordan: "JO", lebanon: "LB",
+  egypt: "EG", morocco: "MA", tunisia: "TN", algeria: "DZ",
+  "south africa": "ZA", nigeria: "NG", kenya: "KE", ghana: "GH", ethiopia: "ET",
+  uganda: "UG", tanzania: "TZ", rwanda: "RW",
+};
+
+/** Multi-country regions. Not countries — a job "Remote (EMEA)" has no single one. */
+const REGION_PATTERNS: [RegExp, string][] = [
+  [/\bemea\b/i, "EMEA"], [/\bapac\b/i, "APAC"], [/\blatam\b/i, "LATAM"],
+  [/\banz\b/i, "ANZ"], [/\bnorth america\b/i, "NORTH_AMERICA"],
+  [/\beurope\b|\beu\b/i, "EUROPE"],
+];
+
+// Only ever tested against the LOCATION field. In description prose "global"
+// almost always describes the company ("a global leader", "our global team"),
+// not who may hold the job — trusting prose turned a bare "Remote" into
+// REMOTE_GLOBAL and offered it to the entire planet.
+const GLOBAL_LOCATION = /\b(anywhere|global(ly)?|worldwide|international|any country)\b/i;
+
+// Phrases explicit enough to trust from the description itself.
+const GLOBAL_PROSE = /\b(work from anywhere|remote from anywhere|anywhere in the world|fully distributed)\b/i;
+
+// Which countries a region actually covers, for feed eligibility. Without this
+// a US seeker would never see a job posted for "North America".
+export const REGION_MEMBERS: Record<string, string[]> = {
+  NORTH_AMERICA: ["US", "CA", "MX"],
+  LATAM: ["MX", "BR", "AR", "CL", "CO", "PE", "UY", "EC", "CR", "PA", "GT", "DO"],
+  EUROPE: ["GB", "IE", "DE", "FR", "ES", "PT", "NL", "BE", "IT", "SE", "NO", "DK", "FI", "CH", "AT", "PL", "RO", "CZ", "UA", "RS"],
+  EMEA: ["GB", "IE", "DE", "FR", "ES", "PT", "NL", "BE", "IT", "SE", "NO", "DK", "FI", "CH", "AT", "PL", "RO", "CZ", "UA", "RS", "IL", "AE", "ZA"],
+  APAC: ["IN", "PK", "BD", "LK", "CN", "HK", "TW", "JP", "KR", "SG", "MY", "ID", "TH", "VN", "PH", "AU", "NZ"],
+  ANZ: ["AU", "NZ"],
+};
+
+/**
+ * Split a location into comparable components.
+ *
+ * Splits on punctuation and " - " so "Remote - New Mexico" yields ["Remote",
+ * "New Mexico"] — that one matters: without it, "New Mexico" never matches a
+ * state and then hits the substring "mexico" and becomes MX. Deliberately does
+ * NOT split on " or ": "San Francisco Bay Area or New York" should stay one
+ * ambiguous blob rather than silently resolving to whichever state is last.
+ */
+function locationParts(s: string): string[] {
+  return s.split(/[,;()\/:]|\s+-\s+/).map((p) => p.trim()).filter(Boolean);
+}
+
 export function stripHtml(input: string): string {
   // Decode entities FIRST. Greenhouse returns entity-ENCODED html
   // (`&lt;p class=&quot;author-d-1gg9uz…&quot;&gt;`), which has no literal tags
@@ -65,7 +148,7 @@ export function extractLocationState(locationRaw: string | null): string | null 
   // sits at the end ("City, ST", "City, State, Country"). Substring matching
   // made "Kansas City, Missouri" → KS, "Delaware, Ohio" → DE, and (because
   // "virginia" was tested before "west virginia") "West Virginia" → VA.
-  const parts = cleaned.split(",").map((p) => p.trim()).filter(Boolean);
+  const parts = locationParts(cleaned);
   for (let i = parts.length - 1; i >= 0; i--) {
     const part = parts[i];
 
@@ -76,8 +159,56 @@ export function extractLocationState(locationRaw: string | null): string | null 
     // The component must BE the state name, never merely contain it.
     const named = STATE_NAME_TO_ABBR[part.toLowerCase()];
     if (named) return named;
+
+    const metro = US_METRO_TO_STATE[part.toLowerCase()];
+    if (metro) return metro;
   }
 
+  return null;
+}
+
+/**
+ * ISO-3166 alpha-2 country for a job location. null = we genuinely don't know
+ * (e.g. a bare "Remote"), which callers must treat as unknown rather than US.
+ */
+export function extractCountry(locationRaw: string | null): string | null {
+  if (!locationRaw) return null;
+
+  // A resolvable US state (including D.C. and the metro phrases) IS the US
+  // signal, and checking it first is what stops "Remote - New Mexico" from
+  // matching the country Mexico.
+  if (extractLocationState(locationRaw)) return "US";
+
+  const parts = locationParts(locationRaw.trim());
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const iso = COUNTRY_NAME_TO_ISO[parts[i].toLowerCase()];
+    if (iso) return iso;
+  }
+  return null;
+}
+
+/**
+ * Where a remote job is actually open to: "GLOBAL", a region ("EMEA"), or an
+ * ISO-2 country. null = unstated.
+ *
+ * This is the half of "remote" the old model couldn't express: it had only
+ * REMOTE_US and REMOTE_GLOBAL, so "Remote - Poland" had nowhere to go and was
+ * stamped REMOTE_US.
+ */
+export function extractRemoteScope(locationRaw: string | null, descriptionText: string): string | null {
+  const loc = locationRaw || "";
+  const prose = descriptionText.slice(0, 500);
+
+  if (/\b(us only|united states only|us-based|within the us|us residents)\b/i.test(`${loc} ${prose}`)) return "US";
+  if (GLOBAL_LOCATION.test(loc) || GLOBAL_PROSE.test(prose)) return "GLOBAL";
+
+  // The location field is the only reliable evidence of scope.
+  const country = extractCountry(locationRaw);
+  if (country) return country;
+
+  for (const [re, region] of REGION_PATTERNS) {
+    if (loc && re.test(loc)) return region;
+  }
   return null;
 }
 
@@ -85,14 +216,16 @@ export function extractRemoteType(locationRaw: string | null, descriptionText: s
   const haystack = `${locationRaw || ""} ${descriptionText.slice(0, 500)}`.toLowerCase();
 
   if (/\bremote\b/.test(haystack)) {
-    if (/\b(us only|united states only|us-based|within the us|us residents)\b/.test(haystack)) {
-      return RemoteType.REMOTE_US;
-    }
-    if (/\b(anywhere|global|worldwide|international)\b/.test(haystack)) {
-      return RemoteType.REMOTE_GLOBAL;
-    }
-    // Default remote-but-unspecified-scope to US — safest default for a
-    // US-first launch (spec §2). Revisit if global remote volume grows.
+    const scope = extractRemoteScope(locationRaw, descriptionText);
+    if (scope === "GLOBAL") return RemoteType.REMOTE_GLOBAL;
+    if (scope === "US") return RemoteType.REMOTE_US;
+    // A known non-US scope. This is the case that used to lie: "Remote -
+    // Poland" and "Remote (EMEA)" fell through to REMOTE_US and were shown to
+    // US seekers as jobs they could take.
+    if (scope) return RemoteType.REMOTE_INTL;
+    // Scope genuinely unstated. Keeping the historical US default rather than
+    // claiming "global" (which would assert eligibility everywhere) — but it
+    // IS a guess, and remoteScope stays null so it can be revisited.
     return RemoteType.REMOTE_US;
   }
   if (/\bhybrid\b/.test(haystack)) {
@@ -183,6 +316,8 @@ export function applyRulesPass(input: {
   return {
     descriptionText,
     locationState: extractLocationState(input.locationRaw),
+    country: extractCountry(input.locationRaw),
+    remoteScope: extractRemoteScope(input.locationRaw, descriptionText),
     remoteType: extractRemoteType(input.locationRaw, descriptionText),
     employmentType: extractEmploymentType(input.titleRaw, descriptionText, input.leverCommitment),
     salary: extractSalary(descriptionText),

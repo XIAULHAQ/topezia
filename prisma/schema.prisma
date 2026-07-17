@@ -120,6 +120,10 @@ enum RemoteType {
   HYBRID
   REMOTE_US
   REMOTE_GLOBAL
+  // Remote, but scoped somewhere that is neither the US nor everywhere —
+  // "Remote - Poland", "Remote (EMEA)". These had nowhere to go before and
+  // were stamped REMOTE_US, i.e. shown to US seekers as US-eligible.
+  REMOTE_INTL
 }
 
 enum Seniority {
@@ -170,7 +174,9 @@ model Job {
   locationRaw        String?
   locationLat        Float?
   locationLng        Float?
-  locationState      String?  // drives SEO state pages
+  locationState      String?  // drives SEO state pages; US-only concept
+  country            String?  // ISO-3166 alpha-2. null = genuinely unknown, never assume US
+  remoteScope        String?  // for remote jobs: "GLOBAL" | region ("EMEA") | ISO-2. null = unstated
   remoteType         RemoteType
 
   // §3.2 vertical-specific fields — healthcare credentials, CDL class, etc.
@@ -203,6 +209,7 @@ model Job {
   // this?" depend on our extraction code — changing normalization made every
   // job look new and duplicated the feed. Identity can't drift that way.
   @@unique([source, sourceCompanySlug, externalId])
+  @@index([status, country])
   @@index([status, verticalId])
   @@index([descriptionHash])
   @@index([locationState])
@@ -317,6 +324,7 @@ model Profile {
   // sponsorship terms from postings, and silently hiding jobs on a guess would
   // be worse than saying nothing.
   workAuthorization WorkAuthorization @default(NOT_SPECIFIED)
+  country          String?  // ISO-2, derived from currentLocation; scopes the feed
   verticalsOptIn   String[] // vertical slugs
 
   // alternate entry path (trucking questionnaire, §3.4) — same shape, resumeFileUrl null

@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import type { EmploymentType, RemoteType, SalaryPeriod, SkillSource, WorkAuthorization } from "@prisma/client";
 import { resolveRole, resolveSkillsMap } from "@/lib/ingestion/resolve-taxonomy";
+import { extractCountry } from "@/lib/ingestion/normalize-rules";
 import { embedText, writeProfileEmbedding } from "@/lib/ingestion/embed";
 import type { ParsedResume } from "./parse-resume";
 
@@ -74,6 +75,11 @@ export async function createOrUpdateProfile(params: {
   // rerank scores for this profile (spec §5, see match.ts).
   const matchVersion = randomUUID();
 
+  // Where they are, as a country — this is what scopes their feed. Derived from
+  // the résumé's own location line, so most people never answer a question for
+  // it. null just means we don't know, and the matcher then filters nothing.
+  const country = extractCountry(parsed.currentLocation);
+
   const profile = await prisma.profile.upsert({
     where: { userId },
     create: {
@@ -85,6 +91,7 @@ export async function createOrUpdateProfile(params: {
       seniority: parsed.seniority,
       yearsExperience: parsed.yearsExperience,
       currentLocation: parsed.currentLocation,
+      country,
       industries: parsed.industries,
       workHistory: parsed.workHistory as unknown as Prisma.InputJsonValue,
       education: parsed.education as unknown as Prisma.InputJsonValue,
@@ -108,6 +115,7 @@ export async function createOrUpdateProfile(params: {
       seniority: parsed.seniority,
       yearsExperience: parsed.yearsExperience,
       currentLocation: parsed.currentLocation,
+      country,
       industries: parsed.industries,
       workHistory: parsed.workHistory as unknown as Prisma.InputJsonValue,
       education: parsed.education as unknown as Prisma.InputJsonValue,

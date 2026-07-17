@@ -297,3 +297,37 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   skipped as already-current this run). Fine for true cross-posting, wrong for
   a genuinely different location — someone in NY could miss the NY posting
   because we kept the London one. Include location in that hash.
+- 🟢 **The feed no longer claims non-US jobs are US-eligible (migration 011).**
+  The schema had no country at all — location was free text plus `locationState`
+  (a US-only concept), and RemoteType offered only REMOTE_US/REMOTE_GLOBAL. So
+  every remote job whose scope wasn't explicitly global fell through to
+  REMOTE_US: **9 of 11 non-US jobs** (Poland, Mexico, Canada, EMEA, Ireland/UK)
+  were labelled "Remote US" to US seekers. The US assumption was in the data
+  model, not the filter. Now: Job.country (ISO-2), Job.remoteScope
+  (GLOBAL/region/ISO-2), Profile.country (derived from the résumé), and a
+  REMOTE_INTL type. Verified: a US seeker gets 12 matches with 0 non-US; a
+  "North America" job still reaches them via region membership.
+- 🟡 **Eligibility filtering is deliberately one-directional.** Unknown geography
+  PASSES (17 of 42 live jobs have country=null, mostly bare "Remote"). Hiding a
+  job because we failed to parse its location would be our bug punishing the
+  seeker. Only positive evidence of a mismatch hides a job.
+- 🔴 **Global coverage needs global SOURCES, not just this filter.** Every source
+  is a US/EU board (Dropbox, Discord, PostHog, Linear, Palantir). A seeker in
+  Pakistan gets **5 matches, all of them jobs whose location we couldn't
+  determine** — nothing actually local. The filter is honest; the inventory is
+  not yet global.
+- 🟡 **Unstated-scope remote still defaults to REMOTE_US** — a documented guess,
+  not a fabrication about a known place. remoteScope stays null so it can be
+  revisited (e.g. infer from the board's own country).
+- 🟡 **"Global" in prose ≠ global eligibility.** Scanning descriptions for
+  "global" turned a bare "Remote" into REMOTE_GLOBAL, because postings say
+  "a global leader" constantly. Scope is now read from the LOCATION field only,
+  plus explicit phrases like "work from anywhere". My first unit test missed
+  this by passing an empty description — test with realistic prose.
+- 🟡 **SEO is still US-state-only.** /jobs/{role}/{state} has no country
+  equivalent, so non-US jobs are invisible to SEO. Country pages are the next
+  chunk if global matters for acquisition.
+- 🟡 **The country dictionary is hand-maintained (~90 countries).** It started
+  US/Europe-centric and missed Pakistan — which is where our own test profile
+  lives. An unlisted country silently becomes null (permissive, so it shows
+  everything rather than nothing). Consider a real ISO-3166 library.

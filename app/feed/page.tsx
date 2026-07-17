@@ -17,6 +17,7 @@ const MUTED = "#6b7280";
 type Match = {
   jobId: string; title: string; company: string; verticalSlug: string; cardLayout: string;
   source: string; sourceUrl: string; remoteType: string; employmentType: string;
+  country: string | null; remoteScope: string | null;
   salaryMin: number | null; salaryMax: number | null; salaryPeriod: string | null;
   locationState: string | null; lastVerifiedAt: string; similarity: number; score: number;
   matchedSkills: string[]; gapSkills: string[]; whyLine: string; pending: boolean;
@@ -27,6 +28,22 @@ type Filter = (typeof FILTERS)[number];
 
 const scoreColor = (s: number) => (s >= 80 ? "#059669" : s >= 70 ? INDIGO : s >= 50 ? "#d97706" : "#9ca3af");
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
+
+const REGION_LABEL: Record<string, string> = {
+  GLOBAL: "Anywhere", EMEA: "EMEA", APAC: "APAC", LATAM: "LatAm", ANZ: "ANZ",
+  EUROPE: "Europe", NORTH_AMERICA: "North America",
+};
+
+/** Where a job actually is — "Remote (Poland)" beats a bare "Remote". */
+function placeLabel(m: Match): string {
+  if (m.remoteType === "ONSITE" || m.remoteType === "HYBRID") {
+    return m.locationState || REGION_LABEL[m.remoteScope ?? ""] || m.country || label(m.remoteType);
+  }
+  const scope = m.remoteScope;
+  if (!scope) return "Remote";
+  if (scope === "US") return "Remote (US)";
+  return `Remote (${REGION_LABEL[scope] ?? scope})`;
+}
 
 function freshness(iso: string): string {
   const h = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 3.6e6));
@@ -176,7 +193,7 @@ export default function FeedPage() {
                   <div style={{ flex: 1 }}>
                     <div style={S.jobTitle}>{m.title}</div>
                     <div style={S.jobMeta}>
-                      {m.company} · {m.locationState || label(m.remoteType)} · {label(m.employmentType)}
+                      {m.company} · {placeLabel(m)} · {label(m.employmentType)}
                     </div>
                   </div>
                   <div style={{ ...S.score, color: m.pending ? "#c7c7d1" : scoreColor(m.score) }}>{m.score}</div>

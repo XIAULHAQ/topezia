@@ -154,6 +154,8 @@ async function processJob(
       salaryPeriod: rules.salary.period || undefined,
       locationRaw: job.locationRaw,
       locationState: rules.locationState,
+      country: rules.country,
+      remoteScope: rules.remoteScope,
       remoteType: rules.remoteType,
       verticalFields: (llmResult.verticalFields as Prisma.InputJsonValue) || undefined,
       postedAt: job.postedAt,

@@ -16,6 +16,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { decodeHtmlEntities } from "@/lib/sanitize";
+import { REGION_MEMBERS } from "@/lib/ingestion/normalize-rules";
 import type { EmploymentType, RemoteType, SalaryPeriod } from "@prisma/client";
 
 const RERANK_MODEL = "claude-haiku-4-5-20251001";
@@ -34,6 +35,8 @@ export interface JobMatch {
   salaryMax: number | null;
   salaryPeriod: SalaryPeriod | null;
   locationState: string | null;
+  country: string | null;
+  remoteScope: string | null; // "GLOBAL" | region | ISO-2 | null
   lastVerifiedAt: Date;
   similarity: number; // 0-1 cosine
   score: number; // 0-100 (rerank when scored, else provisional from similarity)
@@ -61,6 +64,8 @@ interface CandidateRow {
   verticalSlug: string;
   cardLayout: string;
   similarity: number;
+  country: string | null;
+  remoteScope: string | null;
 }
 
 export interface MatchOptions {
@@ -81,6 +86,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       yearsExperience: true,
       employmentTypes: true,
       remoteTypes: true,
+      country: true,
       salaryFloor: true,
       salaryTarget: true,
       salaryPeriod: true,
@@ -113,7 +119,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
   // back to recency — one fewer round-trip than checking embedding separately.
   const selectCols = `j.id, j."titleRaw", j."titleNormalized", j."companyName", j.source::text AS source,
       j."sourceUrl", j."remoteType", j."employmentType", j."salaryMin", j."salaryMax",
-      j."salaryPeriod", j."locationState", j."lastVerifiedAt", j."descriptionRaw",
+      j."salaryPeriod", j."locationState", j.country, j."remoteScope", j."lastVerifiedAt", j."descriptionRaw",
       v.slug AS "verticalSlug", v."cardLayout"::text AS "cardLayout"`;
 
   let candidates = await prisma.$queryRawUnsafe<CandidateRow[]>(
@@ -146,6 +152,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
   const filtered = candidates.filter((j) => {
     if (empPrefs.size && !empPrefs.has(j.employmentType)) return false;
     if (remotePrefs.size && !remotePrefs.has(j.remoteType)) return false;
+    if (!eligibleIn(j, profile.country)) return false;
     if (
       profile.salaryFloor != null &&
       j.salaryMax != null &&
@@ -212,6 +219,8 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       source: j.source,
       sourceUrl: j.sourceUrl,
       remoteType: j.remoteType,
+      country: j.country,
+      remoteScope: j.remoteScope,
       employmentType: j.employmentType,
       salaryMin: j.salaryMin,
       salaryMax: j.salaryMax,
@@ -268,6 +277,25 @@ export function cleanWhyLine(line: string): string {
   if (clauses.length === 0) return ""; // nothing honest left to say
   const out = clauses.join("; ").replace(/[;,]\s*$/, "");
   return out.charAt(0).toUpperCase() + out.slice(1) + (/[.!?]$/.test(out) ? "" : ".");
+}
+
+/**
+ * Could this person actually take this job, geographically?
+ *
+ * We index the whole world but a feed should show one person's world. Note the
+ * last clause: unknown geography PASSES. Absence of evidence isn't evidence of
+ * ineligibility, and hiding a job because we failed to parse its location would
+ * be our bug punishing the seeker. Only positive evidence of a mismatch hides.
+ */
+function eligibleIn(job: { country: string | null; remoteScope: string | null }, userCountry: string | null): boolean {
+  if (!userCountry) return true; // we don't know where they are — filter nothing
+  if (job.remoteScope === "GLOBAL") return true;
+  if (job.country === userCountry) return true;
+  if (job.remoteScope && job.remoteScope === userCountry) return true;
+  const region = job.remoteScope ? REGION_MEMBERS[job.remoteScope] : undefined;
+  if (region?.includes(userCountry)) return true; // e.g. "North America" covers US
+  if (!job.country && !job.remoteScope) return true; // genuinely unknown
+  return false;
 }
 
 const RERANK_PROMPT = `You are an honest job-matching reranker for a job seeker. For each job, score fit 0-100 and explain it. Return ONLY a JSON array, one object per job, in the same order:
