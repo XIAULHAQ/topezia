@@ -38,11 +38,22 @@ interface DedupCandidate {
   descriptionHash: string;
 }
 
-/** Picks the survivor between two duplicate candidates. Lower priority number wins. */
+/**
+ * Picks the survivor between two duplicate candidates. Lower priority number wins.
+ *
+ * The tie-break on `id` is not cosmetic. Callers pass THEMSELVES as `a`, so with
+ * `<=` two equal-priority rows each concluded "I win, demote the other" — and
+ * when both ran concurrently they demoted each other, leaving the posting with
+ * no LIVE row at all. It vanished from the feed. Comparing ids makes the verdict
+ * identical no matter which side asks, so exactly one row loses.
+ */
 function pickSurvivor(a: DedupCandidate, b: DedupCandidate): { survivor: DedupCandidate; loser: DedupCandidate } {
   const aPriority = SOURCE_PRIORITY[a.source];
   const bPriority = SOURCE_PRIORITY[b.source];
-  return aPriority <= bPriority ? { survivor: a, loser: b } : { survivor: b, loser: a };
+  if (aPriority !== bPriority) {
+    return aPriority < bPriority ? { survivor: a, loser: b } : { survivor: b, loser: a };
+  }
+  return a.id < b.id ? { survivor: a, loser: b } : { survivor: b, loser: a };
 }
 
 /**
@@ -68,9 +79,10 @@ export async function dedupeJob(newJob: DedupCandidate): Promise<{ isDuplicate: 
     if (loser.id === newJob.id) {
       return { isDuplicate: true, survivorId: survivor.id };
     }
-    // The new job wins — demote the old one instead.
-    await prisma.job.update({
-      where: { id: loser.id },
+    // The new job wins — demote the old one instead. Guarded on status=LIVE so
+    // a concurrent worker that already resolved this pair can't be undone.
+    await prisma.job.updateMany({
+      where: { id: loser.id, status: JobStatus.LIVE },
       data: { status: JobStatus.DUPLICATE, duplicateOfId: survivor.id },
     });
     return { isDuplicate: false, survivorId: null };

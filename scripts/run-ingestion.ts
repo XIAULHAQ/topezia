@@ -59,7 +59,8 @@ function titleCaseSlug(slug: string | null): string | null {
 
 async function processJob(
   job: CrawledJob,
-  source: { type: JobSource; companySlug: string | null; companyName: string | null; careersPageUrl: string | null }
+  source: { type: JobSource; companySlug: string | null; companyName: string | null; careersPageUrl: string | null },
+  opts: { skipEmbeddings?: boolean } = {}
 ) {
   const rules = applyRulesPass({
     titleRaw: job.titleRaw,
@@ -187,6 +188,30 @@ async function processJob(
   // Embeddings are cheap (spec §4.2), so paying for the occasional job that
   // then turns out to be a duplicate is an acceptable trade for a working
   // near-duplicate check.
+  // Embeddings are decoupled from ingestion on purpose. Voyage's free tier is
+  // 3 RPM and embed.ts backs off 20-40s on a 429, so leaving them inline makes
+  // every worker sit blocked in backoff and concurrency buys nothing. Ship the
+  // job LIVE without one and let scripts/backfill-embeddings.ts (throttled and
+  // resumable) fill it in — the matcher already falls back to recency.
+  if (opts.skipEmbeddings) {
+    const dedupSkipped = await dedupeJob({
+      id: created.id,
+      source: created.source,
+      titleRaw: created.titleRaw,
+      companyDomain: created.companyDomain,
+      locationState: created.locationState,
+      descriptionHash: created.descriptionHash,
+    });
+    if (dedupSkipped.isDuplicate) {
+      await prisma.job.update({
+        where: { id: created.id },
+        data: { status: JobStatus.DUPLICATE, duplicateOfId: dedupSkipped.survivorId },
+      });
+      return { status: "duplicate" as const };
+    }
+    return { status: existing ? ("refreshed" as const) : ("created" as const), jobId: created.id };
+  }
+
   const embeddingInput = buildJobEmbeddingInput({
     titleNormalized: created.titleNormalized,
     titleRaw: created.titleRaw,
@@ -243,8 +268,27 @@ async function main() {
     take: sourceLimit,
   });
 
-  console.log(`Ingesting ${sources.length} sources (${sources.filter((s) => s.isPriority).length} priority)...`);
+  // Jobs are independent, so process several at once. The win is real in
+  // production (US runner: ~15ms per DB round-trip, so the per-job cost is the
+  // LLM call) and modest locally, where every query pays cross-continent
+  // latency.
+  const concArg = process.argv.find((a) => a.startsWith("--concurrency="));
+  const concurrency = Math.max(1, concArg ? parseInt(concArg.split("=")[1], 10) : 4);
+  const skipEmbeddings = process.argv.includes("--skip-embeddings");
 
+  if (concurrency > 1 && !skipEmbeddings && process.env.VOYAGE_API_KEY) {
+    console.warn(
+      "  ! Voyage free tier is 3 RPM and embed.ts backs off 20-40s on 429 — inline embeddings will serialize this run.\n" +
+        "    Prefer --skip-embeddings, then: npx tsx scripts/backfill-embeddings.ts"
+    );
+  }
+  console.log(
+    `Ingesting ${sources.length} sources (${sources.filter((s) => s.isPriority).length} priority), ` +
+      `concurrency=${concurrency}, embeddings=${skipEmbeddings ? "deferred to backfill" : "inline"}...`
+  );
+
+  const startedAt = Date.now();
+  let processed = 0;
   let created = 0, refreshed = 0, duplicates = 0, alreadyCurrent = 0, failed = 0;
 
   for (const source of sources) {
@@ -257,23 +301,37 @@ async function main() {
           (maxJobsPerSource && allJobs.length > jobs.length ? ` (processing first ${jobs.length})` : "")
       );
 
-      for (const job of jobs) {
-        try {
-          const result = await processJob(job, {
-            type: source.type,
-            companySlug: source.companySlug,
-            companyName: source.companyName,
-            careersPageUrl: source.careersPageUrl,
-          });
-          if (result.status === "created") created++;
-          else if (result.status === "refreshed") refreshed++;
-          else if (result.status === "duplicate") duplicates++;
-          else alreadyCurrent++;
-        } catch (err) {
-          failed++;
-          console.error(`    Failed to process job "${job.titleRaw}":`, err);
+      // Fixed-size worker pool over this board's jobs. Workers pull from a
+      // shared cursor, so a slow job never blocks the others.
+      let cursor = 0;
+      const worker = async () => {
+        for (;;) {
+          const i = cursor++;
+          if (i >= jobs.length) return;
+          const job = jobs[i];
+          try {
+            const result = await processJob(
+              job,
+              {
+                type: source.type,
+                companySlug: source.companySlug,
+                companyName: source.companyName,
+                careersPageUrl: source.careersPageUrl,
+              },
+              { skipEmbeddings }
+            );
+            if (result.status === "created") created++;
+            else if (result.status === "refreshed") refreshed++;
+            else if (result.status === "duplicate") duplicates++;
+            else alreadyCurrent++;
+          } catch (err) {
+            failed++;
+            console.error(`    Failed to process job "${job.titleRaw}":`, err);
+          }
+          processed++;
         }
-      }
+      };
+      await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker));
 
       await prisma.source.update({
         where: { id: source.id },
@@ -284,7 +342,16 @@ async function main() {
     }
   }
 
+  const secs = (Date.now() - startedAt) / 1000;
+  const perJob = processed ? Math.round((secs / processed) * 1000) : 0;
   console.log(`\nDone. Created: ${created}, Refreshed: ${refreshed}, Duplicates: ${duplicates}, Already current: ${alreadyCurrent}, Failed: ${failed}`);
+  console.log(`${processed} jobs in ${secs.toFixed(1)}s — ${perJob}ms/job wall-clock at concurrency ${concurrency}.`);
+  if (skipEmbeddings) {
+    const missing = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
+      `SELECT COUNT(*)::int AS n FROM "Job" WHERE status='LIVE' AND embedding IS NULL`
+    );
+    console.log(`Embeddings deferred: ${missing[0].n} live jobs have none. Run: npx tsx scripts/backfill-embeddings.ts`);
+  }
   await prisma.$disconnect();
 }
 

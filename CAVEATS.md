@@ -373,7 +373,26 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟡 **vertical×STATE pages are now reachable too** (/jobs/tech-software/ca), a
   side effect of supporting vertical×place. Additive and floor-gated — existing
   US pages are unchanged — but it is a new US surface that was not there before.
-- 🟡 **Ingest is ~24s/job** — 22 Monzo jobs took ~9 minutes with embeddings OFF.
-  At ~1,242 jobs that is ~8 hours per full crawl before Voyage's 3 RPM is even
-  a factor. The per-job LLM call plus many DB round-trips is the bottleneck.
-  A full production ingest is not currently viable in one cron window.
+- 🟢 **Ingest is ~5.5x faster: 17.8s/job → 2.3s/job** (same board, same 8 jobs,
+  embeddings deferred). Jobs are independent, so a fixed-size worker pool
+  (`--concurrency=N`, default 4) processes several per board at once.
+- 🔴 **CORRECTION: the "8 hours per crawl" figure was measured wrong.** It came
+  from a laptop in Pakistan hitting a US-east database, where a bare `SELECT 1`
+  takes **2,780ms**. Nothing was unbatched — `resolveSkillsMap` already does ~5
+  queries, and 5 × ~1.1s round-trips IS the 5.5s. Production runs on a US
+  GitHub runner (~10-20ms/round-trip), so the per-job cost there is the LLM
+  call, not the DB. **Measure ingest speed on the runner, never locally.**
+- 🟡 **Embeddings are now decoupled from ingestion (`--skip-embeddings`).** Voyage
+  free tier is 3 RPM and embed.ts backs off 20-40s on a 429, so inline
+  embeddings make every concurrent worker sit blocked and concurrency buys
+  nothing. Ingest ships jobs LIVE without embeddings; scripts/backfill-embeddings.ts
+  (throttled, resumable) fills them in. Jobs without an embedding still appear —
+  the matcher falls back to recency — but they won't rank well until backfilled.
+- 🔴 **Concurrency exposed a dedup race that DELETED jobs — fixed.** `pickSurvivor`
+  broke ties by argument order and callers pass themselves first, so two
+  equal-priority rows each concluded "I win, demote the other". Run sequentially
+  it was invisible; run concurrently both demoted each other and the posting had
+  **no LIVE row at all** — it vanished from the feed. Reproduced live (two N26
+  "Backend Engineer – Core Systems" rows, both DUPLICATE, pointing at each
+  other). Now tie-breaks on id, so the verdict is identical whichever side asks;
+  the demote is also guarded on status=LIVE. Verified: exactly one survivor.
