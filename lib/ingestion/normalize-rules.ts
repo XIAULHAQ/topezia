@@ -41,6 +41,17 @@ const US_METRO_TO_STATE: Record<string, string> = {
   "san francisco bay area": "CA", "silicon valley": "CA", "greater los angeles": "CA",
   "new york city": "NY", nyc: "NY", "greater boston": "MA", "greater seattle": "WA",
   "greater chicago": "IL", "greater denver": "CO", "greater atlanta": "GA",
+  // Bare US city names. Only consulted when no state token is present, so
+  // "Portland, ME" is still ME; a lone "Portland" takes the larger city.
+  "san francisco": "CA", "los angeles": "CA", "san diego": "CA", "san jose": "CA",
+  "palo alto": "CA", "santa monica": "CA", oakland: "CA", sacramento: "CA",
+  "new york": "NY", brooklyn: "NY", austin: "TX", dallas: "TX", houston: "TX",
+  seattle: "WA", denver: "CO", boulder: "CO", chicago: "IL", boston: "MA",
+  cambridge_ma: "MA", atlanta: "GA", miami: "FL", orlando: "FL", tampa: "FL",
+  phoenix: "AZ", portland: "OR", "salt lake city": "UT", "las vegas": "NV",
+  philadelphia: "PA", pittsburgh: "PA", detroit: "MI", minneapolis: "MN",
+  nashville: "TN", charlotte: "NC", raleigh: "NC", columbus: "OH", cleveland: "OH",
+  "kansas city": "MO", "st. louis": "MO", indianapolis: "IN", "san antonio": "TX",
 };
 
 // Country names -> ISO-3166 alpha-2. Full names only (plus the few unambiguous
@@ -69,11 +80,75 @@ const COUNTRY_NAME_TO_ISO: Record<string, string> = {
   brazil: "BR", argentina: "AR", chile: "CL", colombia: "CO", peru: "PE",
   uruguay: "UY", ecuador: "EC", "costa rica": "CR", panama: "PA", guatemala: "GT",
   "dominican republic": "DO",
+  kazakhstan: "KZ", azerbaijan: "AZ", armenia: "AM", uzbekistan: "UZ", georgia_country: "GE",
   israel: "IL", uae: "AE", "united arab emirates": "AE", "saudi arabia": "SA",
   qatar: "QA", kuwait: "KW", bahrain: "BH", oman: "OM", jordan: "JO", lebanon: "LB",
   egypt: "EG", morocco: "MA", tunisia: "TN", algeria: "DZ",
   "south africa": "ZA", nigeria: "NG", kenya: "KE", ghana: "GH", ethiopia: "ET",
   uganda: "UG", tanzania: "TZ", rwanda: "RW",
+};
+
+// Major world cities -> country. Global boards overwhelmingly name a CITY and
+// no country ("Berlin", "London - The River Building HQ", "AU - Sydney"), which
+// left 25% of real non-US postings with no country at all — and unknown
+// geography passes the feed filter, so they'd have quietly reached everyone.
+//
+// Safe against US collisions ONLY because extractCountry resolves a US state
+// first: "Paris, TX" is TX->US before "paris" is ever consulted. Bare foreign
+// city names are all that reach this map.
+const CITY_TO_COUNTRY: Record<string, string> = {
+  // UK / IE
+  london: "GB", manchester: "GB", birmingham: "GB", leeds: "GB", glasgow: "GB",
+  edinburgh: "GB", cardiff: "GB", bristol: "GB", cambridge: "GB", oxford: "GB",
+  swansea: "GB", newcastle: "GB", sheffield: "GB", nottingham: "GB", brighton: "GB",
+  dublin: "IE", cork: "IE", belfast: "GB",
+  // DE / AT / CH
+  berlin: "DE", munich: "DE", münchen: "DE", hamburg: "DE", frankfurt: "DE",
+  cologne: "DE", köln: "DE", stuttgart: "DE", düsseldorf: "DE", dusseldorf: "DE",
+  vienna: "AT", wien: "AT", zurich: "CH", zürich: "CH", geneva: "CH", basel: "CH",
+  // FR / BE / NL / LU
+  paris: "FR", lyon: "FR", marseille: "FR", toulouse: "FR", bordeaux: "FR",
+  lille: "FR", nantes: "FR", brussels: "BE", bruxelles: "BE", antwerp: "BE",
+  amsterdam: "NL", rotterdam: "NL", utrecht: "NL", "the hague": "NL", eindhoven: "NL",
+  luxembourg: "LU",
+  // ES / PT / IT / GR
+  madrid: "ES", barcelona: "ES", valencia: "ES", seville: "ES", málaga: "ES", malaga: "ES",
+  lisbon: "PT", lisboa: "PT", porto: "PT", milan: "IT", milano: "IT", rome: "IT",
+  roma: "IT", turin: "IT", athens: "GR", thessaloniki: "GR",
+  // Nordics
+  stockholm: "SE", gothenburg: "SE", malmö: "SE", oslo: "NO", copenhagen: "DK",
+  københavn: "DK", helsinki: "FI", tallinn: "EE", riga: "LV", vilnius: "LT",
+  reykjavik: "IS",
+  // CEE
+  warsaw: "PL", warszawa: "PL", krakow: "PL", kraków: "PL", wroclaw: "PL",
+  gdansk: "PL", prague: "CZ", praha: "CZ", brno: "CZ", budapest: "HU",
+  bucharest: "RO", sofia: "BG", belgrade: "RS", beograd: "RS", zagreb: "HR",
+  ljubljana: "SI", bratislava: "SK", kyiv: "UA", kiev: "UA", lviv: "UA",
+  // Middle East / Africa
+  dubai: "AE", "abu dhabi": "AE", doha: "QA", riyadh: "SA", "tel aviv": "IL",
+  jerusalem: "IL", haifa: "IL", cairo: "EG", casablanca: "MA", nairobi: "KE",
+  lagos: "NG", johannesburg: "ZA", "cape town": "ZA", accra: "GH", kampala: "UG",
+  // South Asia
+  bangalore: "IN", bengaluru: "IN", mumbai: "IN", delhi: "IN", "new delhi": "IN",
+  gurugram: "IN", gurgaon: "IN", noida: "IN", hyderabad: "IN", chennai: "IN",
+  pune: "IN", kolkata: "IN", ahmedabad: "IN", jaipur: "IN",
+  karachi: "PK", lahore: "PK", islamabad: "PK", rawalpindi: "PK", dhaka: "BD",
+  colombo: "LK", kathmandu: "NP",
+  // East / SE Asia
+  singapore: "SG", "kuala lumpur": "MY", jakarta: "ID", bangkok: "TH",
+  manila: "PH", "makati": "PH", cebu: "PH", hanoi: "VN", "ho chi minh city": "VN",
+  tokyo: "JP", osaka: "JP", kyoto: "JP", seoul: "KR", shanghai: "CN",
+  beijing: "CN", shenzhen: "CN", guangzhou: "CN", "hong kong": "HK", taipei: "TW",
+  // ANZ
+  sydney: "AU", melbourne: "AU", brisbane: "AU", perth: "AU", adelaide: "AU",
+  canberra: "AU", auckland: "NZ", wellington: "NZ", christchurch: "NZ",
+  // Canada — listed so "Toronto" doesn't fall through to unknown
+  toronto: "CA", vancouver: "CA", montreal: "CA", montréal: "CA", ottawa: "CA",
+  calgary: "CA", edmonton: "CA", waterloo: "CA", kitchener: "CA", halifax: "CA",
+  // LatAm
+  "mexico city": "MX", guadalajara: "MX", monterrey: "MX", "são paulo": "BR",
+  "sao paulo": "BR", "rio de janeiro": "BR", "buenos aires": "AR", santiago: "CL",
+  bogota: "CO", "bogotá": "CO", lima: "PE", montevideo: "UY",
 };
 
 /** Multi-country regions. Not countries — a job "Remote (EMEA)" has no single one. */
@@ -180,9 +255,29 @@ export function extractCountry(locationRaw: string | null): string | null {
   if (extractLocationState(locationRaw)) return "US";
 
   const parts = locationParts(locationRaw.trim());
+
+  // An explicit country name is the strongest signal — take it before any city.
   for (let i = parts.length - 1; i >= 0; i--) {
     const iso = COUNTRY_NAME_TO_ISO[parts[i].toLowerCase()];
     if (iso) return iso;
+  }
+
+  // Then a known city. Left-to-right: boards write "AU - Sydney" and
+  // "London - The River Building HQ", so the place leads and the office suffix
+  // trails.
+  for (const part of parts) {
+    const city = CITY_TO_COUNTRY[part.toLowerCase()];
+    if (city) return city;
+  }
+
+  // Last resort: leading words of a component ("Toronto Headquarters").
+  for (const part of parts) {
+    const words = part.toLowerCase().split(/\s+/);
+    for (const n of [3, 2, 1]) {
+      const head = words.slice(0, n).join(" ");
+      if (CITY_TO_COUNTRY[head]) return CITY_TO_COUNTRY[head];
+      if (US_METRO_TO_STATE[head]) return "US";
+    }
   }
   return null;
 }

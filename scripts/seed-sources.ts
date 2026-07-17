@@ -34,6 +34,21 @@ const SEED_SOURCES: { type: JobSource; companySlug: string; companyName: string 
   // old at seed time. Verified 2026-07-17: 0 missing fields, 0 duplicate
   // externalIds, no "(copy)" placeholders — i.e. everything leverdemo wasn't.
   { type: JobSource.LEVER, companySlug: "palantir", companyName: "Palantir Technologies" },
+
+  // Non-US boards. The index is global (spec §2) but every source was a US/EU
+  // company board, so a seeker outside the US saw almost nothing — the feed
+  // filter was honest and the inventory simply wasn't there. All eight verified
+  // 2026-07-17 with the real crawlers: 0 missing fields, 0 "(copy)"/demo
+  // titles, unique externalIds throughout, and locations that resolve to a
+  // country. Between them they cover ~35 countries.
+  { type: JobSource.GREENHOUSE, companySlug: "monzo", companyName: "Monzo" },            // 68  · GB, ES, IE
+  { type: JobSource.GREENHOUSE, companySlug: "n26", companyName: "N26" },                // 74  · DE, ES, FR, IT
+  { type: JobSource.GREENHOUSE, companySlug: "wolt", companyName: "Wolt" },              // 284 · 28 countries across Europe + Central Asia
+  { type: JobSource.ASHBY, companySlug: "deliveroo", companyName: "Deliveroo" },         // 188 · GB, AE, FR, IT, IE, BE, IN, KW
+  { type: JobSource.ASHBY, companySlug: "xero", companyName: "Xero" },                   // 90  · AU, NZ, GB, ZA, SG, CA, US
+  { type: JobSource.ASHBY, companySlug: "wealthsimple", companyName: "Wealthsimple" },   // 38  · CA
+  { type: JobSource.LEVER, companySlug: "meesho", companyName: "Meesho" },               // 44  · IN
+  { type: JobSource.LEVER, companySlug: "qonto", companyName: "Qonto" },                 // 50  · FR, ES, DE, IT, BE, RS
 ];
 
 async function main() {

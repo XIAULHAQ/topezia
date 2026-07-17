@@ -311,11 +311,16 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   PASSES (17 of 42 live jobs have country=null, mostly bare "Remote"). Hiding a
   job because we failed to parse its location would be our bug punishing the
   seeker. Only positive evidence of a mismatch hides a job.
-- 🔴 **Global coverage needs global SOURCES, not just this filter.** Every source
-  is a US/EU board (Dropbox, Discord, PostHog, Linear, Palantir). A seeker in
-  Pakistan gets **5 matches, all of them jobs whose location we couldn't
-  determine** — nothing actually local. The filter is honest; the inventory is
-  not yet global.
+- 🟢 **Global sources added — 5 → 13 boards, ~1,242 crawlable jobs.** Monzo, N26,
+  Wolt (28 countries alone), Deliveroo, Xero, Wealthsimple, Meesho, Qonto. All
+  verified with the real crawlers before seeding (leverdemo lesson): 0 missing
+  fields, 0 "(copy)"/demo titles, unique externalIds. Modelled against the SEO
+  floor: **31 countries would now clear 5 live jobs, up from 1 (US only)** —
+  US=300 GB=205 DE=85 CA=56 FR=54 ES=52 IN=42 AU=34 GR=29 AE=25 … 14 more
+  countries sit below the floor and correctly get no page.
+- 🟡 **The sources are seeded but NOT yet ingested** — deliberately, per the
+  standing rule that job data is perishable (§4.4) and a pre-launch crawl just
+  expires. Cron picks them up. Nothing is in the feed from these boards yet.
 - 🟡 **Unstated-scope remote still defaults to REMOTE_US** — a documented guess,
   not a fabrication about a known place. remoteScope stays null so it can be
   revisited (e.g. infer from the board's own country).
@@ -331,3 +336,23 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   US/Europe-centric and missed Pakistan — which is where our own test profile
   lives. An unlisted country silently becomes null (permissive, so it shows
   everything rather than nothing). Consider a real ISO-3166 library.
+- 🔴 **Voyage free tier is now a launch blocker, not a nuisance.** 3 RPM against
+  ~1,242 jobs is ~7 hours of embedding for one full ingest, and the boards
+  refresh continuously. Add a payment method before launch or the feed cannot
+  keep up with its own sources.
+- 🟢 **Location parsing rebuilt for the world: 25% → 2% unresolved** over 2,474
+  real location strings from 14 non-US boards. Global boards name a CITY, not a
+  country ("Berlin", "London - The River Building HQ", "AU - Sydney",
+  "Bangalore, Karnataka"), and country names alone resolved only 75% — the rest
+  would have landed in the "unknown" bucket, which PASSES the feed filter, so
+  Berlin jobs would have quietly reached Texans anyway. Now: ~200 world cities +
+  bare US city names, matched after US states so "Paris, TX" is still Texas and
+  "Manchester, NH" is still New Hampshire. 15 collision traps unit-tested.
+- 🟡 **City/country dictionaries are hand-maintained.** ~200 cities, ~95
+  countries. An unlisted place silently becomes null → permissive (shows to
+  everyone) rather than hidden. 7% of crawlable jobs still have no country. A
+  real geocoding library is the durable answer.
+- 🟡 **Country SEO pages do not exist yet.** The lattice is US-state-only
+  (/jobs/{role}/{state}); the 31 qualifying countries have nowhere to land. The
+  sources now justify building it — that was the sequencing decision: sources
+  first so the pages publish already-populated instead of as thin URLs.
