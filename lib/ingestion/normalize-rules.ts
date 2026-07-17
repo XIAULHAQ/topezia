@@ -8,6 +8,7 @@
  */
 
 import { EmploymentType, RemoteType } from "@prisma/client";
+import { decodeHtmlEntities } from "@/lib/sanitize";
 
 const US_STATE_ABBR = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
@@ -32,7 +33,12 @@ const STATE_NAME_TO_ABBR: Record<string, string> = {
 };
 
 export function stripHtml(input: string): string {
-  return input
+  // Decode entities FIRST. Greenhouse returns entity-ENCODED html
+  // (`&lt;p class=&quot;author-d-1gg9uz…&quot;&gt;`), which has no literal tags
+  // to strip — so without this we shipped the raw markup, including enormous
+  // generated class attributes, straight into the LLM prompt and the embedding
+  // input. Pure token cost and noise.
+  return decodeHtmlEntities(input)
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")

@@ -13,18 +13,40 @@ function escapeHtml(s: string): string {
 }
 
 /**
+ * Decode HTML entities. `&amp;` MUST go last, or `&amp;lt;` would decode twice
+ * and resurrect a tag we never had.
+ */
+export function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&amp;/gi, "&");
+}
+
+/**
  * Render a job description for display, whichever shape the source gave us.
  *
- * Greenhouse returns HTML; Ashby returns plain text. Feeding plain text through
- * an HTML sanitizer yields one giant unreadable paragraph, so detect that case
- * and rebuild paragraphs/line breaks from the newlines instead. Plain text is
- * escaped, so this stays XSS-safe either way.
+ * Three shapes in the wild:
+ *  - Greenhouse: HTML that is entity-ENCODED (`&lt;p&gt;…`). Decode it first or
+ *    we escape it a second time and the visitor reads raw markup.
+ *  - Real HTML: sanitize it.
+ *  - Ashby: plain text — through an HTML sanitizer that's one unreadable blob,
+ *    so rebuild paragraphs/breaks from the newlines.
+ *
+ * Safe in every branch: decoded HTML still goes through the sanitizer (so
+ * `&lt;script&gt;` becomes `<script>` and is then stripped), and plain text is
+ * escaped.
  */
 export function renderJobDescription(raw: string): string {
-  const looksLikeHtml = /<(p|div|ul|ol|li|br|h[1-6]|strong|em|b|i)\b[^>]*>/i.test(raw);
-  if (looksLikeHtml) return sanitizeJobHtml(raw);
+  const src = /&lt;\/?[a-z][a-z0-9]*/i.test(raw) ? decodeHtmlEntities(raw) : raw;
 
-  return raw
+  const looksLikeHtml = /<(p|div|ul|ol|li|br|h[1-6]|strong|em|b|i)\b[^>]*>/i.test(src);
+  if (looksLikeHtml) return sanitizeJobHtml(src);
+
+  return src
     .split(/\n{2,}/)
     .map((para) => para.trim())
     .filter(Boolean)

@@ -48,6 +48,12 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   verified working; it needs a **real** Lever board added to `seed-sources.ts`
   before launch. Current live sources: Greenhouse (dropbox, discord) + Ashby
   (posthog, linear) = 39 real jobs.
+- 🟠 **The existing 39 jobs were extracted/embedded from noisy text.** Greenhouse
+  returns entity-encoded HTML, which `stripHtml` didn't decode — so ~78% of each
+  Greenhouse description fed to Haiku and the embedding model was raw markup and
+  generated class attributes. Fixed now, but the stored jobs still carry the old
+  text/skills/embeddings; the fresh ingest at launch resolves it. (Re-ingesting
+  *before* clearing would duplicate them — the fix changes `descriptionHash`.)
 - 🟠 **Ashby descriptions are stored as plain text.** The crawler prefers
   `descriptionPlain` over `descriptionHtml`, so detail pages lose real lists and
   headings (we rebuild paragraphs from newlines as a fallback). Switch to
