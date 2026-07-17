@@ -1,0 +1,46 @@
+# Refresh LLM-written SEO page intros (spec §7: "regenerated monthly").
+#
+# Weekly, not monthly, on purpose: pages auto-publish as job volume crosses the
+# >=5 floor, and a brand-new page has no cached copy until this runs (it shows
+# the templated fallback meanwhile — correct, just generic). Weekly keeps new
+# pages from sitting on boilerplate for a month. Existing copy is only rewritten
+# once it's older than INTRO_MAX_AGE_DAYS, so the extra runs are nearly free.
+name: Refresh page intros
+
+on:
+  schedule:
+    - cron: "0 4 * * 1" # Mondays 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rewrite even fresh copy"
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: page-intros
+  cancel-in-progress: false
+
+jobs:
+  intros:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Generate page intros
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ "${{ inputs.force }}" = "true" ]; then
+            npm run gen-intros -- --force
+          else
+            npm run gen-intros
+          fi

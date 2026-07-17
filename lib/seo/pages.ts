@@ -10,6 +10,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import type { EmploymentType, RemoteType, SalaryPeriod } from "@prisma/client";
+import { getCachedIntro } from "./intro";
 
 export const MIN_JOBS_FOR_PAGE = 5;
 const REMOTE_PREFIX = "remote-";
@@ -66,7 +67,7 @@ export const stateName = (abbr: string) => STATE_NAMES[abbr.toUpperCase()] ?? ab
  * Resolve a /jobs/* slug (plus optional state) into a publishable page, or null
  * if it doesn't exist / is too thin. Caller should 404 on null.
  */
-export async function resolveSeoPage(slug: string, state?: string): Promise<SeoPage | null> {
+async function buildSeoPage(slug: string, state?: string): Promise<SeoPage | null> {
   const clean = slug.toLowerCase();
 
   // /jobs/{role-slug}/{state}
@@ -148,6 +149,23 @@ export async function resolveSeoPage(slug: string, state?: string): Promise<SeoP
   }
 
   return null;
+}
+
+/**
+ * Resolve a page, preferring the cached LLM-written intro (spec §7) over the
+ * templated fallback. A cache miss is not an error and never blocks the render —
+ * scripts/generate-page-intros.ts fills the cache out of band.
+ */
+export async function resolveSeoPage(slug: string, state?: string): Promise<SeoPage | null> {
+  const page = await buildSeoPage(slug, state);
+  if (!page) return null;
+  try {
+    const cached = await getCachedIntro(page.canonicalPath);
+    if (cached) page.intro = cached;
+  } catch {
+    // Copy is a nice-to-have; never fail a page over it.
+  }
+  return page;
 }
 
 /** Role ↔ state ↔ remote lattice — internal linking for free (§7). */

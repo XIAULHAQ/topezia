@@ -15,7 +15,8 @@
     "db:studio": "prisma studio",
     "ingest": "tsx scripts/run-ingestion.ts",
     "expiry-check": "tsx scripts/run-expiry-check.ts",
-    "send-alerts": "tsx scripts/send-alerts.ts"
+    "send-alerts": "tsx scripts/send-alerts.ts",
+    "gen-intros": "tsx scripts/generate-page-intros.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",

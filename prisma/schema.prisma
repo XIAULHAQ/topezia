@@ -416,6 +416,23 @@ enum AlertFrequency {
   WEEKLY
 }
 
+// Cached LLM-written intro copy for a programmatic SEO page (spec §7:
+// "2-3 sentence intro, LLM-written once per page, cached, regenerated
+// monthly"). Cached because thousands of pages sharing one templated
+// paragraph reads as boilerplate — the whole point is that each page says
+// something true and specific about ITS slice of the index. Generated out of
+// band by scripts/generate-page-intros.ts; pages never block on the model.
+model SeoPageIntro {
+  id          String   @id @default(uuid())
+  pageKey     String   @unique // canonical path, e.g. "/jobs/account-executive/ca"
+  intro       String
+  jobCount    Int // count when written — copy cites it, so staleness is visible
+  model       String // which model wrote it, for future re-runs
+  generatedAt DateTime @default(now())
+
+  @@index([generatedAt])
+}
+
 model JobAlert {
   id             String   @id @default(uuid())
   email          String

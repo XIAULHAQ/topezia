@@ -129,10 +129,8 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   `robots.txt`, JobPosting JSON-LD, the role↔state↔remote internal-link lattice,
   and absolute canonicals. Verified: 3 pages publish today (tech-software 24,
   sales 19, account-executive 13); thin ones correctly 404.
-- 🔴 **`NEXT_PUBLIC_SITE_URL` must be updated in Vercel** to
-  `https://www.topezia.com` (it's still `https://topezia.com`, which 308-redirects
-  to www). Until then, production canonicals and every sitemap URL point at the
-  non-canonical host.
+- 🟢 **`NEXT_PUBLIC_SITE_URL` is correct in Vercel** — verified: the live sitemap
+  and robots.txt both emit `https://www.topezia.com`, the canonical host.
 - 🟡 **Only 3 SEO pages exist until ingestion scales** — by design (the anti-thin
   rule). With 39 live jobs the publishing set is `/jobs/tech-software` (24),
   `/jobs/sales` (10) and `/jobs/account-executive` (5, i.e. one expiry from
@@ -141,9 +139,13 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   404s on hand-typed /jobs/* URLs until then, and don't mistake them for bugs.
   (Anything that *links* to a hidden page is a bug — sitemap, sibling lattice and
   job breadcrumbs all check the floor before linking.)
-- 🟡 **Page intros are templated, not LLM-written** (§7 wants a cached, monthly-
-  regenerated LLM intro per page so pages aren't near-duplicates). Fine at 3
-  pages; needed before publishing thousands.
+- 🟢 **LLM page intros BUILT** (§7): `SeoPageIntro` cache (migration 008),
+  `scripts/generate-page-intros.ts` (`npm run gen-intros`, `--dry-run/--force`),
+  refreshed weekly by `page-intros-cron`. Copy is generated **out of band** — a
+  page with no cached intro renders the templated fallback and never blocks on
+  the model. The prompt is fed real counts/titles/companies and told not to
+  invent facts; the intro also feeds each page's `<meta description>`, so search
+  snippets are unique too. Verified live on all 4 publishable pages.
 - 🟢 **Email alerts BUILT** (§7 capture + §9 delivery): above-the-fold capture on
   every SEO page, `POST /api/alerts` (resolves the saved search server-side —
   never trusts client-sent ids; idempotent per email+search), `JobAlert` table
