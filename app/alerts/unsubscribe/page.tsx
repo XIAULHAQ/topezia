@@ -17,9 +17,11 @@ export default function UnsubscribedPage({ searchParams }: { searchParams: { sta
         <div style={S.brand}>topezia</div>
         <h1 style={S.h1}>{ok ? "You're unsubscribed." : "Link not recognized"}</h1>
         <p style={S.p}>
+          {/* Don't promise a reply we can't receive: alerts send from a
+              no-reply subdomain with no inbox behind it. */}
           {ok
             ? "We've stopped those alerts. No hard feelings — no more emails about it."
-            : "That unsubscribe link is invalid or already used. If you're still getting emails you don't want, reply to one and we'll sort it out."}
+            : "That unsubscribe link is invalid or already used. If you're still getting emails you don't want, use the unsubscribe link at the bottom of the most recent one."}
         </p>
         <Link href="/" style={S.cta}>Back to Topezia</Link>
       </div>
