@@ -15,6 +15,7 @@ import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 import { prisma } from "@/lib/prisma";
 import { sanitizeJobHtml, renderJobDescription } from "@/lib/sanitize";
+import { MIN_JOBS_FOR_PAGE } from "@/lib/seo/pages";
 
 const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
@@ -33,7 +34,7 @@ async function getJob(id: string) {
       id: true, titleRaw: true, titleNormalized: true, companyName: true, descriptionRaw: true,
       locationRaw: true, locationState: true, remoteType: true, employmentType: true, seniority: true,
       salaryMin: true, salaryMax: true, salaryPeriod: true, postedAt: true, lastVerifiedAt: true,
-      status: true, source: true, sourceUrl: true,
+      status: true, source: true, sourceUrl: true, roleId: true, verticalId: true,
       vertical: { select: { name: true, slug: true } },
       role: { select: { name: true, slug: true } },
       skills: { select: { skill: { select: { name: true } } } },
@@ -55,6 +56,28 @@ function freshness(d: Date) {
   return `verified ${Math.round(h / 24)}d ago`;
 }
 
+/**
+ * The breadcrumb must not point at a page the >=5-live-jobs rule hides, or we
+ * link straight into a 404 (every job in a thin role did exactly that). Walk up
+ * to the closest parent that actually publishes: role → vertical → nothing.
+ */
+async function parentLink(job: {
+  roleId: string | null;
+  verticalId: string;
+  role: { name: string; slug: string } | null;
+  vertical: { name: string; slug: string };
+}): Promise<{ href: string; label: string } | null> {
+  if (job.role && job.roleId) {
+    const n = await prisma.job.count({ where: { status: "LIVE", roleId: job.roleId } });
+    if (n >= MIN_JOBS_FOR_PAGE) return { href: `/jobs/${job.role.slug}`, label: `All ${job.role.name.toLowerCase()} jobs` };
+  }
+  if (job.vertical.slug !== "unsorted") {
+    const n = await prisma.job.count({ where: { status: "LIVE", verticalId: job.verticalId } });
+    if (n >= MIN_JOBS_FOR_PAGE) return { href: `/jobs/${job.vertical.slug}`, label: `All ${job.vertical.name.toLowerCase()} jobs` };
+  }
+  return null;
+}
+
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const job = await getJob(params.id);
   if (!job) return { title: "Job — Topezia" };
@@ -67,6 +90,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
   const job = await getJob(params.id);
   if (!job) notFound();
 
+  const parent = await parentLink(job);
   const dead = job.status === "EXPIRED" || job.status === "SUSPECTED_DEAD";
   const pay = salaryText(job);
   const clean = renderJobDescription(job.descriptionRaw);
@@ -103,10 +127,8 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
       </header>
 
       <div style={S.wrap}>
-        {job.vertical && (
-          <Link href={`/jobs/${job.role?.slug ?? job.vertical.slug}`} style={S.crumb}>
-            ← All {(job.role?.name ?? job.vertical.name).toLowerCase()} jobs
-          </Link>
+        {parent && (
+          <Link href={parent.href} style={S.crumb}>← {parent.label}</Link>
         )}
 
         {dead && (

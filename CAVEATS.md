@@ -134,7 +134,13 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   to www). Until then, production canonicals and every sitemap URL point at the
   non-canonical host.
 - 🟡 **Only 3 SEO pages exist until ingestion scales** — by design (the anti-thin
-  rule). The launch target is 2–4k pages; that's gated on job volume, not code.
+  rule). With 39 live jobs the publishing set is `/jobs/tech-software` (24),
+  `/jobs/sales` (10) and `/jobs/account-executive` (5, i.e. one expiry from
+  disappearing). Every other role/vertical/state 404s **correctly**. The launch
+  target is 2–4k pages; that's gated on job volume, not code — so expect lots of
+  404s on hand-typed /jobs/* URLs until then, and don't mistake them for bugs.
+  (Anything that *links* to a hidden page is a bug — sitemap, sibling lattice and
+  job breadcrumbs all check the floor before linking.)
 - 🟡 **Page intros are templated, not LLM-written** (§7 wants a cached, monthly-
   regenerated LLM intro per page so pages aren't near-duplicates). Fine at 3
   pages; needed before publishing thousands.
