@@ -180,11 +180,10 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   group so runs can't overlap or double-send. This unblocks the kickoff doc's
   long-standing "workflow files were never successfully pushed" item (the old
   PAT lacked `workflow` scope; SSH isn't scope-restricted).
-- 🔴 **The crons will FAIL until repo secrets are added.** Settings → Secrets and
-  variables → Actions: `DATABASE_URL`, `DIRECT_URL`, `ANTHROPIC_API_KEY`,
-  `VOYAGE_API_KEY`, `RESEND_API_KEY`, `ALERT_FROM_EMAIL`, `NEXT_PUBLIC_SITE_URL`.
-  These are separate from Vercel's env vars. Until then, every scheduled run
-  errors (and emails you about it).
+- 🟢 **Repo secrets added and the cron path is PROVEN.** A manual `Ingest jobs`
+  run (cap 2/source) crawled all 4 sources from GitHub Actions — reaching the US
+  DB and resolving both the Anthropic and Voyage keys from secrets (39 → 43
+  jobs). Scheduled runs will work unattended.
 - 🟡 **`RESEND_API_KEY` / `ALERT_FROM_EMAIL` also need adding to Vercel** —
   they're only in local `.env`, so the live alert-signup form can't send its
   confirmation email yet.
