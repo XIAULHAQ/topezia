@@ -38,7 +38,11 @@ export async function POST(req: NextRequest) {
     // Extraction problems are the user's to fix (wrong file, a scan, too big),
     // so they get a real message rather than a generic 500.
     const message = err instanceof ResumeExtractError ? err.message : "Couldn't read that — try pasting your résumé text.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    // TEMP DIAGNOSTIC: extract-text wraps the real failure in a ResumeExtractError
+    // and stashes the original on `.cause`. Surface it so we can see why PDF
+    // parsing fails in the Vercel serverless bundle (works locally). Revert once fixed.
+    const debug = (err as { cause?: string })?.cause;
+    return NextResponse.json({ error: message, debug }, { status: 400 });
   }
 
   try {

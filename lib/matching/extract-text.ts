@@ -72,9 +72,13 @@ export async function extractResumeText(file: {
     // swallowing the actual error makes this impossible to debug.
     console.error("resume extraction failed:", err);
     // A corrupt/encrypted file shouldn't 500 — tell the person what to do.
-    throw new ResumeExtractError(
+    const friendly = new ResumeExtractError(
       "We couldn't read that file. If it's a scanned or password-protected PDF, try exporting a fresh copy — or paste the text instead."
     );
+    // TEMP DIAGNOSTIC: keep the original cause so the API can surface why PDF
+    // extraction fails in serverless (works locally). Revert once fixed.
+    (friendly as { cause?: string }).cause = `${(err as Error)?.name}: ${(err as Error)?.message}`;
+    throw friendly;
   }
 
   const clean = tidy(text);
