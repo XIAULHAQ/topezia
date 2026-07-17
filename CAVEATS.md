@@ -169,11 +169,19 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   large first batch is itself a spam signal. Ramp volume gradually.
 - 🟠 **Add a DMARC record** for the root domain (start `p=none`, monitor, then
   tighten). SPF/DKIM alone isn't the whole picture.
-- 🔴 **Alert sending isn't scheduled.** `npm run send-alerts` must run on a cron
-  (GitHub Actions, like ingestion — never a Vercel function). The workflow files
-  still aren't in the repo (the original PAT lacked `workflow` scope).
-- 🟡 **`RESEND_API_KEY` / `ALERT_FROM_EMAIL` need adding to Vercel** (and to
-  GitHub Actions secrets once the cron exists). They're only in local `.env`.
+- 🟢 **Cron workflows landed** (`.github/workflows/`): ingest 02:00+14:00 UTC,
+  expiry 03:30, alerts 15:00 — each with `workflow_dispatch` and a concurrency
+  group so runs can't overlap or double-send. This unblocks the kickoff doc's
+  long-standing "workflow files were never successfully pushed" item (the old
+  PAT lacked `workflow` scope; SSH isn't scope-restricted).
+- 🔴 **The crons will FAIL until repo secrets are added.** Settings → Secrets and
+  variables → Actions: `DATABASE_URL`, `DIRECT_URL`, `ANTHROPIC_API_KEY`,
+  `VOYAGE_API_KEY`, `RESEND_API_KEY`, `ALERT_FROM_EMAIL`, `NEXT_PUBLIC_SITE_URL`.
+  These are separate from Vercel's env vars. Until then, every scheduled run
+  errors (and emails you about it).
+- 🟡 **`RESEND_API_KEY` / `ALERT_FROM_EMAIL` also need adding to Vercel** —
+  they're only in local `.env`, so the live alert-signup form can't send its
+  confirmation email yet.
 - 🟡 **No alert email has ever actually been sent** — verified by dry-run only,
   since sending real email needs the verified domain + the owner's go-ahead.
 - 🟡 CPC-feed monetization (Talent.com / Jooble / Appcast) + affiliate slots —
