@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import type { SeoPage, SeoJob } from "@/lib/seo/pages";
 import { countrySlugFor } from "@/lib/seo/pages";
+import { decodeHtmlEntities } from "@/lib/sanitize";
 import AlertCapture from "./AlertCapture";
 
 const INDIGO = "#4f46e5";
@@ -9,6 +10,31 @@ const INK = "#1a1a2e";
 const MUTED = "#6b7280";
 
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
+
+const REGION_LABEL: Record<string, string> = {
+  GLOBAL: "Anywhere", EMEA: "EMEA", APAC: "APAC", LATAM: "LatAm", ANZ: "ANZ",
+  EUROPE: "Europe", NORTH_AMERICA: "North America",
+};
+
+/**
+ * Where the job is, in words a reader recognises.
+ *
+ * label(remoteType) rendered REMOTE_INTL as "Remote Intl" — raw enum, and on a
+ * UK page it called a UK-remote job "international". Say the actual scope.
+ */
+function placeLabel(j: SeoJob): string {
+  if (!j.remoteType.startsWith("REMOTE")) {
+    return j.locationState || REGION_LABEL[j.remoteScope ?? ""] || j.country || label(j.remoteType);
+  }
+  const scope = j.remoteScope;
+  if (!scope) return "Remote";
+  if (scope === "US") return "Remote (US)";
+  return `Remote (${REGION_LABEL[scope] ?? scope})`;
+}
+
+/** Plain text for structured data — decode BEFORE stripping tags. */
+const plainText = (html: string) =>
+  decodeHtmlEntities(html).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
 function salaryText(j: SeoJob): string | null {
   if (j.salaryMin == null || j.salaryMax == null) return null;
@@ -35,13 +61,23 @@ function jsonLd(page: SeoPage) {
       item: {
         "@type": "JobPosting",
         title: j.titleRaw,
-        description: j.descriptionRaw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 800),
+        // Decode first: Greenhouse serves entity-encoded HTML, so strip-first
+        // fed Google 800 chars of literal "&lt;div class=&quot;...&quot;&gt;".
+        description: plainText(j.descriptionRaw).slice(0, 800),
         datePosted: (j.postedAt ?? j.lastVerifiedAt).toISOString(),
         employmentType: j.employmentType,
         hiringOrganization: { "@type": "Organization", name: j.companyName },
-        jobLocation: j.remoteType.startsWith("REMOTE")
-          ? { "@type": "Place", address: { "@type": "PostalAddress", addressCountry: "US" } }
-          : { "@type": "Place", address: { "@type": "PostalAddress", addressRegion: j.locationState ?? undefined, addressCountry: "US" } },
+        // addressCountry was hardcoded "US" — it told Google every UK, German
+        // and Indian posting was American. Omit rather than guess when unknown:
+        // a wrong country is worse than an absent one.
+        jobLocation: {
+          "@type": "Place",
+          address: {
+            "@type": "PostalAddress",
+            ...(j.remoteType.startsWith("REMOTE") ? {} : { addressRegion: j.locationState ?? undefined }),
+            ...(j.country ? { addressCountry: j.country } : {}),
+          },
+        },
         ...(j.remoteType.startsWith("REMOTE") ? { jobLocationType: "TELECOMMUTE" } : {}),
         directApply: false,
         url: j.sourceUrl,
@@ -84,7 +120,7 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
                 <div style={{ flex: 1 }}>
                   <div style={S.jobTitle}>{j.titleRaw}</div>
                   <div style={S.jobMeta}>
-                    {j.companyName} · {j.locationState || label(j.remoteType)} · {label(j.employmentType)}
+                    {j.companyName} · {placeLabel(j)} · {label(j.employmentType)}
                     {pay ? ` · ${pay}` : ""}
                   </div>
                 </div>

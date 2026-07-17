@@ -22,6 +22,7 @@ export interface SeoJob {
   companyName: string;
   locationState: string | null;
   country: string | null;
+  remoteScope: string | null;
   remoteType: RemoteType;
   employmentType: EmploymentType;
   salaryMin: number | null;
@@ -48,7 +49,7 @@ export interface SeoPage {
 }
 
 const JOB_SELECT = {
-  id: true, titleRaw: true, companyName: true, locationState: true, country: true, remoteType: true,
+  id: true, titleRaw: true, companyName: true, locationState: true, country: true, remoteScope: true, remoteType: true,
   employmentType: true, salaryMin: true, salaryMax: true, salaryPeriod: true,
   lastVerifiedAt: true, postedAt: true, source: true, sourceUrl: true, descriptionRaw: true,
 } as const;
