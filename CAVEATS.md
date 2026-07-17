@@ -108,12 +108,27 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟡 **Page intros are templated, not LLM-written** (§7 wants a cached, monthly-
   regenerated LLM intro per page so pages aren't near-duplicates). Fine at 3
   pages; needed before publishing thousands.
-- 🟡 **No email-alert capture above the fold yet** — that slot currently holds a
-  résumé CTA. Needs the alerts system below.
+- 🟢 **Email alerts BUILT** (§7 capture + §9 delivery): above-the-fold capture on
+  every SEO page, `POST /api/alerts` (resolves the saved search server-side —
+  never trusts client-sent ids; idempotent per email+search), `JobAlert` table
+  (migration 006), one-click unsubscribe, and `scripts/send-alerts.ts` (Resend,
+  with `--dry-run`). Sends nothing when there's nothing new. Verified end-to-end
+  without sending: subscribe → dry-run compose → unsubscribe → sender then skips.
 - 🟡 **Freshness not enforced on display.** Spec §4.4 says never show anything
   unverified >48h; neither the feed nor SEO pages filter on `lastVerifiedAt`
   (they'd empty out without the ingestion cron running). Wire this up when the
   cron is turned on at launch.
-- 🟡 Email alerts (Resend/Brevo) — not started; needs a provider account.
+- 🔴 **Alerts can't actually send until `topezia.com` is verified in Resend.**
+  The API key works but is send-only (can't introspect domains). Until SPF/DKIM
+  DNS records are added and the domain verifies, Resend rejects sends from
+  `alerts@topezia.com` (test mode only allows the account owner's own address
+  from `onboarding@resend.dev`). README §"Connecting topezia.com" flagged this.
+- 🔴 **Alert sending isn't scheduled.** `npm run send-alerts` must run on a cron
+  (GitHub Actions, like ingestion — never a Vercel function). The workflow files
+  still aren't in the repo (the original PAT lacked `workflow` scope).
+- 🟡 **`RESEND_API_KEY` / `ALERT_FROM_EMAIL` need adding to Vercel** (and to
+  GitHub Actions secrets once the cron exists). They're only in local `.env`.
+- 🟡 **No alert email has ever actually been sent** — verified by dry-run only,
+  since sending real email needs the verified domain + the owner's go-ahead.
 - 🟡 CPC-feed monetization (Talent.com / Jooble / Appcast) + affiliate slots —
   not started; needs external feed accounts.

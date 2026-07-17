@@ -404,3 +404,36 @@ model JobDismissal {
 
   @@unique([profileId, jobId])
 }
+
+// ─────────────────────────────────────────────
+// Email alerts (spec §7 capture, §9 delivery) — a saved search per email.
+// Captured from SEO pages ("new Account Executive jobs in California"),
+// delivered by scripts/send-alerts.ts via Resend.
+// ─────────────────────────────────────────────
+
+enum AlertFrequency {
+  DAILY
+  WEEKLY
+}
+
+model JobAlert {
+  id             String   @id @default(uuid())
+  email          String
+  // Deterministic key for the saved search; (email, queryKey) is the dedup key.
+  // A string rather than a composite of nullable columns, because in Postgres
+  // NULLs aren't equal — a composite unique over them wouldn't dedup at all.
+  queryKey       String
+  label          String   // human-readable, used in the subject line
+  roleId         String?
+  verticalId     String?
+  locationState  String?
+  remoteOnly     Boolean  @default(false)
+  frequency      AlertFrequency @default(DAILY)
+  lastSentAt     DateTime?
+  unsubscribedAt DateTime?
+  unsubToken     String   @unique
+  createdAt      DateTime @default(now())
+
+  @@unique([email, queryKey])
+  @@index([email])
+}

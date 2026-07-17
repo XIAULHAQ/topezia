@@ -14,7 +14,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "ingest": "tsx scripts/run-ingestion.ts",
-    "expiry-check": "tsx scripts/run-expiry-check.ts"
+    "expiry-check": "tsx scripts/run-expiry-check.ts",
+    "send-alerts": "tsx scripts/send-alerts.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",
