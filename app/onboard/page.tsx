@@ -47,7 +47,10 @@ export default function OnboardPage() {
   const [emp, setEmp] = useState<string[]>(["FULL_TIME"]);
   const [remote, setRemote] = useState<string[]>([]);
   const [salaryFloor, setSalaryFloor] = useState("");
+  const [salaryTarget, setSalaryTarget] = useState("");
   const [salaryPeriod, setSalaryPeriod] = useState("YEAR");
+  const [locations, setLocations] = useState("");
+  const [workAuth, setWorkAuth] = useState("NOT_SPECIFIED");
 
   const toggle = (arr: string[], v: string, set: (a: string[]) => void) =>
     set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
@@ -110,9 +113,14 @@ export default function OnboardPage() {
           preferences: {
             employmentTypes: emp,
             remoteTypes: remote,
-            locations: [],
+            locations: locations
+              .split(",")
+              .map((l) => l.trim())
+              .filter(Boolean),
             salaryFloor: salaryFloor ? parseInt(salaryFloor, 10) : null,
-            salaryPeriod: salaryFloor ? salaryPeriod : null,
+            salaryTarget: salaryTarget ? parseInt(salaryTarget, 10) : null,
+            salaryPeriod: salaryFloor || salaryTarget ? salaryPeriod : null,
+            workAuthorization: workAuth,
           },
         }),
       });
@@ -237,7 +245,7 @@ export default function OnboardPage() {
 
             {/* 3. Three things a résumé can't tell us */}
             <div style={S.card}>
-              <div style={S.cardLabel}>Three things your résumé can&apos;t tell us</div>
+              <div style={S.cardLabel}>A few things your résumé can&apos;t tell us</div>
               <div style={S.qLabel}>Work type</div>
               <div style={S.chips}>
                 {WORK_TYPES.map((w) => (
@@ -250,14 +258,34 @@ export default function OnboardPage() {
                   <button key={r} style={remote.includes(r) ? S.pillOn : S.pillOff} onClick={() => toggle(remote, r, setRemote)}>{label(r)}</button>
                 ))}
               </div>
-              <div style={S.qLabel}>Salary floor (optional)</div>
+              <div style={S.qLabel}>Where would you consider working? (optional)</div>
+              <input
+                style={S.wideInput}
+                placeholder="e.g. Austin, Denver, anywhere in California"
+                value={locations}
+                onChange={(e) => setLocations(e.target.value)}
+              />
+              <p style={S.fieldHint}>Separate with commas. Leave blank if you&apos;re open anywhere.</p>
+
+              <div style={S.qLabel}>Salary range (optional)</div>
               <div style={S.roleRow}>
-                <input style={S.roleInput} type="number" placeholder="e.g. 120000" value={salaryFloor} onChange={(e) => setSalaryFloor(e.target.value)} />
+                <input style={S.roleInput} type="number" placeholder="Won't go below" value={salaryFloor} onChange={(e) => setSalaryFloor(e.target.value)} />
+                <input style={S.roleInput} type="number" placeholder="Aiming for" value={salaryTarget} onChange={(e) => setSalaryTarget(e.target.value)} />
                 <select style={S.select} value={salaryPeriod} onChange={(e) => setSalaryPeriod(e.target.value)}>
                   <option value="YEAR">per year</option>
                   <option value="HOUR">per hour</option>
                 </select>
               </div>
+              <p style={S.fieldHint}>We hide jobs below your minimum. Your target only nudges the ranking — you&apos;ll never lose a match for aiming high.</p>
+
+              <div style={S.qLabel}>Work authorization (optional)</div>
+              <select style={S.wideInput} value={workAuth} onChange={(e) => setWorkAuth(e.target.value)}>
+                <option value="NOT_SPECIFIED">Rather not say</option>
+                <option value="US_AUTHORIZED">Authorized to work in the US</option>
+                <option value="AUTHORIZED_NEEDS_FUTURE_SPONSORSHIP">Authorized now, will need sponsorship later</option>
+                <option value="NEEDS_SPONSORSHIP">Will need sponsorship</option>
+              </select>
+              <p style={S.fieldHint}>We won&apos;t hide jobs based on this — most postings don&apos;t say whether they sponsor. It just helps us flag it when they do.</p>
             </div>
 
             {error && <p style={S.error}>{error}</p>}
@@ -298,6 +326,15 @@ const S: Record<string, CSSProperties> = {
   cardLabel: { fontSize: 13, fontWeight: 700, color: MUTED, marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.4 },
   roleRow: { display: "flex", gap: 10, flexWrap: "wrap" },
   roleInput: { flex: 1, minWidth: 180, padding: "10px 12px", fontSize: 16, borderRadius: 10, border: "1px solid #e2e2ea", fontFamily: "inherit" },
+  wideInput: {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 8,
+    border: "1px solid #d4d4d8",
+    fontSize: 15,
+    background: "#fff",
+  } as const,
+  fieldHint: { fontSize: 12, color: MUTED, margin: "6px 0 0", lineHeight: 1.45 } as const,
   select: { padding: "10px 12px", fontSize: 15, borderRadius: 10, border: "1px solid #e2e2ea", background: "#fff", fontFamily: "inherit" },
   chips: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 },
   chipSolid: { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 10px", background: "#eef0ff", color: INDIGO, border: `1px solid ${INDIGO}`, borderRadius: 999, fontSize: 14, fontWeight: 600 },

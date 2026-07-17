@@ -81,16 +81,24 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       employmentTypes: true,
       remoteTypes: true,
       salaryFloor: true,
+      salaryTarget: true,
       salaryPeriod: true,
+      currentLocation: true,
+      industries: true,
+      workAuthorization: true,
       headlineRoleId: true,
       matchVersion: true,
-      skills: { select: { skill: { select: { name: true } } } },
+      skills: { select: { proficiency: true, skill: { select: { name: true } } } },
     },
   });
   if (!profile) return [];
   const version = profile.matchVersion ?? "unversioned";
 
-  const profileSkillNames = profile.skills.map((s) => s.skill.name);
+  // Annotate with proficiency where we have it, so the reranker can tell an
+  // expert apart from someone who listed a tool once.
+  const profileSkillNames = profile.skills.map((s) =>
+    s.proficiency ? `${s.skill.name} (${s.proficiency.toLowerCase()})` : s.skill.name
+  );
   // Profile.headlineRoleId is a bare fk (no relation defined in schema), so
   // resolve the role name in a separate lookup.
   const headlineRoleName = profile.headlineRoleId
@@ -172,6 +180,11 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
         seniority: profile.seniority ?? "NOT_APPLICABLE",
         yearsExperience: profile.yearsExperience,
         skills: profileSkillNames,
+        currentLocation: profile.currentLocation,
+        industries: profile.industries,
+        salaryTarget: profile.salaryTarget,
+        salaryPeriod: profile.salaryPeriod,
+        workAuthorization: profile.workAuthorization,
       },
       uncached
     );
@@ -236,12 +249,26 @@ Scoring (be honest — the distribution must be EARNED, do not cluster everythin
 - 50-69: plausible but real gaps.
 - <50: weak fit; still score it truthfully.
 Weigh: skill overlap (required skills matter most), seniority fit, sensible next career step, and preference alignment.
+- Skills may be annotated with proficiency (familiar/proficient/advanced/expert). A job wanting deep use of a skill the candidate is only FAMILIAR with is a gap, even though they technically list it.
+- Industry overlap is a mild plus, never a requirement — people change industries.
+- If a salary target is given it is an aspiration, not a floor: a job below it is not disqualified, but say so plainly in whyLine if the posted range clearly falls short.
+- If the candidate needs visa sponsorship, mention it in whyLine ONLY when the posting itself speaks to sponsorship or work authorization. Never assume from the company or country, and never lower a score over sponsorship the posting is silent about.
 - matchedSkills: the candidate's skills this job actually wants.
 - gapSkills: important skills the job wants that the candidate lacks. Never inflate; empty array if none.
 - whyLine: ONE plain-language sentence citing specifics (e.g. "Your caching and latency work is exactly what the post emphasizes"). For weak fits, say why honestly.`;
 
 async function rerankBatch(
-  profile: { headline: string | null; seniority: string; yearsExperience: number | null; skills: string[] },
+  profile: {
+    headline: string | null;
+    seniority: string;
+    yearsExperience: number | null;
+    skills: string[];
+    currentLocation: string | null;
+    industries: string[];
+    salaryTarget: number | null;
+    salaryPeriod: string | null;
+    workAuthorization: string;
+  },
   jobs: CandidateRow[]
 ): Promise<Map<string, RerankResult>> {
   const out = new Map<string, RerankResult>();
@@ -258,6 +285,10 @@ async function rerankBatch(
 - seniority: ${profile.seniority}
 - years experience: ${profile.yearsExperience ?? "unknown"}
 - skills: ${profile.skills.join(", ") || "none listed"}
+- industries worked in: ${profile.industries.join(", ") || "unknown"}
+- based in: ${profile.currentLocation ?? "unknown"}
+- salary target: ${profile.salaryTarget != null ? `${profile.salaryTarget} per ${(profile.salaryPeriod ?? "year").toLowerCase()} (aspiration, not a filter)` : "not given"}
+- work authorization: ${profile.workAuthorization === "NOT_SPECIFIED" ? "not given" : profile.workAuthorization}
 
 JOBS (${jobs.length}):
 ${JSON.stringify(jobsPayload)}`;

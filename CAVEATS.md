@@ -209,3 +209,28 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   since sending real email needs the verified domain + the owner's go-ahead.
 - 🟡 CPC-feed monetization (Talent.com / Jooble / Appcast) + affiliate slots —
   not started; needs external feed accounts.
+- 🟢 **Résumé parse now extracts proficiency, industries and location.** Skills
+  carry BOTH `confidence` (did the résumé say it?) and `proficiency` (are they
+  any good at it?). These are deliberately independent and it works: a test
+  résumé saying "touched Kubernetes once" parses as `confidence=1.0,
+  proficiency=FAMILIAR` — clearly stated, barely used. The reranker sees the
+  proficiency and treats "wants deep K8s" as a real gap.
+- 🟡 **Proficiency is an LLM inference, not a fact.** It's read off years, role
+  seniority and depth of description. It will sometimes be generous — the same
+  test rated "Terraform for staging only, occasionally" as PROFICIENT when
+  FAMILIAR was fairer. It nudges ranking only; nothing is filtered on it.
+- 🟡 **`salaryTarget` is a scoring signal, never a filter.** `salaryFloor` still
+  hard-filters. Nobody loses a match for aiming high — the target only lets the
+  why-line say a range falls short.
+- 🟡 **`workAuthorization` is captured but is NOT a hard filter, by design.** We
+  do not extract sponsorship terms from postings, so filtering would mean
+  hiding jobs on a guess. The reranker is instructed to mention sponsorship
+  only when the posting itself raises it. If we ever parse sponsorship from
+  descriptions, revisit this.
+- 🟡 **"Locations you'd consider" is free text, not geocoded.** It's split on
+  commas and passed through. The stage-1 hard filter still only uses remote
+  type — a typo or "anywhere in California" won't narrow retrieval, it only
+  informs the rerank. Real geo matching needs a location taxonomy.
+- 🟡 **LinkedIn "connect" is still a PDF export, not an integration.** The
+  onboard screen tells the user to use LinkedIn's own More → Save to PDF and
+  upload it. There is no LinkedIn API auth — that needs a Partner-tier app.

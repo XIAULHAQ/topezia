@@ -283,13 +283,16 @@ model Profile {
   id               String   @id @default(uuid())
   userId           String   @unique // Supabase auth user id
 
-  resumeFileUrl    String?
+  resumeFileUrl    String?  // stays null: résumés are parsed in memory, not stored
   resumeText       String?
 
   fullName         String?
   headlineRoleId   String?
   seniority        Seniority?
   yearsExperience  Float?
+  currentLocation  String?  // where they are today, parsed from the résumé —
+                            // distinct from `locations` (where they'd WORK)
+  industries       String[] // e.g. ["healthcare", "b2b saas"] — trajectory signal
   workHistory      Json?    // structured, LLM-parsed
   education        Json?
   certifications   String[]
@@ -299,9 +302,16 @@ model Profile {
   // preferences (§3.4)
   employmentTypes  EmploymentType[]
   remoteTypes      RemoteType[]
-  locations        String[]
-  salaryFloor      Int?
+  locations        String[] // places they'd actually work
+  salaryFloor      Int?     // walk-away minimum — the hard filter (§5)
+  salaryTarget     Int?     // what they're actually aiming for; scoring signal only,
+                            // never a filter (nobody should lose a match for ambition)
   salaryPeriod     SalaryPeriod?
+  // Visa reality. Captured and fed to the reranker so why-lines can flag likely
+  // sponsorship problems — NOT a hard filter, because we don't extract
+  // sponsorship terms from postings, and silently hiding jobs on a guess would
+  // be worse than saying nothing.
+  workAuthorization WorkAuthorization @default(NOT_SPECIFIED)
   verticalsOptIn   String[] // vertical slugs
 
   // alternate entry path (trucking questionnaire, §3.4) — same shape, resumeFileUrl null
@@ -353,7 +363,11 @@ model ProfileSkill {
   profile    Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   skillId    String
   skill      Skill   @relation(fields: [skillId], references: [id])
-  confidence Float   @default(1.0) // 0–1, drives dashed "confirm?" chip on parse screen
+  // confidence ≠ proficiency, and conflating them is a bug waiting to happen:
+  // confidence = "did the résumé actually say this?" (drives the dashed
+  // "confirm?" chip); proficiency = "how good are they?" (feeds match scoring).
+  confidence Float   @default(1.0) // 0–1
+  proficiency SkillProficiency? // inferred from years/seniority/depth of use
   source     SkillSource @default(RESUME)
 
   @@id([profileId, skillId])
@@ -363,6 +377,20 @@ enum SkillSource {
   RESUME
   CONFIRMED
   USER_ADDED
+}
+
+enum SkillProficiency {
+  FAMILIAR // mentioned//exposure
+  PROFICIENT // used regularly
+  ADVANCED // deep, sustained use
+  EXPERT // leads/teaches others in it
+}
+
+enum WorkAuthorization {
+  US_AUTHORIZED // citizen / permanent resident — never needs sponsorship
+  AUTHORIZED_NEEDS_FUTURE_SPONSORSHIP // e.g. F-1 OPT: can work now, needs it later
+  NEEDS_SPONSORSHIP // needs sponsorship to start
+  NOT_SPECIFIED
 }
 
 // ─────────────────────────────────────────────
