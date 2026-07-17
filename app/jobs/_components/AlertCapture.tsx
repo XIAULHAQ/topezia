@@ -42,7 +42,7 @@ export default function AlertCapture({ slug, place, label }: { slug: string; pla
       <div style={S.wrap}>
         <div style={S.doneTitle}>✓ Check your email to confirm</div>
         <div style={S.sub}>
-          We sent you a one-click confirmation link. We won&apos;t email you {label.toLowerCase()} until you click it —
+          We sent you a one-click confirmation link. We won&apos;t email you {label} until you click it —
           and you can unsubscribe from any email, one click.
         </div>
       </div>
@@ -51,7 +51,7 @@ export default function AlertCapture({ slug, place, label }: { slug: string; pla
 
   return (
     <div style={S.wrap}>
-      <div style={S.title}>Get new {label.toLowerCase()} by email</div>
+      <div style={S.title}>Get new {label} by email</div>
       <div style={S.sub}>Fresh, verified postings — no digest spam, and one-click unsubscribe.</div>
       <form style={S.form} onSubmit={submit}>
         <input
