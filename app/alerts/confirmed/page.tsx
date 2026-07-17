@@ -1,6 +1,6 @@
 /**
- * Unsubscribe result page — presentational only. The actual unsubscribe happens
- * in /api/alerts/unsubscribe (which also serves RFC 8058 one-click POSTs).
+ * Double opt-in confirmation result page. The work happens in
+ * /api/alerts/confirm; this just tells the human what happened.
  */
 import Link from "next/link";
 import type { CSSProperties } from "react";
@@ -9,19 +9,21 @@ const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
 const MUTED = "#6b7280";
 
-export default function UnsubscribedPage({ searchParams }: { searchParams: { state?: string } }) {
+export default function AlertConfirmedPage({ searchParams }: { searchParams: { state?: string } }) {
   const ok = searchParams.state === "ok";
   return (
     <main style={S.page}>
       <div style={S.card}>
         <div style={S.brand}>topezia</div>
-        <h1 style={S.h1}>{ok ? "You're unsubscribed." : "Link not recognized"}</h1>
+        <h1 style={S.h1}>{ok ? "Alert confirmed." : "Link not recognized"}</h1>
         <p style={S.p}>
           {ok
-            ? "We've stopped those alerts. No hard feelings — no more emails about it."
-            : "That unsubscribe link is invalid or already used. If you're still getting emails you don't want, reply to one and we'll sort it out."}
+            ? "We'll email you when new matching jobs show up — and nothing when they don't. Unsubscribe from any email in one click."
+            : "That confirmation link is invalid or expired. Sign up again from any jobs page and we'll send a fresh one."}
         </p>
-        <Link href="/" style={S.cta}>Back to Topezia</Link>
+        <Link href={ok ? "/onboard" : "/"} style={S.cta}>
+          {ok ? "See which ones fit me →" : "Back to Topezia"}
+        </Link>
       </div>
     </main>
   );

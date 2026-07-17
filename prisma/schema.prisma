@@ -430,6 +430,11 @@ model JobAlert {
   remoteOnly     Boolean  @default(false)
   frequency      AlertFrequency @default(DAILY)
   lastSentAt     DateTime?
+  // Double opt-in: nothing is ever sent to an address that hasn't clicked the
+  // confirmation link. Protects deliverability (typos and spam-trap addresses
+  // bounce → reputation damage) and is the honest consent bar for bulk email.
+  confirmedAt    DateTime?
+  confirmToken   String   @unique
   unsubscribedAt DateTime?
   unsubToken     String   @unique
   createdAt      DateTime @default(now())

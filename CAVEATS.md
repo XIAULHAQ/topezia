@@ -111,18 +111,34 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟢 **Email alerts BUILT** (§7 capture + §9 delivery): above-the-fold capture on
   every SEO page, `POST /api/alerts` (resolves the saved search server-side —
   never trusts client-sent ids; idempotent per email+search), `JobAlert` table
-  (migration 006), one-click unsubscribe, and `scripts/send-alerts.ts` (Resend,
-  with `--dry-run`). Sends nothing when there's nothing new. Verified end-to-end
-  without sending: subscribe → dry-run compose → unsubscribe → sender then skips.
+  (migrations 006/007), and `scripts/send-alerts.ts` (Resend, `--dry-run`).
+  Sends nothing when there's nothing new — an empty digest trains people to
+  ignore you. Deliverability built in:
+  - **Double opt-in** — nothing is ever mailed to an address that hasn't clicked
+    the confirmation link (typos/spam-traps bounce → reputation damage; also the
+    honest consent bar).
+  - **RFC 8058 one-click unsubscribe** — `List-Unsubscribe` +
+    `List-Unsubscribe-Post` headers, which Gmail/Yahoo have required of bulk
+    senders since Feb 2024, plus a no-confirm-step unsubscribe link.
+  - **Subdomain sending** (`alerts@mail.topezia.com`) to isolate reputation.
+  Verified end-to-end without sending a real email: subscribe → sender sends
+  nothing while unconfirmed → confirm → sender sends → one-click POST
+  unsubscribe → sender sends nothing again.
 - 🟡 **Freshness not enforced on display.** Spec §4.4 says never show anything
   unverified >48h; neither the feed nor SEO pages filter on `lastVerifiedAt`
   (they'd empty out without the ingestion cron running). Wire this up when the
   cron is turned on at launch.
-- 🔴 **Alerts can't actually send until `topezia.com` is verified in Resend.**
-  The API key works but is send-only (can't introspect domains). Until SPF/DKIM
-  DNS records are added and the domain verifies, Resend rejects sends from
-  `alerts@topezia.com` (test mode only allows the account owner's own address
-  from `onboarding@resend.dev`). README §"Connecting topezia.com" flagged this.
+- 🔴 **Alerts can't send until `mail.topezia.com` is verified in Resend.**
+  Confirmed by Resend itself: `403 — The mail.topezia.com domain is not
+  verified`. Add the domain at https://resend.com/domains and publish the DNS
+  records it gives you. We deliberately send from a **subdomain**, not the root,
+  so bulk-alert reputation can't poison `topezia.com` (used for human mail).
+  Until it's verified the alert form fails honestly ("couldn't send the
+  confirmation") rather than pretending — the pending row survives for retry.
+- 🟠 **Warm up the new sending subdomain.** It has zero reputation; blasting a
+  large first batch is itself a spam signal. Ramp volume gradually.
+- 🟠 **Add a DMARC record** for the root domain (start `p=none`, monitor, then
+  tighten). SPF/DKIM alone isn't the whole picture.
 - 🔴 **Alert sending isn't scheduled.** `npm run send-alerts` must run on a cron
   (GitHub Actions, like ingestion — never a Vercel function). The workflow files
   still aren't in the repo (the original PAT lacked `workflow` scope).

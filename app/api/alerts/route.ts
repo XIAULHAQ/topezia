@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { resolveAlertTarget, alertQueryKey } from "@/lib/alerts/query";
+import { sendEmail, renderConfirmEmail } from "@/lib/alerts/send";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -30,10 +31,13 @@ export async function POST(req: NextRequest) {
   if (!target) return NextResponse.json({ error: "Unknown job search." }, { status: 404 });
 
   const queryKey = alertQueryKey(target);
+  const confirmToken = randomUUID();
+
+  let alert;
   try {
-    await prisma.jobAlert.upsert({
+    alert = await prisma.jobAlert.upsert({
       where: { email_queryKey: { email, queryKey } },
-      // Re-subscribing clears a previous unsubscribe.
+      // Re-subscribing clears a previous unsubscribe and re-arms confirmation.
       update: { unsubscribedAt: null, label: target.label },
       create: {
         email,
@@ -43,12 +47,34 @@ export async function POST(req: NextRequest) {
         verticalId: target.verticalId,
         locationState: target.locationState,
         remoteOnly: target.remoteOnly,
+        confirmToken,
         unsubToken: randomUUID(),
       },
+      select: { confirmToken: true, confirmedAt: true },
     });
-    return NextResponse.json({ ok: true, label: target.label });
   } catch (err) {
     console.error("alert subscribe failed:", err);
     return NextResponse.json({ error: "Couldn't save that — try again." }, { status: 502 });
   }
+
+  // Already confirmed (re-subscribe) — nothing to confirm again.
+  if (alert.confirmedAt) {
+    return NextResponse.json({ ok: true, label: target.label, pending: false });
+  }
+
+  // Double opt-in: we never mail an unconfirmed address. If the confirmation
+  // can't be delivered, say so honestly rather than claiming "check your email"
+  // for a message that will never arrive. The pending row stays, so a retry works.
+  try {
+    const { subject, html } = renderConfirmEmail(target.label, alert.confirmToken);
+    await sendEmail({ to: email, subject, html });
+  } catch (err) {
+    console.error("confirmation email failed:", err);
+    return NextResponse.json(
+      { error: "We couldn't send the confirmation email just now — please try again shortly." },
+      { status: 502 }
+    );
+  }
+
+  return NextResponse.json({ ok: true, label: target.label, pending: true });
 }

@@ -38,8 +38,11 @@ export default function AlertCapture({ slug, state, label }: { slug: string; sta
   if (status === "done") {
     return (
       <div style={S.wrap}>
-        <div style={S.doneTitle}>✓ You&apos;re on the list.</div>
-        <div style={S.sub}>We&apos;ll email you when new {label.toLowerCase()} show up. Unsubscribe from any email, one click.</div>
+        <div style={S.doneTitle}>✓ Check your email to confirm</div>
+        <div style={S.sub}>
+          We sent you a one-click confirmation link. We won&apos;t email you {label.toLowerCase()} until you click it —
+          and you can unsubscribe from any email, one click.
+        </div>
       </div>
     );
   }
