@@ -429,3 +429,11 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟡 **Backfill was ~4s/job locally** (75 jobs in 5 min) — that is DB write
   latency from Pakistan, not Voyage (which answered in ~850ms concurrently).
   Expect it far faster on the runner. Same lesson as ingest: time it there.
+- 🟢 **/jobs was a 404 — now the browse hub.** Only /jobs/{slug} and deeper
+  existed, so the bare /jobs directory 404'd (owner hit it). Now a hub grouping
+  every publishable page: by field, role, country (30), and US state (8), each
+  with a live count, floor-gated so it never links to a page that would 404.
+  Added single-segment place pages (/jobs/germany, /jobs/california) as the hub
+  targets — full-name slugs, so "canada" and "california" don't collide the way
+  the 2-letter codes would. Browser-verified: hub → Germany chip → "Jobs in
+  Germany" (77), no console errors. In sitemap at priority 0.9.
