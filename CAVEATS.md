@@ -409,11 +409,16 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   (ingest stays fast, embeddings follow), but on the paid tier the gap is
   minutes rather than days. Jobs without an embedding are invisible to stage-1
   retrieval, so they appear in the feed but cannot be matched until backfilled.
-- 🟡 **Production ingest speed is still UNMEASURED.** Everything so far was timed
-  over a ~1-2.8s-per-query link from Pakistan. The runner should be far faster
-  (LLM-bound, not DB-bound) but that is an expectation, not a number — trigger
-  `Ingest jobs` from the Actions tab and read the "Xms/job wall-clock" line the
-  script now prints.
+- 🟢 **Full unattended crawl PROVEN on the runner: 1,135 live jobs in 5m 58s.**
+  The scheduled 14:00 UTC run fired (late — see below), crawled all 13 boards,
+  and landed 139 → 1,135 LIVE across 45 countries, well inside the 60-min cron
+  budget. 99 duplicates, 0 orphaned — the dedup-race fix held at 1,200-job scale.
+  The programmatic SEO lattice auto-published 50 country pages (was 2).
+- 🟡 **GitHub cron fires LATE and unreliably.** The 14:00 UTC scheduled run
+  actually started ~14:46. Runs can be delayed 30-45 min or dropped under load —
+  do NOT treat the cron time as a deadline. A watcher that polled until 14:50
+  concluded (wrongly) that it never ran; it finished ~14:52. For anything
+  time-critical, trigger manually or widen the watch window well past the hour.
 - 🔴 **The inventory gap is now concrete, and it is the owner's own profile.**
   A seeker in Islamabad (a real profile in the DB) gets **3 matches, scored
   8-18** — the geography filter is correct, there is simply nothing there. India
