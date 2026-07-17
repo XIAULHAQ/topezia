@@ -1,7 +1,8 @@
 /**
  * POST /api/alerts — subscribe an email to a saved search (spec §7 capture).
  *
- * Takes the SEO page's slug (+ optional state) and resolves the filter
+ * Takes the SEO page's slug (+ optional place: state code or country slug)
+ * and resolves the filter
  * server-side, so a caller can't fabricate an arbitrary query. Idempotent:
  * re-subscribing the same email to the same search just re-activates it.
  */
@@ -14,7 +15,7 @@ import { sendEmail, renderConfirmEmail } from "@/lib/alerts/send";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export async function POST(req: NextRequest) {
-  let body: { email?: string; slug?: string; state?: string | null };
+  let body: { email?: string; slug?: string; place?: string | null; state?: string | null };
   try {
     body = await req.json();
   } catch {
@@ -27,7 +28,8 @@ export async function POST(req: NextRequest) {
   }
   if (!body.slug) return NextResponse.json({ error: "Missing slug." }, { status: 400 });
 
-  const target = await resolveAlertTarget(body.slug, body.state ?? null);
+  // `state` accepted for backward compatibility with any in-flight client.
+  const target = await resolveAlertTarget(body.slug, body.place ?? body.state ?? null);
   if (!target) return NextResponse.json({ error: "Unknown job search." }, { status: 404 });
 
   const queryKey = alertQueryKey(target);

@@ -51,6 +51,7 @@ async function main() {
       roleId: a.roleId,
       verticalId: a.verticalId,
       locationState: a.locationState,
+      country: a.country,
       remoteOnly: a.remoteOnly,
     };
     const jobs = await prisma.job.findMany({

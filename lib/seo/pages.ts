@@ -21,6 +21,7 @@ export interface SeoJob {
   titleRaw: string;
   companyName: string;
   locationState: string | null;
+  country: string | null;
   remoteType: RemoteType;
   employmentType: EmploymentType;
   salaryMin: number | null;
@@ -34,19 +35,20 @@ export interface SeoJob {
 }
 
 export interface SeoPage {
-  kind: "vertical" | "role" | "remote-role" | "role-state";
+  kind: "vertical" | "role" | "remote-role" | "role-state" | "role-country";
   heading: string;
   intro: string;
   canonicalPath: string;
   slug: string; // as it appears in /jobs/{slug} — what the alert form posts
   state?: string; // lowercase state segment, for role-state pages
+  country?: string; // ISO-2, for role-country pages
   jobs: SeoJob[];
   total: number;
   siblings: { href: string; label: string }[];
 }
 
 const JOB_SELECT = {
-  id: true, titleRaw: true, companyName: true, locationState: true, remoteType: true,
+  id: true, titleRaw: true, companyName: true, locationState: true, country: true, remoteType: true,
   employmentType: true, salaryMin: true, salaryMax: true, salaryPeriod: true,
   lastVerifiedAt: true, postedAt: true, source: true, sourceUrl: true, descriptionRaw: true,
 } as const;
@@ -65,18 +67,112 @@ const STATE_NAMES: Record<string, string> = {
 export const stateName = (abbr: string) => STATE_NAMES[abbr.toUpperCase()] ?? abbr.toUpperCase();
 
 /**
+ * Countries get FULL-NAME slugs (/jobs/backend-engineer/germany), not ISO codes.
+ *
+ * Codes cannot share the {place} namespace with US states: CA is California and
+ * Canada, IN is Indiana and India, DE is Delaware and Germany, GA is Georgia
+ * twice over. US pages keep their two-letter codes untouched; full names also
+ * happen to be what people actually search.
+ */
+const COUNTRY_NAMES: Record<string, string> = {
+  US: "United States", GB: "United Kingdom", IE: "Ireland", DE: "Germany", FR: "France",
+  ES: "Spain", PT: "Portugal", IT: "Italy", NL: "Netherlands", BE: "Belgium",
+  AT: "Austria", CH: "Switzerland", LU: "Luxembourg", SE: "Sweden", NO: "Norway",
+  DK: "Denmark", FI: "Finland", IS: "Iceland", EE: "Estonia", LV: "Latvia",
+  LT: "Lithuania", PL: "Poland", CZ: "Czechia", SK: "Slovakia", HU: "Hungary",
+  RO: "Romania", BG: "Bulgaria", HR: "Croatia", SI: "Slovenia", RS: "Serbia",
+  BA: "Bosnia and Herzegovina", AL: "Albania", GR: "Greece", CY: "Cyprus",
+  MT: "Malta", UA: "Ukraine", MD: "Moldova", TR: "Türkiye", RU: "Russia",
+  KZ: "Kazakhstan", AZ: "Azerbaijan", AM: "Armenia", UZ: "Uzbekistan", GE: "Georgia (country)",
+  CA: "Canada", MX: "Mexico", BR: "Brazil", AR: "Argentina", CL: "Chile",
+  CO: "Colombia", PE: "Peru", UY: "Uruguay", EC: "Ecuador", CR: "Costa Rica",
+  PA: "Panama", GT: "Guatemala", DO: "Dominican Republic",
+  IL: "Israel", AE: "United Arab Emirates", SA: "Saudi Arabia", QA: "Qatar",
+  KW: "Kuwait", BH: "Bahrain", OM: "Oman", JO: "Jordan", LB: "Lebanon",
+  EG: "Egypt", MA: "Morocco", TN: "Tunisia", DZ: "Algeria",
+  ZA: "South Africa", NG: "Nigeria", KE: "Kenya", GH: "Ghana", ET: "Ethiopia",
+  UG: "Uganda", TZ: "Tanzania", RW: "Rwanda",
+  IN: "India", PK: "Pakistan", BD: "Bangladesh", LK: "Sri Lanka", NP: "Nepal",
+  CN: "China", HK: "Hong Kong", TW: "Taiwan", JP: "Japan", KR: "South Korea",
+  SG: "Singapore", MY: "Malaysia", ID: "Indonesia", TH: "Thailand", VN: "Vietnam",
+  PH: "Philippines", AU: "Australia", NZ: "New Zealand",
+};
+
+const countrySlug = (iso: string) =>
+  (COUNTRY_NAMES[iso] ?? iso).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+const ISO_BY_SLUG: Record<string, string> = Object.fromEntries(
+  Object.keys(COUNTRY_NAMES).map((iso) => [countrySlug(iso), iso])
+);
+
+export const countrySlugFor = (iso: string) => countrySlug(iso);
+export const isoForCountrySlug = (slug: string): string | null => ISO_BY_SLUG[slug.toLowerCase()] ?? null;
+export const countryName = (iso: string) => COUNTRY_NAMES[iso.toUpperCase()] ?? iso.toUpperCase();
+export const countryHref = (roleSlug: string, iso: string) => `/jobs/${roleSlug}/${countrySlug(iso)}`;
+
+/**
  * Resolve a /jobs/* slug (plus optional state) into a publishable page, or null
  * if it doesn't exist / is too thin. Caller should 404 on null.
  */
-async function buildSeoPage(slug: string, state?: string): Promise<SeoPage | null> {
+async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | null> {
   const clean = slug.toLowerCase();
 
-  // /jobs/{role-slug}/{state}
-  if (state) {
-    const st = state.toUpperCase();
-    if (!STATE_NAMES[st]) return null;
+  // /jobs/{role-slug}/{place} — {place} is a US state code OR a country slug.
+  // States are checked first so every existing US page resolves exactly as
+  // before; a two-letter code is never read as a country.
+  if (place) {
+    const st = place.toUpperCase();
+    const iso = ISO_BY_SLUG[place.toLowerCase()];
+    if (!STATE_NAMES[st] && !iso) return null;
     const role = await prisma.role.findUnique({ where: { slug: clean }, select: { id: true, name: true, slug: true } });
+
+    // A vertical × place page too, not just role × place. Roles are narrow: 19
+    // UK jobs spread across 5 roles clears no floor, while the same jobs give
+    // finance-accounting=9 and tech-software=6. Without this the country
+    // lattice would publish nothing until volume is ~20x higher.
+    const vertical = role
+      ? null
+      : await prisma.vertical.findUnique({ where: { slug: clean }, select: { id: true, name: true, slug: true } });
+    if (!role && (!vertical || vertical.slug === "unsorted")) return null;
+
+    // /jobs/{vertical-slug}/{country}
+    if (!STATE_NAMES[st] && iso && vertical) {
+      const where = { status: "LIVE" as const, verticalId: vertical.id, country: iso };
+      const total = await prisma.job.count({ where });
+      if (total < MIN_JOBS_FOR_PAGE) return null;
+      const cName = countryName(iso);
+      return {
+        kind: "role-country",
+        heading: `${vertical.name} jobs in ${cName}`,
+        intro: `${total} verified ${vertical.name.toLowerCase()} ${total === 1 ? "opening" : "openings"} in ${cName}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your résumé once and Topezia scores each one against your actual experience — honestly, including the weak fits.`,
+        canonicalPath: countryHref(vertical.slug, iso),
+        slug: vertical.slug,
+        country: iso,
+        jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
+        total,
+        siblings: await siblingsForVertical(vertical.id, vertical.slug),
+      };
+    }
     if (!role) return null;
+
+    // /jobs/{role-slug}/{country}
+    if (!STATE_NAMES[st] && iso) {
+      const where = { status: "LIVE" as const, roleId: role.id, country: iso };
+      const total = await prisma.job.count({ where });
+      if (total < MIN_JOBS_FOR_PAGE) return null;
+      const cName = countryName(iso);
+      return {
+        kind: "role-country",
+        heading: `${role.name} jobs in ${cName}`,
+        intro: `${total} verified ${role.name.toLowerCase()} ${total === 1 ? "opening" : "openings"} in ${cName}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your résumé once and Topezia scores each one against your actual experience — honestly, including the weak fits.`,
+        canonicalPath: countryHref(role.slug, iso),
+        slug: role.slug,
+        country: iso,
+        jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
+        total,
+        siblings: await siblingsForRole(role.id, role.slug, undefined, iso),
+      };
+    }
     const where = { status: "LIVE" as const, roleId: role.id, locationState: st };
     const total = await prisma.job.count({ where });
     if (total < MIN_JOBS_FOR_PAGE) return null;
@@ -157,8 +253,8 @@ async function buildSeoPage(slug: string, state?: string): Promise<SeoPage | nul
  * templated fallback. A cache miss is not an error and never blocks the render —
  * scripts/generate-page-intros.ts fills the cache out of band.
  */
-export async function resolveSeoPage(slug: string, state?: string): Promise<SeoPage | null> {
-  const page = await buildSeoPage(slug, state);
+export async function resolveSeoPage(slug: string, place?: string): Promise<SeoPage | null> {
+  const page = await buildSeoPage(slug, place);
   if (!page) return null;
   try {
     const cached = await getCachedIntro(page.canonicalPath);
@@ -170,24 +266,43 @@ export async function resolveSeoPage(slug: string, state?: string): Promise<SeoP
 }
 
 /** Role ↔ state ↔ remote lattice — internal linking for free (§7). */
-async function siblingsForRole(roleId: string, roleSlug: string, excludeState?: string) {
+async function siblingsForRole(roleId: string, roleSlug: string, excludeState?: string, excludeCountry?: string) {
   const out: { href: string; label: string }[] = [];
+  const onPlacePage = Boolean(excludeState || excludeCountry);
 
   const remote = await prisma.job.count({ where: { status: "LIVE", roleId, remoteType: { in: REMOTE_TYPES } } });
-  if (remote >= MIN_JOBS_FOR_PAGE && !excludeState) out.push({ href: `/jobs/remote-${roleSlug}`, label: `Remote (${remote})` });
+  if (remote >= MIN_JOBS_FOR_PAGE && !onPlacePage) out.push({ href: `/jobs/remote-${roleSlug}`, label: `Remote (${remote})` });
 
-  const states = await prisma.job.groupBy({
-    by: ["locationState"],
-    where: { status: "LIVE", roleId, locationState: { not: null } },
-    _count: { id: true },
-  });
+  const [states, countries] = await Promise.all([
+    prisma.job.groupBy({
+      by: ["locationState"],
+      where: { status: "LIVE", roleId, locationState: { not: null } },
+      _count: { id: true },
+    }),
+    prisma.job.groupBy({
+      by: ["country"],
+      where: { status: "LIVE", roleId, country: { not: null } },
+      _count: { id: true },
+    }),
+  ]);
+
   for (const s of states) {
     if (!s.locationState || s.locationState === excludeState) continue;
     if (s._count.id < MIN_JOBS_FOR_PAGE) continue;
     out.push({ href: `/jobs/${roleSlug}/${s.locationState.toLowerCase()}`, label: `${stateName(s.locationState)} (${s._count.id})` });
   }
-  if (excludeState) out.push({ href: `/jobs/${roleSlug}`, label: "All locations" });
-  return out.slice(0, 12);
+
+  for (const c of countries) {
+    // US is represented by its state pages above — a "United States" sibling
+    // next to "California" and "Texas" is noise.
+    if (!c.country || c.country === excludeCountry || c.country === "US") continue;
+    if (c._count.id < MIN_JOBS_FOR_PAGE) continue;
+    if (!COUNTRY_NAMES[c.country]) continue; // never link a slug we can't resolve back
+    out.push({ href: countryHref(roleSlug, c.country), label: `${countryName(c.country)} (${c._count.id})` });
+  }
+
+  if (onPlacePage) out.push({ href: `/jobs/${roleSlug}`, label: "All locations" });
+  return out.slice(0, 14);
 }
 
 /** Vertical page links out to its qualifying role pages (one aggregate query). */
@@ -217,7 +332,7 @@ async function siblingsForVertical(verticalId: string, _verticalSlug: string) {
 export async function listPublishedPages(): Promise<string[]> {
   const paths: string[] = [];
 
-  const [verticals, roles, vCounts, rCounts, rRemote, rStates] = await Promise.all([
+  const [verticals, roles, vCounts, rCounts, rRemote, rStates, rCountries, vCountries] = await Promise.all([
     prisma.vertical.findMany({ select: { id: true, slug: true } }),
     prisma.role.findMany({ select: { id: true, slug: true } }),
     prisma.job.groupBy({ by: ["verticalId"], where: { status: "LIVE" }, _count: { id: true } }),
@@ -230,6 +345,18 @@ export async function listPublishedPages(): Promise<string[]> {
     prisma.job.groupBy({
       by: ["roleId", "locationState"],
       where: { status: "LIVE", roleId: { not: null }, locationState: { not: null } },
+      _count: { id: true },
+    }),
+    // One more grouped aggregate, not a query per country — the sitemap already
+    // timed out once from per-row counting.
+    prisma.job.groupBy({
+      by: ["roleId", "country"],
+      where: { status: "LIVE", roleId: { not: null }, country: { not: null } },
+      _count: { id: true },
+    }),
+    prisma.job.groupBy({
+      by: ["verticalId", "country"],
+      where: { status: "LIVE", country: { not: null } },
       _count: { id: true },
     }),
   ]);
@@ -248,6 +375,22 @@ export async function listPublishedPages(): Promise<string[]> {
   for (const c of rRemote) {
     const slug = c.roleId ? rSlug.get(c.roleId) : null;
     if (slug && c._count.id >= MIN_JOBS_FOR_PAGE) paths.push(`/jobs/remote-${slug}`);
+  }
+  for (const c of vCountries) {
+    const slug = vSlug.get(c.verticalId);
+    if (!slug || slug === "unsorted" || !c.country || c.country === "US") continue;
+    if (c._count.id < MIN_JOBS_FOR_PAGE) continue;
+    if (!COUNTRY_NAMES[c.country]) continue;
+    paths.push(countryHref(slug, c.country));
+  }
+  for (const c of rCountries) {
+    const slug = c.roleId ? rSlug.get(c.roleId) : null;
+    // US is covered by its state pages; listing /jobs/{role}/united-states too
+    // would compete with them for the same intent.
+    if (!slug || !c.country || c.country === "US") continue;
+    if (c._count.id < MIN_JOBS_FOR_PAGE) continue;
+    if (!COUNTRY_NAMES[c.country]) continue; // never publish a slug we can't resolve back
+    paths.push(countryHref(slug, c.country));
   }
   for (const c of rStates) {
     const slug = c.roleId ? rSlug.get(c.roleId) : null;

@@ -2,7 +2,7 @@
  * Ingestion orchestrator — spec §4, Slice 2 definition of done:
  * "15k+ live jobs; dupe rate <3% spot-checked; freshness ≤48h"
  *
- * Run: npm run ingest [-- --limit=20]
+ * Run: npm run ingest [-- --limit=20] [--max-jobs-per-source=5] [--only=monzo,n26]
  *
  * Pulls active Sources from the DB (founding-employer signups are already
  * here via the waitlist form, isPriority=true — see app/api/waitlist/route.ts),
@@ -232,8 +232,13 @@ async function main() {
   const maxJobsArg = process.argv.find((a) => a.startsWith("--max-jobs-per-source="));
   const maxJobsPerSource = maxJobsArg ? parseInt(maxJobsArg.split("=")[1], 10) : undefined;
 
+  // Ingest only named boards: `--only=monzo,n26`. Lets a smoke test hit one
+  // board instead of pushing all 13 through the LLM.
+  const onlyArg = process.argv.find((a) => a.startsWith("--only="));
+  const only = onlyArg ? onlyArg.split("=")[1].split(",").map((x) => x.trim()).filter(Boolean) : undefined;
+
   const sources = await prisma.source.findMany({
-    where: { companySlug: { not: null } },
+    where: { companySlug: only ? { in: only } : { not: null } },
     orderBy: [{ isPriority: "desc" }, { createdAt: "asc" }], // founding employers first
     take: sourceLimit,
   });

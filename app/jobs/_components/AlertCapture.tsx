@@ -2,7 +2,9 @@
 
 /**
  * Above-the-fold email-alert capture (spec §7 page anatomy).
- * Posts the page's slug/state; the API resolves the saved search server-side.
+ * Posts the page's slug/place; the API resolves the saved search server-side.
+ * `place` is a US state code or a country slug — never trusted as a filter, only
+ * as a lookup key.
  */
 import { useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
@@ -11,7 +13,7 @@ const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
 const MUTED = "#6b7280";
 
-export default function AlertCapture({ slug, state, label }: { slug: string; state?: string; label: string }) {
+export default function AlertCapture({ slug, place, label }: { slug: string; place?: string; label: string }) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "saving" | "done" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
@@ -24,7 +26,7 @@ export default function AlertCapture({ slug, state, label }: { slug: string; sta
       const res = await fetch("/api/alerts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, slug, state: state ?? null }),
+        body: JSON.stringify({ email, slug, place: place ?? null }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Something went wrong");

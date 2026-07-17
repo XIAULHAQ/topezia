@@ -352,7 +352,28 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   countries. An unlisted place silently becomes null → permissive (shows to
   everyone) rather than hidden. 7% of crawlable jobs still have no country. A
   real geocoding library is the durable answer.
-- 🟡 **Country SEO pages do not exist yet.** The lattice is US-state-only
-  (/jobs/{role}/{state}); the 31 qualifying countries have nowhere to land. The
-  sources now justify building it — that was the sequencing decision: sources
-  first so the pages publish already-populated instead of as thin URLs.
+- 🟢 **Country SEO pages live: /jobs/{role|vertical}/{country}.** Full-name slugs
+  ("germany", "united-kingdom"), NOT ISO codes — codes cannot share the {place}
+  namespace with US states: CA is California AND Canada, IN Indiana AND India,
+  DE Delaware AND Germany, GA Georgia twice. States resolve first, so every
+  existing US page is byte-identical. Same ≥5 floor, same auto publish/unpublish,
+  same sitemap. First two published on 22 ingested Monzo jobs:
+  /jobs/finance-accounting/united-kingdom (9) and /jobs/tech-software/united-kingdom (6).
+- 🔴 **CORRECTION to the "31 countries clear the floor" figure.** That was
+  COUNTRY-LEVEL totals; pages are role×country, which is far sparser — 19 UK jobs
+  spread across 5 distinct roles clears nothing. Hence vertical×country pages
+  (broader, publish immediately: finance-accounting GB=9, tech-software GB=6).
+  Expect country pages to be dominated by VERTICAL pages until per-country volume
+  is ~10-20x higher; role×country will stay thin for most countries.
+- 🟡 **Alerts are now country-scoped (migration 012).** Without it, subscribing on
+  "Backend Engineer jobs in Germany" fell through to the plain role and would
+  have emailed backend jobs worldwide — a page promising Germany, delivering
+  Texas and Bangalore. queryKey now includes country, so a Germany alert and a
+  global one stay distinct for the same address. Verified: 3/3 distinct keys.
+- 🟡 **vertical×STATE pages are now reachable too** (/jobs/tech-software/ca), a
+  side effect of supporting vertical×place. Additive and floor-gated — existing
+  US pages are unchanged — but it is a new US surface that was not there before.
+- 🟡 **Ingest is ~24s/job** — 22 Monzo jobs took ~9 minutes with embeddings OFF.
+  At ~1,242 jobs that is ~8 hours per full crawl before Voyage's 3 RPM is even
+  a factor. The per-job LLM call plus many DB round-trips is the bottleneck.
+  A full production ingest is not currently viable in one cron window.

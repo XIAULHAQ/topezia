@@ -1,0 +1,11 @@
+-- Country-scoped alerts.
+--
+-- Alerts resolved a slug + optional US STATE only. With /jobs/{role}/{country}
+-- pages, someone subscribing on "Backend Engineer jobs in Germany" would have
+-- fallen through to the plain role and been sent backend jobs worldwide — a
+-- page promising Germany, quietly delivering Texas and Bangalore.
+--
+-- queryKey is a string precisely so nullable columns can't break dedup (NULLs
+-- aren't equal in Postgres); adding country to it keeps a Germany alert and a
+-- global alert distinct for the same address.
+ALTER TABLE "JobAlert" ADD COLUMN "country" TEXT;

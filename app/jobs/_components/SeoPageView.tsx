@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import type { SeoPage, SeoJob } from "@/lib/seo/pages";
+import { countrySlugFor } from "@/lib/seo/pages";
 import AlertCapture from "./AlertCapture";
 
 const INDIGO = "#4f46e5";
@@ -64,7 +65,7 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
         <p style={S.intro}>{page.intro}</p>
 
         {/* Email-alert capture above the fold (§7), plus the résumé path. */}
-        <AlertCapture slug={page.slug} state={page.state} label={page.heading} />
+        <AlertCapture slug={page.slug} place={page.state ?? (page.country ? countrySlugFor(page.country) : undefined)} label={page.heading} />
         <div style={S.cta}>
           <div>
             <div style={S.ctaTitle}>Which of these actually fit you?</div>

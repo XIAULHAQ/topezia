@@ -485,6 +485,7 @@ model JobAlert {
   roleId         String?
   verticalId     String?
   locationState  String?
+  country        String?  // ISO-2, for /jobs/{role}/{country} alerts
   remoteOnly     Boolean  @default(false)
   frequency      AlertFrequency @default(DAILY)
   lastSentAt     DateTime?
