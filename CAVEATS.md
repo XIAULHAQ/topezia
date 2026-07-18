@@ -558,9 +558,10 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   cert). So the Panel-4 certs section is legitimately empty for marketers —
   unlike tech/finance (AWS/CPA/PMP). Not adding marketing cert patterns: they'd
   match nothing, and faking demand violates the engine's counted-only doctrine.
-- 🟢 **Prod test-data cleanup (partial).** Deleted 4 synthetic profiles (Priya
-  Raman ×2, an unnamed throwaway, an anonymous empty-userId session) and 2 test
-  job-alerts (zia.esource@gmail.com). No fake jobs or waitlist rows existed.
-  Left pending a decision: 3 duplicate "Hooria Ahmad" profiles + 1 alert (real
-  person's résumé from testing). Note: without SUPABASE_SERVICE_ROLE_KEY locally
-  we can only delete Profile rows, not the orphaned Supabase auth users.
+- 🟢 **Prod test-data cleanup done.** Deleted 7 test profiles (Priya Raman ×2,
+  an unnamed throwaway, an anonymous empty-userId session, Hooria Ahmad ×3) and
+  3 test job-alerts (zia.esource ×2, hooriaa.ahmad ×1). No fake jobs or waitlist
+  rows existed. Prod now holds only the owner's own 2 profiles (PK + US) and 0
+  alerts — confirmed "no real users yet". Note: without SUPABASE_SERVICE_ROLE_KEY
+  locally we could only delete Profile rows, not the orphaned Supabase auth
+  users; those clear via the app's delete flow once the key is on Vercel.
