@@ -215,6 +215,9 @@ export default function OnboardClient() {
           <span style={S.trustItem}><Ic n="zap" s={15} color={C.mut} />Profile ready in ~2 minutes</span>
           <span style={S.trustItem}><Ic n="gauge" s={15} color={C.mut} />Free AI career score included</span>
         </div>
+        <p style={{ textAlign: "center", fontSize: 11.5, color: C.mut, marginTop: 18, lineHeight: 1.5 }}>
+          By continuing, you agree to our <a href="/terms" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>Terms</a> and <a href="/privacy" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>Privacy Policy</a>.
+        </p>
       </main>
     </div>
   );

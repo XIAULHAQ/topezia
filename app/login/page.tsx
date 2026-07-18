@@ -100,6 +100,12 @@ export default function LoginPage() {
           {loading ? "…" : mode === "signup" ? "Create account" : "Log in"}
         </button>
 
+        <p style={S.consent}>
+          By {mode === "signup" ? "creating an account" : "continuing"} you agree to our{" "}
+          <Link href="/terms" style={S.consentLink}>Terms</Link> and{" "}
+          <Link href="/privacy" style={S.consentLink}>Privacy Policy</Link>.
+        </p>
+
         {mode === "login" && (
           <p style={{ ...S.toggle, marginTop: 12 }}>
             <button type="button" style={S.toggleBtn} onClick={forgotPassword} disabled={loading}>Forgot password?</button>
@@ -135,4 +141,6 @@ const S: Record<string, CSSProperties> = {
   notice: { color: "#059669", fontSize: 14, marginTop: 12, lineHeight: 1.4 },
   toggle: { textAlign: "center", color: MUTED, fontSize: 14, marginTop: 16 },
   toggleBtn: { background: "none", border: "none", color: INDIGO, fontWeight: 700, cursor: "pointer", fontSize: 14, fontFamily: "inherit" },
+  consent: { textAlign: "center", color: MUTED, fontSize: 12, marginTop: 14, lineHeight: 1.5 },
+  consentLink: { color: INDIGO, fontWeight: 600, textDecoration: "none" },
 };
