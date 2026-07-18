@@ -534,3 +534,33 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   credits are topped up first, or that cron fails the same way. Pre-launch: set
   a low-balance alert / spend cap in the Anthropic console, and prefer the cron
   (which spreads extraction out) over big manual batches.
+- 🟢 **All +776 new jobs embedded (0 unembedded LIVE jobs).** The deferred
+  Voyage backfill finished, so every job from the source expansion is now
+  retrievable by the matcher — not just live in the DB.
+- 🟢 **Marketing insights are reliable now, and honestly harsh.** With 28
+  US-eligible marketing jobs (over the floor), a strong 13-yr generalist scores
+  ~10% skill coverage — because the US-eligible marketing inventory skews B2B
+  SaaS / product-marketing / growth, which names specific skills (go-to-market,
+  product marketing, ABM, sales enablement, A/B testing, campaign management)
+  that a brand/digital generalist doesn't list. This is a TRUE signal (where
+  current demand is), not a matcher bug. The strict token-subset matcher is
+  deliberately kept strict: crediting "digital marketing strategy" as
+  "campaign management" would be flattering guesswork.
+- 🟢 **Taxonomy fragmentation was double-counting skills — fixed.** The skill
+  taxonomy splits one concept into variants ("Data analysis"/"Data analytics",
+  "GTM strategy"/"Go-To-Market Strategy"). Insights now fold spelling/acronym
+  variants (light stem + acronym map) and dedupe demanded skills by canonical
+  token-subset before scoring, so a concept is counted — and shown as a gap —
+  exactly once. Root cause is upstream (the extractor mints near-duplicate
+  Skill rows); a real fix is a skill-canonicalization pass at ingest, later.
+- 🟢 **Marketing postings name ~no certifications** (0 of 99 marketing+design
+  live postings named Google Analytics/Ads, HubSpot, Blueprint, PMP, etc. as a
+  cert). So the Panel-4 certs section is legitimately empty for marketers —
+  unlike tech/finance (AWS/CPA/PMP). Not adding marketing cert patterns: they'd
+  match nothing, and faking demand violates the engine's counted-only doctrine.
+- 🟢 **Prod test-data cleanup (partial).** Deleted 4 synthetic profiles (Priya
+  Raman ×2, an unnamed throwaway, an anonymous empty-userId session) and 2 test
+  job-alerts (zia.esource@gmail.com). No fake jobs or waitlist rows existed.
+  Left pending a decision: 3 duplicate "Hooria Ahmad" profiles + 1 alert (real
+  person's résumé from testing). Note: without SUPABASE_SERVICE_ROLE_KEY locally
+  we can only delete Profile rows, not the orphaned Supabase auth users.
