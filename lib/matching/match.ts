@@ -288,7 +288,12 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       matchedSkills: r?.matchedSkills ?? [],
       gapSkills: r?.gapSkills ?? [],
       whyLine: r?.whyLine ?? "",
-      pending: !r,
+      // "pending" = the rerank pass hasn't run yet, so the score is provisional.
+      // Once it HAS run (rerank=true), the score is final even if the LLM
+      // produced nothing for this job (e.g. Anthropic was unreachable / out of
+      // credit) — we fall back to the similarity score rather than spin on
+      // "scoring…" forever. Only stage 1 (rerank=false) leaves cards pending.
+      pending: !rerank && !r,
     };
   });
 

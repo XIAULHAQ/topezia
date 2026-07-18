@@ -115,7 +115,13 @@ export default function FeedPage() {
                 setMatches(d2.matches || []);
                 setStats(d2.stats || null);
               }
+            } else if (!cancelled) {
+              // Rerank endpoint failed outright — don't leave cards spinning on
+              // "scoring…". Commit the provisional scores as final.
+              setMatches((prev) => prev.map((m) => ({ ...m, pending: false })));
             }
+          } catch {
+            if (!cancelled) setMatches((prev) => prev.map((m) => ({ ...m, pending: false })));
           } finally {
             if (!cancelled) setEnriching(false);
           }
