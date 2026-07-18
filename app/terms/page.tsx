@@ -13,7 +13,7 @@ export default function TermsPage() {
   return (
     <LegalShell title="Terms of Service" updated={UPDATED}>
       <P>
-        These Terms of Service (&quot;Terms&quot;) are a legal agreement between you and <Placeholder>[Company legal name]</Placeholder> (&quot;Topezia&quot;, &quot;we&quot;, &quot;us&quot;)
+        These Terms of Service (&quot;Terms&quot;) are a legal agreement between you and Topezia (&quot;Topezia&quot;, &quot;we&quot;, &quot;us&quot;)
         governing your use of topezia.com and related services (the &quot;Service&quot;). By using the Service, you agree to these Terms and to our <a href="/privacy" style={{ color: "#8B5CF6" }}>Privacy Policy</a>. If you don&apos;t agree, don&apos;t use the Service.
       </P>
 
@@ -71,7 +71,7 @@ export default function TermsPage() {
       <P>We may update these Terms; we&apos;ll change the &quot;Last updated&quot; date and, for material changes, provide additional notice. Continued use after changes take effect means you accept them.</P>
 
       <H2>15. Contact</H2>
-      <P>Questions about these Terms: <Placeholder>legal@topezia.com</Placeholder> — <Placeholder>[Company legal name, address]</Placeholder>.</P>
+      <P>Questions about these Terms: <Placeholder>legal@topezia.com</Placeholder> — Topezia, <Placeholder>[registered address]</Placeholder>.</P>
     </LegalShell>
   );
 }

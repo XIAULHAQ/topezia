@@ -13,7 +13,7 @@ export default function PrivacyPage() {
   return (
     <LegalShell title="Privacy Policy" updated={UPDATED}>
       <P>
-        This Privacy Policy explains how <Placeholder>[Company legal name]</Placeholder> (&quot;Topezia&quot;, &quot;we&quot;, &quot;us&quot;)
+        This Privacy Policy explains how Topezia (&quot;Topezia&quot;, &quot;we&quot;, &quot;us&quot;)
         collects, uses, shares and protects your personal data when you use topezia.com and related services (the &quot;Service&quot;).
         We are the data controller for the personal data described here.
       </P>
@@ -81,7 +81,7 @@ export default function PrivacyPage() {
 
       <H2>11. Contact us</H2>
       <P>
-        Data controller: <Placeholder>[Company legal name, address]</Placeholder>.
+        Data controller: Topezia, <Placeholder>[registered address]</Placeholder>.
         Privacy contact: <Placeholder>privacy@topezia.com</Placeholder>.
         {" "}EEA/UK data protection representative: <Placeholder>[appoint if required under GDPR Art. 27 / UK GDPR]</Placeholder>.
       </P>
