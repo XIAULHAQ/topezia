@@ -57,6 +57,7 @@ const PARSE_STEPS = ["Reading the text", "Pulling out skills and history", "Work
 export default function OnboardClient() {
   const router = useRouter();
   const [mode, setMode] = useState<"upload" | "paste">("upload");
+  const [armed, setArmed] = useState(false); // dropzone stays greyed until clicked / armed
   const [resumeText, setResumeText] = useState("");
   const [dragging, setDragging] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -160,24 +161,27 @@ export default function OnboardClient() {
         ) : (
           <>
             <div style={{ display: "flex", gap: 8, marginTop: 28 }}>
-              <button onClick={() => setMode("upload")} style={mode === "upload" ? S.tabOn : S.tabOff}><Ic n="upload" s={14} />Upload a file</button>
+              <button onClick={() => { setMode("upload"); setArmed(true); }} style={mode === "upload" ? S.tabOn : S.tabOff}><Ic n="upload" s={14} />Upload a file</button>
               <button onClick={() => setMode("paste")} style={mode === "paste" ? S.tabOn : S.tabOff}><Ic n="paste" s={14} />Paste the text</button>
             </div>
 
             {mode === "upload" ? (
+              // Greyed until the person clicks the box (or the "Upload a file" tab),
+              // then it lights up as the active dropzone.
               <label
-                style={dragging ? S.dropActive : S.drop}
-                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                style={!armed ? S.dropGrey : dragging ? S.dropActive : S.drop}
+                onClick={() => setArmed(true)}
+                onDragOver={(e) => { e.preventDefault(); setArmed(true); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files?.[0]; if (f) doParseFile(f); }}
               >
                 <input type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) doParseFile(f); }} />
-                <div style={S.dropGlow} />
+                {armed && <div style={S.dropGlow} />}
                 <div style={{ position: "relative" }}>
-                  <div style={S.dropIcon}><Ic n="upload" s={26} /></div>
-                  <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-0.3px" }}>Drop your resume here, or click to browse</div>
+                  <div style={armed ? S.dropIcon : S.dropIconGrey}><Ic n="upload" s={26} /></div>
+                  <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-0.3px", color: armed ? C.ink : "#94A3B8" }}>Drop your resume here, or click to browse</div>
                   <div style={{ fontSize: 13, color: C.mut, marginTop: 8 }}>PDF, DOCX or plain text — up to 4MB. We read it and don&apos;t keep the file.</div>
-                  <div style={S.chooseBtn}>Choose a file</div>
+                  <div style={armed ? S.chooseBtn : S.chooseBtnGrey}>Choose a file</div>
                 </div>
               </label>
             ) : (
@@ -229,9 +233,12 @@ const S: Record<string, CSSProperties> = {
   tabOff: { display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 20px", borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: "pointer", background: "#fff", color: C.slate, border: `1px solid ${C.line}`, fontFamily: FONT },
   drop: { display: "block", marginTop: 16, background: "#fff", border: "2px dashed #C7D2FE", borderRadius: 20, padding: "52px 32px", textAlign: "center", cursor: "pointer", transition: "border-color .2s, box-shadow .2s", position: "relative", overflow: "hidden" },
   dropActive: { display: "block", marginTop: 16, background: "#fff", border: `2px dashed ${C.c1}`, borderRadius: 20, padding: "52px 32px", textAlign: "center", cursor: "pointer", boxShadow: "0 16px 40px rgba(99,102,241,.12)", position: "relative", overflow: "hidden" },
+  dropGrey: { display: "block", marginTop: 16, background: "#F8FAFC", border: "2px dashed #E2E8F0", borderRadius: 20, padding: "52px 32px", textAlign: "center", cursor: "pointer", transition: "border-color .2s, background .2s", position: "relative", overflow: "hidden" },
   dropGlow: { position: "absolute", top: -100, right: -80, width: 280, height: 280, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.08), transparent 68%)" },
   dropIcon: { width: 62, height: 62, borderRadius: 17, background: GRAD, color: "#fff", display: "grid", placeItems: "center", margin: "0 auto 18px", boxShadow: "0 10px 26px rgba(99,102,241,.35)" },
+  dropIconGrey: { width: 62, height: 62, borderRadius: 17, background: "#E2E8F0", color: "#94A3B8", display: "grid", placeItems: "center", margin: "0 auto 18px" },
   chooseBtn: { display: "inline-block", marginTop: 22, background: GRAD, color: "#fff", borderRadius: 11, padding: "12px 26px", fontSize: 13.5, fontWeight: 600, boxShadow: "0 8px 22px rgba(99,102,241,.35)" },
+  chooseBtnGrey: { display: "inline-block", marginTop: 22, background: "#E2E8F0", color: "#64748B", borderRadius: 11, padding: "12px 26px", fontSize: 13.5, fontWeight: 600 },
   pasteCard: { marginTop: 16, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 20, padding: 20, boxShadow: "0 8px 24px rgba(15,23,42,.06)" },
   textarea: { width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 12, minHeight: 200, padding: "14px 16px", fontSize: 13, color: C.ink, lineHeight: 1.6, fontFamily: FONT, resize: "vertical" },
   analyze: { background: GRAD, color: "#fff", borderRadius: 10, padding: "11px 24px", fontSize: 13, fontWeight: 600, cursor: "pointer", boxShadow: "0 6px 16px rgba(99,102,241,.3)", border: "none", fontFamily: FONT },
