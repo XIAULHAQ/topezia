@@ -66,7 +66,10 @@ export default function LoginPage() {
       // Link any anonymous profile to this account and route accordingly.
       const res = await fetch("/api/auth/link", { method: "POST" });
       const { hasProfile } = res.ok ? await res.json() : { hasProfile: false };
-      router.push(hasProfile ? "/feed" : "/onboard");
+      // A `next` target (e.g. the CV-upload flow sending people to /profile/edit)
+      // wins, but only when they actually have a profile to land on.
+      const next = new URLSearchParams(window.location.search).get("next");
+      router.push(next && hasProfile ? next : hasProfile ? "/feed" : "/onboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setLoading(false);

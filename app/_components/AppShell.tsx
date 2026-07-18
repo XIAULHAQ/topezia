@@ -22,7 +22,7 @@ const NAV: NavItem[] = [
   { icon: "home", label: "Overview", soon: true },
   { icon: "feed", label: "Job Feed", href: "/feed" },
   { icon: "search", label: "Search Jobs", soon: true },
-  { icon: "bookmark", label: "Saved Jobs", soon: true },
+  { icon: "bookmark", label: "Saved Jobs", href: "/saved" },
   { icon: "briefcase", label: "Applications", soon: true },
   { icon: "user", label: "My Profile", href: "/profile" },
   { icon: "doc", label: "Resume Builder", soon: true },

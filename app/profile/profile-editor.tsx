@@ -26,6 +26,9 @@ interface Profile {
   workAuthorization: string;
   tier: string;
   skills: Skill[];
+  workHistory: { title?: string; company?: string; years?: string }[];
+  education: { degree?: string; institution?: string; year?: string }[];
+  certifications: string[];
 }
 
 interface SkillGap { skill: string; jobsWanting: number; pct: number; youHave: string | null }
@@ -71,6 +74,7 @@ export default function ProfileEditor() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [newSkill, setNewSkill] = useState("");
+  const [newCert, setNewCert] = useState("");
   const [industriesText, setIndustriesText] = useState("");
   const [locationsText, setLocationsText] = useState("");
   const [insights, setInsights] = useState<Insights | null>(null);
@@ -130,6 +134,9 @@ export default function ProfileEditor() {
           salaryPeriod: p.salaryPeriod ?? "YEAR",
           workAuthorization: p.workAuthorization,
           skills: p.skills.map((s) => ({ name: s.name, proficiency: s.proficiency, source: s.source })),
+          workHistory: p.workHistory.filter((w) => w.title || w.company),
+          education: p.education.filter((e) => e.degree || e.institution),
+          certifications: p.certifications,
         }),
       });
       if (!res.ok) throw new Error("save");
@@ -291,6 +298,50 @@ export default function ProfileEditor() {
         </section>
 
         <section style={S.card}>
+          <div style={S.cardLabel}>Experience <Badge kind="told" /></div>
+          {p.workHistory.length === 0 && <div style={S.hint}>Nothing yet — add your roles so your profile and matches reflect them.</div>}
+          {p.workHistory.map((w, i) => (
+            <div key={i} style={S.histRow}>
+              <input style={S.wide} placeholder="Job title" value={w.title ?? ""} onChange={(e) => set("workHistory", p.workHistory.map((x, j) => j === i ? { ...x, title: e.target.value } : x))} />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <input style={S.input} placeholder="Company" value={w.company ?? ""} onChange={(e) => set("workHistory", p.workHistory.map((x, j) => j === i ? { ...x, company: e.target.value } : x))} />
+                <input style={S.input} placeholder="e.g. 2021–Present" value={w.years ?? ""} onChange={(e) => set("workHistory", p.workHistory.map((x, j) => j === i ? { ...x, years: e.target.value } : x))} />
+                <button aria-label="Remove" style={S.x} onClick={() => set("workHistory", p.workHistory.filter((_, j) => j !== i))}>×</button>
+              </div>
+            </div>
+          ))}
+          <button style={S.addRow} onClick={() => set("workHistory", [...p.workHistory, { title: "", company: "", years: "" }])}>+ Add experience</button>
+        </section>
+
+        <section style={S.card}>
+          <div style={S.cardLabel}>Education <Badge kind="told" /></div>
+          {p.education.length === 0 && <div style={S.hint}>Add your degrees and schools.</div>}
+          {p.education.map((ed, i) => (
+            <div key={i} style={S.histRow}>
+              <input style={S.wide} placeholder="Degree" value={ed.degree ?? ""} onChange={(e) => set("education", p.education.map((x, j) => j === i ? { ...x, degree: e.target.value } : x))} />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <input style={S.input} placeholder="Institution" value={ed.institution ?? ""} onChange={(e) => set("education", p.education.map((x, j) => j === i ? { ...x, institution: e.target.value } : x))} />
+                <input style={S.input} placeholder="Year" value={ed.year ?? ""} onChange={(e) => set("education", p.education.map((x, j) => j === i ? { ...x, year: e.target.value } : x))} />
+                <button aria-label="Remove" style={S.x} onClick={() => set("education", p.education.filter((_, j) => j !== i))}>×</button>
+              </div>
+            </div>
+          ))}
+          <button style={S.addRow} onClick={() => set("education", [...p.education, { degree: "", institution: "", year: "" }])}>+ Add education</button>
+        </section>
+
+        <section style={S.card}>
+          <div style={S.cardLabel}>Certifications & licenses <Badge kind="told" /></div>
+          <div style={S.chips}>
+            {p.certifications.map((c, i) => (
+              <span key={c + i} style={S.certChip}>{c}<button aria-label={`Remove ${c}`} style={S.chipX} onClick={() => set("certifications", p.certifications.filter((_, j) => j !== i))}>×</button></span>
+            ))}
+          </div>
+          <input style={{ ...S.wide, marginTop: 10 }} placeholder="Add a certification, then Enter" value={newCert}
+            onChange={(e) => setNewCert(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && newCert.trim()) { set("certifications", [...p.certifications, newCert.trim()]); setNewCert(""); } }} />
+        </section>
+
+        <section style={S.card}>
           <div style={S.cardLabel}>What you want <Badge kind="told" /></div>
           <div style={S.qLabel}>Work type</div>
           <div style={S.chips}>
@@ -362,6 +413,10 @@ const S: Record<string, CSSProperties> = {
   skillSel: { padding: "6px 8px", borderRadius: 8, border: "1px solid #d4d4d8", fontSize: 13, background: "#fff", fontFamily: "inherit" },
   x: { border: "none", background: "none", color: MUTED, fontSize: 20, cursor: "pointer", lineHeight: 1, padding: "0 4px" },
   chips: { display: "flex", flexWrap: "wrap", gap: 8 },
+  histRow: { padding: "12px 0", borderTop: "1px solid #f2f2f5" },
+  addRow: { marginTop: 12, background: "#eef0ff", color: INDIGO, border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  certChip: { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", background: "#f0eaff", color: "#5a3ccf", borderRadius: 999, fontSize: 13, fontWeight: 600 },
+  chipX: { background: "transparent", border: "none", color: "inherit", cursor: "pointer", fontSize: 15, lineHeight: 1, padding: 0 },
   pillOn: { padding: "8px 16px", borderRadius: 20, border: `1px solid ${INDIGO}`, background: INDIGO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
   pillOff: { padding: "8px 16px", borderRadius: 20, border: "1px solid #d4d4d8", background: "#fff", color: INK, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
   err: { color: "#b42318", fontSize: 14, margin: "0 0 12px" },

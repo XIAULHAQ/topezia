@@ -94,12 +94,30 @@ export default function FeedPage() {
   const [alert, setAlert] = useState<{ slug: string; place?: string; label: string } | null>(null);
   const [insights, setInsights] = useState<FeedInsights | null>(null);
   const [prefs, setPrefs] = useState<Prefs | null>(null);
+  const [saved, setSaved] = useState<Set<string>>(new Set());
+
+  async function toggleSave(jobId: string) {
+    const wasSaved = saved.has(jobId);
+    setSaved((prev) => { const n = new Set(prev); wasSaved ? n.delete(jobId) : n.add(jobId); return n; });
+    try {
+      if (wasSaved) await fetch(`/api/saves?jobId=${encodeURIComponent(jobId)}`, { method: "DELETE" });
+      else await fetch("/api/saves", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId }) });
+    } catch {
+      setSaved((prev) => { const n = new Set(prev); wasSaved ? n.add(jobId) : n.delete(jobId); return n; }); // revert
+    }
+  }
 
   useEffect(() => {
     (async () => {
       try {
         const r = await fetch("/api/profile/insights");
         if (r.ok) setInsights((await r.json()).insights ?? null);
+      } catch { /* optional */ }
+    })();
+    (async () => {
+      try {
+        const r = await fetch("/api/saves");
+        if (r.ok) setSaved(new Set(((await r.json()).jobs ?? []).map((j: { jobId: string }) => j.jobId)));
       } catch { /* optional */ }
     })();
     (async () => {
@@ -157,7 +175,7 @@ export default function FeedPage() {
   const shown = matches.filter((m) => {
     if (filter === "Remote") return m.remoteType.startsWith("REMOTE");
     if (filter === "Hourly") return m.salaryPeriod === "HOUR" || m.employmentType === "HOURLY";
-    if (filter === "Saved") return false;
+    if (filter === "Saved") return saved.has(m.jobId);
     return true;
   });
   const topId = matches.filter((m) => !m.pending).sort((a, b) => b.score - a.score)[0]?.jobId;
@@ -276,7 +294,9 @@ export default function FeedPage() {
                         <div style={{ fontSize: 10.5, color: C.mut, width: 46, lineHeight: 1.35 }}>{m.pending ? "scoring…" : "match to you"}</div>
                       </div>
                       <div style={{ display: "flex", gap: 7 }}>
-                        <div title="Save — coming soon" style={S.iconBtn}><Icon name="bookmark" size={15} /></div>
+                        <div onClick={() => toggleSave(m.jobId)} title={saved.has(m.jobId) ? "Saved — click to remove" : "Save this job"} style={{ ...S.iconBtn, cursor: "pointer", ...(saved.has(m.jobId) ? { background: "#EEF2FF", color: C.c1, borderColor: "#C7D2FE" } : {}) }}>
+                          <Icon name="bookmark" size={15} />
+                        </div>
                         <a href={`/job/${m.jobId}?score=${m.score}&pos=${i + 1}`} style={S.applyBtn}>View job</a>
                       </div>
                     </div>

@@ -179,6 +179,12 @@ export interface ProfileFieldEdit {
   salaryPeriod?: SalaryPeriod | null;
   workAuthorization?: WorkAuthorization;
   skills?: { name: string; proficiency: import("@prisma/client").SkillProficiency | null; source?: SkillSource }[];
+  // Résumé-derived history the profile view/edit surfaces. Stored as-is; these
+  // don't affect matching (the embedding is built from headline + skills), so
+  // editing them never triggers a re-embed.
+  workHistory?: { title?: string; company?: string; years?: string }[];
+  education?: { degree?: string; institution?: string; year?: string }[];
+  certifications?: string[];
 }
 
 /**
@@ -220,6 +226,9 @@ export async function updateProfileFields(
   if (edit.salaryTarget !== undefined) data.salaryTarget = edit.salaryTarget;
   if (edit.salaryPeriod !== undefined) data.salaryPeriod = edit.salaryPeriod;
   if (edit.workAuthorization !== undefined) data.workAuthorization = edit.workAuthorization;
+  if (edit.workHistory !== undefined) data.workHistory = edit.workHistory as unknown as Prisma.InputJsonValue;
+  if (edit.education !== undefined) data.education = edit.education as unknown as Prisma.InputJsonValue;
+  if (edit.certifications !== undefined) data.certifications = edit.certifications;
 
   await prisma.profile.update({ where: { id: existing.id }, data });
 
