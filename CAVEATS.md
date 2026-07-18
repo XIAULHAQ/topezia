@@ -524,4 +524,13 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   externalIds). Seeded, NOT yet ingested — the next cron `Ingest jobs` run (or a
   manual trigger) crawls them. Projected to roughly double the US corpus and
   take US marketing/design inventory from thin (~60) to a few hundred, which
-  lifts it over the stats confidence floor for real marketing/design users.
+  lifts it over the stats confidence floor for real marketing/design users.- 🟢 **US expansion partially ingested: +776 LIVE (1135 → 1911), US-eligible
+  ~300 → 923.** US marketing 7 → 28 eligible (over the stats floor now), Design
+  & Creative 15 eligible. Embeddings backfilled after.
+- 🔴 **Anthropic credits ran dry mid-ingest — 1,107 jobs failed** ("credit
+  balance is too low"). A ~2,000-job manual batch drained the balance in one
+  shot. No corruption (failed jobs just aren't created; they retry). The
+  remaining ~1,100 come in on the NEXT cron ingest — but ONLY if Anthropic
+  credits are topped up first, or that cron fails the same way. Pre-launch: set
+  a low-balance alert / spend cap in the Anthropic console, and prefer the cron
+  (which spreads extraction out) over big manual batches.
