@@ -448,16 +448,25 @@ export interface BrowseHub {
  * handful of queries, never one-per-row. Anything below MIN_JOBS_FOR_PAGE is
  * omitted, so the hub only ever links to pages that actually resolve.
  */
+const EMPTY_HUB: BrowseHub = { totalLive: 0, verticals: [], roles: [], states: [], countries: [] };
+
 export async function getBrowseHub(): Promise<BrowseHub> {
-  const [verticals, roles, totalLive, vCounts, rCounts, states, countries] = await Promise.all([
-    prisma.vertical.findMany({ select: { id: true, name: true, slug: true } }),
-    prisma.role.findMany({ select: { id: true, name: true, slug: true } }),
-    prisma.job.count({ where: { status: "LIVE" } }),
-    prisma.job.groupBy({ by: ["verticalId"], where: { status: "LIVE" }, _count: { id: true } }),
-    prisma.job.groupBy({ by: ["roleId"], where: { status: "LIVE", roleId: { not: null } }, _count: { id: true } }),
-    prisma.job.groupBy({ by: ["locationState"], where: { status: "LIVE", locationState: { not: null } }, _count: { id: true } }),
-    prisma.job.groupBy({ by: ["country"], where: { status: "LIVE", country: { not: null } }, _count: { id: true } }),
-  ]);
+  let verticals, roles, totalLive, vCounts, rCounts, states, countries;
+  try {
+    [verticals, roles, totalLive, vCounts, rCounts, states, countries] = await Promise.all([
+      prisma.vertical.findMany({ select: { id: true, name: true, slug: true } }),
+      prisma.role.findMany({ select: { id: true, name: true, slug: true } }),
+      prisma.job.count({ where: { status: "LIVE" } }),
+      prisma.job.groupBy({ by: ["verticalId"], where: { status: "LIVE" }, _count: { id: true } }),
+      prisma.job.groupBy({ by: ["roleId"], where: { status: "LIVE", roleId: { not: null } }, _count: { id: true } }),
+      prisma.job.groupBy({ by: ["locationState"], where: { status: "LIVE", locationState: { not: null } }, _count: { id: true } }),
+      prisma.job.groupBy({ by: ["country"], where: { status: "LIVE", country: { not: null } }, _count: { id: true } }),
+    ]);
+  } catch (err) {
+    // A DB blip must never crash the build or 500 the hub — degrade to empty.
+    console.error("getBrowseHub failed, rendering empty hub:", err);
+    return EMPTY_HUB;
+  }
 
   const vById = new Map(verticals.map((v) => [v.id, v]));
   const rById = new Map(roles.map((r) => [r.id, r]));

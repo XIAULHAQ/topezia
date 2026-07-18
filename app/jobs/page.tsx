@@ -10,7 +10,11 @@ import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import { getBrowseHub, type HubLink } from "@/lib/seo/pages";
 
-export const revalidate = 3600;
+// Rendered on-demand, NOT pre-rendered at build: getBrowseHub hits the database,
+// and a build-time DB blip (as happened once) would otherwise crash the whole
+// deploy. On the runner the queries are fast, and getBrowseHub degrades to an
+// empty hub rather than throwing, so this page can never fail a build or 500.
+export const dynamic = "force-dynamic";
 
 const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
