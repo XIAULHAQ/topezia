@@ -9,18 +9,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
-import { getMatches } from "@/lib/matching/match";
+import { getMatches, eligibleLiveCount } from "@/lib/matching/match";
 
 export const maxDuration = 60;
 
 export async function POST() {
   const { userId } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "no-profile" }, { status: 401 });
-  const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
+  const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true, country: true } });
   if (!profile) return NextResponse.json({ error: "no-profile" }, { status: 401 });
 
   const matches = await getMatches(profile.id, { rerankN: 12, rerank: true });
-  const totalLive = await prisma.job.count({ where: { status: "LIVE" } });
+  const totalLive = await eligibleLiveCount(profile.country); // eligible set, not whole corpus
   return NextResponse.json({
     matches,
     stats: { strong: matches.filter((m) => m.score >= 70).length, totalLive },

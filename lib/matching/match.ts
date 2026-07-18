@@ -298,6 +298,29 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
   return matches;
 }
 
+/**
+ * How many LIVE jobs this person could actually take — the honest denominator
+ * for "matched you against N jobs". The whole-corpus count overstated it once
+ * the feed became region-scoped: a US seeker isn't matched against Warsaw jobs.
+ * Mirrors eligibleIn().
+ */
+export async function eligibleLiveCount(country: string | null): Promise<number> {
+  if (!country) return prisma.job.count({ where: { status: "LIVE" } });
+  const regions = Object.entries(REGION_MEMBERS).filter(([, m]) => m.includes(country)).map(([r]) => r);
+  return prisma.job.count({
+    where: {
+      status: "LIVE",
+      OR: [
+        { country },
+        { remoteScope: "GLOBAL" },
+        { remoteScope: country },
+        { remoteScope: { in: regions } },
+        { AND: [{ country: null }, { remoteScope: null }] },
+      ],
+    },
+  });
+}
+
 interface RerankResult {
   score: number;
   matchedSkills: string[];

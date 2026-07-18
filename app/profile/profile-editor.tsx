@@ -38,6 +38,7 @@ interface Insights {
   certs: { label: string; jobs: number }[];
   premiumFrom: number;
   inferred: boolean;
+  reliable: boolean;
 }
 
 const SENIORITIES = ["INTERN", "JUNIOR", "MID", "SENIOR", "LEAD", "EXEC", "NOT_APPLICABLE"];
@@ -160,16 +161,16 @@ export default function ProfileEditor() {
         </div>
         <p style={S.sub}>Edit anything. The badges show where we got it — your résumé, our inference, or your own hand. Saving re-scores your matches.</p>
 
-        {insights && insights.targetJobs < 5 && insights.fieldLabel && (
+        {insights && !insights.reliable && insights.fieldLabel && (
           <section style={S.card}>
-            <div style={S.cardLabel}>Your roadmap</div>
+            <div style={S.cardLabel}>Where you stand</div>
             <div style={S.inferNote}>
-              Only {insights.targetJobs} {insights.fieldLabel.replace(/ \(broad\)$/, "")} {insights.targetJobs === 1 ? "job is" : "jobs are"} open to your region right now — not enough to map a roadmap honestly. This grows as we add sources in your market.
+              Only {insights.targetJobs} {insights.fieldLabel.replace(/ \(broad\)$/, "")} {insights.targetJobs === 1 ? "job is" : "jobs are"} open to your region right now — too few for reliable stats or a roadmap. These sharpen as we add sources in your market.
             </div>
           </section>
         )}
 
-        {insights && insights.targetJobs >= 5 && insights.skillGaps.length > 0 && (
+        {insights && insights.reliable && (
           <>
             <section style={S.card}>
               <div style={S.cardLabel}>Where you stand · you against {insights.targetJobs} {insights.fieldLabel ?? "jobs"}</div>

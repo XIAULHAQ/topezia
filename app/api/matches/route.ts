@@ -9,7 +9,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
-import { getMatches, type JobMatch } from "@/lib/matching/match";
+import { getMatches, eligibleLiveCount, type JobMatch } from "@/lib/matching/match";
 import { countrySlugFor, countryName } from "@/lib/seo/pages";
 
 export const maxDuration = 60;
@@ -51,8 +51,9 @@ export async function GET() {
   const { profileId, authed } = await resolveIdentity();
   if (!profileId) return NextResponse.json({ error: "no-profile" }, { status: 401 });
 
+  const profile = await prisma.profile.findUnique({ where: { id: profileId }, select: { country: true } });
   const matches = await getMatches(profileId, { rerankN: 12, rerank: false });
-  const totalLive = await prisma.job.count({ where: { status: "LIVE" } });
+  const totalLive = await eligibleLiveCount(profile?.country ?? null); // jobs open to them, not the whole corpus
   const alert = await feedAlert(profileId);
   return respond(matches, totalLive, authed, alert);
 }

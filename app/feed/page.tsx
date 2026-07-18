@@ -59,6 +59,7 @@ interface FeedInsights {
   seniority: { level: string; atOrAbove: number; below: number } | null;
   coveragePct: number | null;
   skillGaps: { skill: string; pct: number; youHave: string | null }[];
+  reliable: boolean;
 }
 
 export default function FeedPage() {
@@ -201,7 +202,7 @@ export default function FeedPage() {
             ))}
           </div>
 
-          {insights && insights.targetJobs >= 5 && insights.skillGaps.length > 0 && (
+          {insights && insights.reliable && (
             <div style={S.stand}>
               <div style={S.standHead}>Where you stand · you against {insights.targetJobs} {insights.fieldLabel ?? "jobs"}</div>
               <div style={S.standGrid}>
@@ -221,6 +222,11 @@ export default function FeedPage() {
                 </div>
               </div>
               <a href="/profile" style={S.standLink}>See your full breakdown and roadmap →</a>
+            </div>
+          )}
+          {insights && !insights.reliable && insights.fieldLabel && (
+            <div style={S.standThin}>
+              Your market is still thin — only {insights.targetJobs} {insights.fieldLabel.replace(/ \(broad\)$/, "")} {insights.targetJobs === 1 ? "role is" : "roles are"} open to your region, too few for reliable stats yet. <a href="/profile" style={S.standLink}>More on your profile →</a>
             </div>
           )}
 
@@ -248,7 +254,10 @@ export default function FeedPage() {
                       {m.company} · {placeLabel(m)} · {label(m.employmentType)}
                     </div>
                   </div>
-                  <div style={{ ...S.score, color: m.pending ? "#c7c7d1" : scoreColor(m.score) }}>{m.score}</div>
+                  <div style={S.scoreBox}>
+                    <div style={{ ...S.score, color: m.pending ? "#c7c7d1" : scoreColor(m.score) }}>{m.score}</div>
+                    <div style={S.scoreLabel}>{m.pending ? "scoring…" : "match to your profile"}</div>
+                  </div>
                 </div>
 
                 {m.pending ? (
@@ -346,6 +355,7 @@ const S: Record<string, CSSProperties> = {
   standNum: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO },
   standLabel: { fontSize: 12, color: MUTED, lineHeight: 1.4, marginTop: 4 },
   standLink: { color: INDIGO, textDecoration: "none", fontSize: 14, fontWeight: 700 },
+  standThin: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 16, marginBottom: 14, fontSize: 13, color: MUTED, lineHeight: 1.5 },
   pills: { display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" },
   pillOn: { padding: "8px 14px", borderRadius: 999, border: `1px solid ${INDIGO}`, background: INDIGO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
   pillOff: { padding: "8px 14px", borderRadius: 999, border: "1px solid #d9d9e3", background: "#fff", color: INK, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
@@ -354,7 +364,9 @@ const S: Record<string, CSSProperties> = {
   cardTop: { display: "flex", alignItems: "flex-start", gap: 12 },
   jobTitle: { fontFamily: "'Sora', sans-serif", fontWeight: 700, fontSize: 18 },
   jobMeta: { color: MUTED, fontSize: 14, marginTop: 3 },
+  scoreBox: { display: "flex", flexDirection: "column", alignItems: "flex-end", textAlign: "right", maxWidth: 96, flexShrink: 0 },
   score: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 30, lineHeight: 1 },
+  scoreLabel: { fontSize: 11, color: MUTED, lineHeight: 1.3, marginTop: 3 },
   why: { fontSize: 15, lineHeight: 1.5, margin: "12px 0", color: "#374151" },
   scoring: { fontSize: 14, color: "#9ca3af", margin: "10px 0", fontStyle: "italic" },
   enriching: { display: "flex", alignItems: "center", gap: 8, background: "#eef0ff", color: INDIGO, padding: "10px 14px", borderRadius: 10, fontSize: 14, fontWeight: 600, marginBottom: 14 },

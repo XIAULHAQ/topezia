@@ -50,7 +50,14 @@ export interface ProfileInsights {
   certs: { label: string; jobs: number }[]; // certs named in your field's postings
   premiumFrom: number; // index into skillGaps: below this is free, at/after is premium
   inferred: boolean; // field was guessed from matches (no resolved job title) — show a "set your title" nudge
+  reliable: boolean; // enough eligible jobs for the percentages to mean something (see MEANINGFUL_MIN)
 }
+
+// Below this many eligible in-field jobs, "X% of skills" and "Y% want Z" are
+// noise, not signal — on a 12-job sample a single posting swings a stat 8
+// points, and "0% coverage" reads as a verdict when it's really thin inventory.
+// The UI shows an honest "your market is still thin" note instead.
+export const MEANINGFUL_MIN = 20;
 
 /**
  * Eligible-in-your-field job ids for a profile.
@@ -181,7 +188,7 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
   // silently showing nothing.
   if (ids.length < 5) {
     return { fieldLabel, targetJobs: ids.length, seniority: null, coveragePct: null,
-      skillGaps: [], certs: [], premiumFrom: 2, inferred };
+      skillGaps: [], certs: [], premiumFrom: 2, inferred, reliable: false };
   }
 
   // Skill demand across your field: how many target postings ask for each skill.
@@ -254,5 +261,6 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
     certs: certs.slice(0, 4),
     premiumFrom: 2, // first 2 gaps free (the diagnosis); the rest is premium later
     inferred,
+    reliable: ids.length >= MEANINGFUL_MIN && gaps.length > 0,
   };
 }
