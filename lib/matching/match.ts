@@ -108,9 +108,13 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
   );
   // Profile.headlineRoleId is a bare fk (no relation defined in schema), so
   // resolve the role name in a separate lookup.
-  const headlineRoleName = profile.headlineRoleId
-    ? (await prisma.role.findUnique({ where: { id: profile.headlineRoleId }, select: { name: true } }))?.name ?? null
+  const headlineRole = profile.headlineRoleId
+    ? await prisma.role.findUnique({ where: { id: profile.headlineRoleId }, select: { name: true, vertical: { select: { slug: true } } } })
     : null;
+  const headlineRoleName = headlineRole?.name ?? null;
+  // The user's chosen field (the vertical of their picked role) — used to rank
+  // their field first while still letting strong adjacent matches through.
+  const fieldVerticalSlug = headlineRole?.vertical?.slug ?? null;
 
   // Stage 1 — vector retrieval. Pull the most-similar jobs, but FROM THE
   // ELIGIBLE SET, not from all jobs then filtered. Filtering after retrieval
@@ -148,6 +152,28 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
     profileId, uc, eligibleRegions
   );
 
+  // Guarantee the user's field is represented. The general retrieval ranks by
+  // raw similarity, and a confused embedding (e.g. a marketer with heavy
+  // commercial skills) can rank sales jobs nearer than marketing ones — so the
+  // few in-field jobs never make the top-100, and a post-hoc boost has nothing
+  // to promote. Pull the nearest jobs WITHIN the chosen field explicitly and
+  // merge them in; the field-first sort below then surfaces them.
+  if (fieldVerticalSlug && candidates.length > 0) {
+    const fieldCandidates = await prisma.$queryRawUnsafe<CandidateRow[]>(
+      `SELECT ${selectCols}, 1 - (j.embedding <=> p.embedding) AS similarity
+       FROM "Job" j
+       JOIN "Vertical" v ON v.id = j."verticalId"
+       CROSS JOIN "Profile" p
+       WHERE p.id = $1 AND p.embedding IS NOT NULL AND j.status = 'LIVE' AND j.embedding IS NOT NULL
+         AND v.slug = $4 AND ${eligSql}
+       ORDER BY j.embedding <=> p.embedding
+       LIMIT 40`,
+      profileId, uc, eligibleRegions, fieldVerticalSlug
+    );
+    const seen = new Set(candidates.map((c) => c.id));
+    for (const c of fieldCandidates) if (!seen.has(c.id)) candidates.push(c);
+  }
+
   if (candidates.length === 0) {
     candidates = await prisma.$queryRawUnsafe<CandidateRow[]>(
       `SELECT ${selectCols}, 0::float8 AS similarity
@@ -181,7 +207,21 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
     return true;
   });
 
-  const pool = filtered.slice(0, retrieveN);
+  // Field-first ordering (the "adjacents allowed" choice): when the user has
+  // chosen a field, put its jobs first — sorted by similarity, and scored
+  // honestly by the reranker including the weak ones — then adjacent-field jobs
+  // after, still in the feed. A soft similarity bonus wasn't enough: a
+  // commercial-skewed embedding ranks sales so far above marketing that no small
+  // bonus lifts the in-field jobs, so this partitions rather than nudges.
+  const ranked = fieldVerticalSlug
+    ? [...filtered].sort((a, b) => {
+        const af = a.verticalSlug === fieldVerticalSlug ? 0 : 1;
+        const bf = b.verticalSlug === fieldVerticalSlug ? 0 : 1;
+        return af !== bf ? af - bf : b.similarity - a.similarity;
+      })
+    : filtered;
+
+  const pool = ranked.slice(0, retrieveN);
   const toRerank = pool.slice(0, rerankN);
 
   // Stage 2 — rerank cache (spec §5). Reuse cached scores stamped with the

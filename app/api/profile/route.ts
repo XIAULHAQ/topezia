@@ -78,8 +78,21 @@ export async function GET() {
     ? (await prisma.role.findUnique({ where: { id: p.headlineRoleId }, select: { name: true } }))?.name ?? null
     : null;
 
+  // The role taxonomy, grouped by field — so the profile can offer a real
+  // PICKER instead of free text that silently fails to resolve. Picking is
+  // authoritative: no guessing which field someone is in.
+  const verticals = await prisma.vertical.findMany({
+    where: { slug: { not: "unsorted" } },
+    select: { name: true, roles: { select: { name: true }, orderBy: { name: "asc" } } },
+    orderBy: { name: "asc" },
+  });
+  const roleGroups = verticals
+    .filter((v) => v.roles.length > 0)
+    .map((v) => ({ field: v.name, roles: v.roles.map((r) => r.name) }));
+
   return NextResponse.json({
     authed,
+    roleGroups,
     profile: {
       fullName: p.fullName, headline, seniority: p.seniority, yearsExperience: p.yearsExperience,
       currentLocation: p.currentLocation, country: p.country, industries: p.industries,

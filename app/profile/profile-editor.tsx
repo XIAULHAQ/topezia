@@ -74,6 +74,7 @@ export default function ProfileEditor() {
   const [locationsText, setLocationsText] = useState("");
   const [insights, setInsights] = useState<Insights | null>(null);
   const [tier, setTier] = useState<string>("FREE");
+  const [roleGroups, setRoleGroups] = useState<{ field: string; roles: string[] }[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -82,6 +83,7 @@ export default function ProfileEditor() {
         if (!res.ok) throw new Error("load");
         const data = await res.json();
         setP(data.profile);
+        setRoleGroups(data.roleGroups || []);
         setIndustriesText((data.profile.industries || []).join(", "));
         setLocationsText((data.profile.locations || []).join(", "));
       } catch {
@@ -158,6 +160,15 @@ export default function ProfileEditor() {
         </div>
         <p style={S.sub}>Edit anything. The badges show where we got it — your résumé, our inference, or your own hand. Saving re-scores your matches.</p>
 
+        {insights && insights.targetJobs < 5 && insights.fieldLabel && (
+          <section style={S.card}>
+            <div style={S.cardLabel}>Your roadmap</div>
+            <div style={S.inferNote}>
+              Only {insights.targetJobs} {insights.fieldLabel.replace(/ \(broad\)$/, "")} {insights.targetJobs === 1 ? "job is" : "jobs are"} open to your region right now — not enough to map a roadmap honestly. This grows as we add sources in your market.
+            </div>
+          </section>
+        )}
+
         {insights && insights.targetJobs >= 5 && insights.skillGaps.length > 0 && (
           <>
             <section style={S.card}>
@@ -220,14 +231,29 @@ export default function ProfileEditor() {
         )}
 
         <section style={S.card}>
-          <div style={S.cardLabel}>You look like a</div>
+          <div style={S.cardLabel}>Your field and role</div>
+          {!p.headline && (
+            <div style={S.inferNote}>
+              Pick your role so we scope your feed and roadmap to the right field — otherwise we have to guess, and skills like &quot;business development&quot; can pull you toward the wrong one.
+            </div>
+          )}
           <div style={S.row}>
-            <input style={S.input} value={p.headline ?? ""} placeholder="e.g. backend engineer" onChange={(e) => set("headline", e.target.value)} />
+            <select style={{ ...S.input, cursor: "pointer" }} value={p.headline ?? ""} onChange={(e) => set("headline", e.target.value || null)}>
+              <option value="">Choose your role…</option>
+              {roleGroups.map((g) => (
+                <optgroup key={g.field} label={g.field}>
+                  {g.roles.map((r) => <option key={r} value={r}>{r}</option>)}
+                </optgroup>
+              ))}
+              {p.headline && !roleGroups.some((g) => g.roles.includes(p.headline!)) && (
+                <option value={p.headline}>{p.headline} (from your résumé)</option>
+              )}
+            </select>
             <select style={S.select} value={p.seniority ?? "NOT_APPLICABLE"} onChange={(e) => set("seniority", e.target.value)}>
               {SENIORITIES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
             </select>
           </div>
-          <div style={S.provRow}><Badge kind="told" /> headline · <Badge kind="inferred" /> seniority</div>
+          <div style={S.provRow}><Badge kind="inferred" /> seniority · you choose the role, so it&apos;s never a guess</div>
 
           <div style={S.grid}>
             <div>

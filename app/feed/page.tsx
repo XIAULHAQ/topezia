@@ -240,7 +240,7 @@ export default function FeedPage() {
             <p style={S.railP}>
               We matched you against {stats?.totalLive ?? 0} verified live jobs using your skills and trajectory — real scores, including the low ones.
             </p>
-            <a style={S.railLink} href="/onboard">Correct anything →</a>
+            <a style={S.railLink} href="/profile">Correct anything →</a>
           </div>
           <div style={S.railCard}>
             <div style={S.railH}>Right now</div>

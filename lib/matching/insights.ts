@@ -68,16 +68,24 @@ async function targetJobIds(p: {
   headlineRoleId: string | null;
   skillIds: string[];
 }): Promise<{ ids: string[]; verticalId: string | null; scope: "role" | "vertical" | "none"; label: string | null }> {
-  const eligibility = {
-    OR: [
-      ...(p.country ? [{ country: p.country }] : []),
-      { country: null },
-      { remoteScope: "GLOBAL" as const },
-    ],
-  };
   const eligibleRegions = p.country
     ? Object.entries(REGION_MEMBERS).filter(([, m]) => m.includes(p.country!)).map(([r]) => r)
     : [];
+  // MUST match eligibleIn() in match.ts, or the mirror counts jobs the feed
+  // can't actually show. A country-unknown job is eligible only when its remote
+  // scope is ALSO unknown — a null-country job scoped to EMEA is not open to a
+  // seeker in Pakistan.
+  const eligibility = p.country
+    ? {
+        OR: [
+          { country: p.country },
+          { remoteScope: "GLOBAL" },
+          { remoteScope: p.country },
+          { remoteScope: { in: eligibleRegions } },
+          { AND: [{ country: null }, { remoteScope: null }] },
+        ],
+      }
+    : {}; // no country known → filter nothing (mirrors eligibleIn)
 
   // Prefer the person's ACTUAL role — "backend engineer" jobs, not the whole
   // "tech & software" vertical, which would surface frontend skills as gaps for
@@ -166,13 +174,15 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
   // to refine" nudge so an approximate field never reads as a confident claim.
   const inferred = !profile.headlineRoleId && scope !== "none";
 
-  const empty: ProfileInsights = {
-    fieldLabel: null, targetJobs: ids.length, seniority: null, coveragePct: null,
-    skillGaps: [], certs: [], premiumFrom: 2, inferred: false,
-  };
-  if (ids.length < 5) return empty; // too thin to say anything honest
-
   const fieldLabel = label ? `${label} roles${scope === "vertical" ? " (broad)" : ""}` : null;
+
+  // Too thin to map anything honestly — but keep the field label so the UI can
+  // say WHY (e.g. "only 1 marketing job open to your region yet") instead of
+  // silently showing nothing.
+  if (ids.length < 5) {
+    return { fieldLabel, targetJobs: ids.length, seniority: null, coveragePct: null,
+      skillGaps: [], certs: [], premiumFrom: 2, inferred };
+  }
 
   // Skill demand across your field: how many target postings ask for each skill.
   const demand = await prisma.jobSkill.groupBy({
