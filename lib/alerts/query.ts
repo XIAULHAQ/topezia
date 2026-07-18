@@ -58,15 +58,23 @@ export async function resolveAlertTarget(slug: string, place?: string | null): P
   const clean = slug.toLowerCase();
 
   if (place) {
-    const role = await prisma.role.findUnique({ where: { slug: clean }, select: { id: true, name: true } });
-    if (!role) return null;
-
     const iso = isoForCountrySlug(place);
-    if (iso) {
-      return { label: `${role.name} jobs in ${countryName(iso)}`, roleId: role.id, verticalId: null, locationState: null, country: iso, remoteOnly: false };
+    const country = iso ?? null;
+    const locationState = iso ? null : place.toUpperCase();
+    const placeName = iso ? countryName(iso) : stateName(place.toUpperCase());
+
+    // Role + place (SEO role pages, and the feed's per-profile alert).
+    const role = await prisma.role.findUnique({ where: { slug: clean }, select: { id: true, name: true } });
+    if (role) {
+      return { label: `${role.name} jobs in ${placeName}`, roleId: role.id, verticalId: null, locationState, country, remoteOnly: false };
     }
-    const st = place.toUpperCase();
-    return { label: `${role.name} jobs in ${stateName(st)}`, roleId: role.id, verticalId: null, locationState: st, country: null, remoteOnly: false };
+    // Vertical + place (SEO field pages, and a field-scoped feed alert when the
+    // person has no resolved role).
+    const vertical = await prisma.vertical.findUnique({ where: { slug: clean }, select: { id: true, name: true } });
+    if (vertical && clean !== "unsorted") {
+      return { label: `${vertical.name} jobs in ${placeName}`, roleId: null, verticalId: vertical.id, locationState, country, remoteOnly: false };
+    }
+    return null;
   }
 
   if (clean.startsWith(REMOTE_PREFIX)) {

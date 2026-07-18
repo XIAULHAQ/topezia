@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { getMatches, type JobMatch } from "@/lib/matching/match";
+import { countrySlugFor, countryName } from "@/lib/seo/pages";
 
 export const maxDuration = 60;
 
@@ -20,12 +21,29 @@ async function resolveIdentity(): Promise<{ profileId: string | null; authed: bo
   return { profileId: profile?.id ?? null, authed };
 }
 
-function respond(matches: JobMatch[], totalLive: number, authed: boolean) {
+/**
+ * The saved-search this profile would subscribe to from the feed — their field
+ * (headline role, else its vertical) scoped to their country. Reuses the same
+ * alert plumbing as the SEO pages via slug + place. null when we can't name a
+ * field (no resolved role) — then the feed nudges them to set one first.
+ */
+async function feedAlert(profileId: string): Promise<{ slug: string; place?: string; label: string } | null> {
+  const p = await prisma.profile.findUnique({ where: { id: profileId }, select: { headlineRoleId: true, country: true } });
+  if (!p?.headlineRoleId) return null;
+  const role = await prisma.role.findUnique({ where: { id: p.headlineRoleId }, select: { name: true, slug: true } });
+  if (!role) return null;
+  const place = p.country ? countrySlugFor(p.country) : undefined;
+  const where = p.country ? ` in ${countryName(p.country)}` : "";
+  return { slug: role.slug, place, label: `${role.name} jobs${where}` };
+}
+
+function respond(matches: JobMatch[], totalLive: number, authed: boolean, alert: Awaited<ReturnType<typeof feedAlert>>) {
   return NextResponse.json({
     matches,
     stats: { strong: matches.filter((m) => m.score >= 70).length, totalLive },
     pending: matches.some((m) => m.pending),
     authed,
+    alert,
   });
 }
 
@@ -35,5 +53,6 @@ export async function GET() {
 
   const matches = await getMatches(profileId, { rerankN: 12, rerank: false });
   const totalLive = await prisma.job.count({ where: { status: "LIVE" } });
-  return respond(matches, totalLive, authed);
+  const alert = await feedAlert(profileId);
+  return respond(matches, totalLive, authed, alert);
 }

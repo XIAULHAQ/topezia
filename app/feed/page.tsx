@@ -7,6 +7,7 @@
  * compact with a "Why low?" expander. Right rail = the whole profile surface.
  */
 import { useEffect, useState } from "react";
+import AlertCapture from "@/app/jobs/_components/AlertCapture";
 import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 
@@ -62,6 +63,7 @@ export default function FeedPage() {
   const [error, setError] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [authed, setAuthed] = useState(true); // default true to avoid a flash of the save prompt
+  const [alert, setAlert] = useState<{ slug: string; place?: string; label: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +81,7 @@ export default function FeedPage() {
         setMatches(data.matches || []);
         setStats(data.stats || null);
         setAuthed(data.authed ?? false);
+        setAlert(data.alert ?? null);
         setLoading(false);
 
         // Stage 2 — enrich the pending cards with real LLM scores + why-lines.
@@ -242,6 +245,15 @@ export default function FeedPage() {
             </p>
             <a style={S.railLink} href="/profile">Correct anything →</a>
           </div>
+          {alert ? (
+            <AlertCapture slug={alert.slug} place={alert.place} label={alert.label} />
+          ) : (
+            <div style={S.railCard}>
+              <div style={S.railH}>Get matches by email</div>
+              <p style={S.railP}>Set your job title on your profile and we&apos;ll email new matching jobs as they land.</p>
+              <a style={S.railLink} href="/profile">Set your role →</a>
+            </div>
+          )}
           <div style={S.railCard}>
             <div style={S.railH}>Right now</div>
             <p style={S.railBig}>
