@@ -112,11 +112,25 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
     ? (await prisma.role.findUnique({ where: { id: profile.headlineRoleId }, select: { name: true } }))?.name ?? null
     : null;
 
-  // Stage 1 — vector retrieval. Pull a generous candidate pool ordered by
-  // cosine similarity, then apply hard filters in JS (small pool, keeps the
-  // SQL free of array-binding). The `AND p.embedding IS NOT NULL` means this
-  // returns 0 rows when the profile has no embedding yet, in which case we fall
-  // back to recency — one fewer round-trip than checking embedding separately.
+  // Stage 1 — vector retrieval. Pull the most-similar jobs, but FROM THE
+  // ELIGIBLE SET, not from all jobs then filtered. Filtering after retrieval
+  // silently starved low-inventory countries: a Pakistan-based seeker's 100
+  // nearest jobs were nearly all US/EU, so after the country filter only ~3
+  // survived — even though ~80 eligible jobs existed and were never considered.
+  // The eligibility clause below MUST mirror eligibleIn() exactly.
+  const uc = profile.country;
+  const eligibleRegions = uc
+    ? Object.entries(REGION_MEMBERS).filter(([, members]) => members.includes(uc)).map(([region]) => region)
+    : [];
+  const eligSql = `(
+      $2::text IS NULL
+      OR j."remoteScope" = 'GLOBAL'
+      OR j.country = $2
+      OR j."remoteScope" = $2
+      OR j."remoteScope" = ANY($3::text[])
+      OR (j.country IS NULL AND j."remoteScope" IS NULL)
+    )`;
+
   const selectCols = `j.id, j."titleRaw", j."titleNormalized", j."companyName", j.source::text AS source,
       j."sourceUrl", j."remoteType", j."employmentType", j."salaryMin", j."salaryMax",
       j."salaryPeriod", j."locationState", j.country, j."remoteScope", j."lastVerifiedAt", j."descriptionRaw",
@@ -128,9 +142,10 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
      JOIN "Vertical" v ON v.id = j."verticalId"
      CROSS JOIN "Profile" p
      WHERE p.id = $1 AND p.embedding IS NOT NULL AND j.status = 'LIVE' AND j.embedding IS NOT NULL
+       AND ${eligSql}
      ORDER BY j.embedding <=> p.embedding
      LIMIT 100`,
-    profileId
+    profileId, uc, eligibleRegions
   );
 
   if (candidates.length === 0) {
