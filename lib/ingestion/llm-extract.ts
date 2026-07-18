@@ -54,17 +54,21 @@ const EXTRACTION_PROMPT = `You extract structured hiring data from a job posting
   "seniority": "INTERN" | "JUNIOR" | "MID" | "SENIOR" | "LEAD" | "EXEC" | "NOT_APPLICABLE",
   "roleGuess": string,      // normalized job function in 2-4 words, lowercase, e.g. "backend engineer"
   "vertical": string,       // the single best-fit category for this job, EXACTLY one of:
-                            //   "tech-software"      (engineering, data, IT, product, design-in-tech)
+                            //   "tech-software"      (engineering, data, IT, product, design-in-tech; INCLUDING fleet/telematics/logistics SOFTWARE, hardware & IoT roles)
                             //   "marketing"          (marketing, growth, content, brand, PR, SEO, social)
                             //   "design-creative"    (product/UX design, graphic design, video, illustration)
                             //   "healthcare-allied"  (clinical/allied health: therapy, imaging, lab, pharmacy, nursing)
-                            //   "trucking-logistics" (drivers, dispatch, warehouse, supply chain)
+                            //   "trucking-logistics" (COMMERCIAL DRIVING ONLY: people who physically operate a commercial vehicle — CDL truck drivers (OTR/regional/local), delivery & route drivers, owner-operators, autonomous-vehicle safety/test drivers — and the dispatchers/load planners who route those drivers. If nobody is driving, it is NOT this vertical.)
                             //   "sales"              (account executives, SDRs, sales management, sales engineering)
                             //   "finance-accounting" (accounting, finance, FP&A, bookkeeping)
                             //   "customer-support"   (support, customer success)
                             //   "retail-hospitality" (retail, food service, hospitality, front-of-house)
-                            //   "operations-hr"      (operations, HR/people, recruiting, program/project mgmt, admin)
+                            //   "operations-hr"      (operations, HR/people, recruiting, program/project mgmt, admin; INCLUDING warehouse/fulfillment/distribution-center work, inventory, supply-chain planning, and last-mile/logistics OPERATIONS MANAGEMENT that is not itself driving)
                             // Choose the closest fit by the actual work, not the company's industry. Use the exact slug string.
+                            // COMMONLY MIS-FILED — read carefully:
+                            //   * "Warehouse Associate", "Fulfillment Lead", "Cluster Head - Last Mile", "Inventory Manager", "Supply Chain Planner" -> "operations-hr" (they manage/move goods but do NOT drive commercially).
+                            //   * "Telematics Systems Specialist", "Fleet Software Engineer", "Logistics Platform PM" -> "tech-software" (software/hardware for logistics, not driving).
+                            //   * Only put a job in "trucking-logistics" when the core duty is driving a commercial vehicle (or dispatching drivers).
   "verticalFields": object | null   // if this is a healthcare or trucking role, extract relevant fields:
                                      // healthcare: { credentialsRequired: string[], shiftType: string|null, contractLengthWeeks: number|null }
                                      // trucking: { cdlClass: string|null, endorsements: string[], payStructure: string|null, homeTime: string|null }
@@ -73,17 +77,25 @@ const EXTRACTION_PROMPT = `You extract structured hiring data from a job posting
 
 export async function extractWithLlm(
   titleRaw: string,
-  descriptionText: string
+  descriptionText: string,
+  opts: { skipCache?: boolean } = {}
 ): Promise<LlmExtraction> {
   const hash = hashDescription(`${titleRaw}\n${descriptionText}`);
 
   // Cache check — this is the line that keeps Slice 2 inside budget.
   // Reuses any prior extraction for byte-identical title+description text,
   // regardless of which board it came from.
-  const cached = await prisma.job.findFirst({
-    where: { descriptionHash: hash, titleNormalized: { not: null } },
-    select: { titleNormalized: true, seniority: true, verticalFields: true, vertical: { select: { slug: true } }, skills: { select: { skill: { select: { name: true } } } } },
-  });
+  //
+  // skipCache forces a fresh model call. The cache returns a prior row's stored
+  // vertical/skills/seniority, so after the classifier PROMPT changes it would
+  // otherwise keep handing back stale classifications for jobs whose text is
+  // unchanged — a re-classification pass must bypass it (see scripts/reclassify-*).
+  const cached = opts.skipCache
+    ? null
+    : await prisma.job.findFirst({
+        where: { descriptionHash: hash, titleNormalized: { not: null } },
+        select: { titleNormalized: true, seniority: true, verticalFields: true, vertical: { select: { slug: true } }, skills: { select: { skill: { select: { name: true } } } } },
+      });
 
   if (cached) {
     return {

@@ -581,11 +581,36 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   jobs. Left empty — their answers drive matching via skills + embedding; only
   the pay floor they explicitly gave stays a filter. (Résumé flow is safe: the
   user actively ticks those there.)
-- 🔴 **No real CDL driving inventory yet.** The corpus has ~0 actual driving
-  jobs: the 21 "trucking-logistics" LIVE jobs are MISCLASSIFIED warehouse /
-  last-mile / telematics roles (Samsara, Deliveroo, Meesho — several
-  international). So a driver today gets adjacent logistics-ops matches and ~0%
-  skill coverage (top "gap" comes back as "inventory management"). The feed
-  shows this honestly rather than faking fit. Before this path delivers real
-  value: add actual trucking/driver job sources, and fix the classifier that
-  files warehouse/last-mile ops under trucking-logistics.
+- 🟢 **Real CDL driving inventory now live (2026-07-18).** trucking-logistics went
+  from 21 misclassified LIVE jobs (0 real drivers) to **44 genuine driving roles**.
+  Three things landed:
+  (a) **Sources added** (`scripts/seed-sources.ts`): five boards posting genuine
+  CDL/driving roles, each verified against the live crawlers before seeding (0 dup
+  externalIds, 0 missing fields, 0 demo/"(copy)" titles) — Misfits Market (gh: CDL
+  A/B, Class C Truck + Delivery Drivers), Stack AV (gh: CDL-A ops specialists),
+  Kodiak Robotics (gh: CDL/safety drivers), Outrider (gh: CDL-A AV test operators),
+  Waabi (lever: CDL vehicle operator). Ingested clean: 243 jobs created, 0 failed,
+  5 deduped. Honest limit: the big OTR carriers (Swift/Schneider/Werner/JB Hunt)
+  aren't on Greenhouse/Lever/Ashby, so the CDL inventory these ATSs expose is
+  grocery/meal-kit local & regional CDL delivery plus autonomous-truck safety
+  drivers — real driving, but not long-haul OTR.
+  (b) **Classifier tightened** (`lib/ingestion/llm-extract.ts`): `trucking-logistics`
+  now means COMMERCIAL DRIVING ONLY (operate a commercial vehicle, or dispatch
+  drivers). Warehouse/fulfillment/inventory/supply-chain/last-mile *ops management*
+  → `operations-hr`; fleet/telematics/logistics *software* → `tech-software`. On
+  the new sources the tightened prompt filed every CDL/driver role correctly.
+  (c) **Existing 21 reclassified** (`scripts/reclassify-verticals.ts --apply`):
+  the prompt fix does NOT reach already-ingested rows on a plain re-crawl —
+  `extractWithLlm` returns the cached vertical for a matching `descriptionHash`,
+  so unchanged text keeps its old (wrong) vertical. The new script forces a fresh
+  classification (`extractWithLlm(..., { skipCache:true })`, added a `skipCache`
+  opt) and updates only `verticalId`; dry-run by default, `--apply` to write.
+  Result verified live: 16 → operations-hr (Deliveroo warehouse/pickers, Meesho
+  last-mile/sort-center, Wolt courier-supply), 5 → tech-software (Samsara
+  telematics/implementation), and all 44 real drivers kept. 0 legit drivers moved.
+- 🟡 **New driving jobs' embeddings backfilling (2026-07-18).** The 243 new jobs
+  ingested with `--skip-embeddings`; `scripts/backfill-embeddings.ts` is filling
+  them in (throttled — Voyage free tier is 3 RPM, ~80 min for 241). Until each has
+  an embedding it can't be retrieved by the pgvector stage-1 matcher, so a driver's
+  /drive feed won't show the full driving set until the backfill completes. Verify
+  the /drive → feed flow surfaces real CDL/driver matches once it finishes.

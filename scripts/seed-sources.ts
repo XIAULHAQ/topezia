@@ -65,6 +65,26 @@ const SEED_SOURCES: { type: JobSource; companySlug: string; companyName: string 
   { type: JobSource.GREENHOUSE, companySlug: "chime", companyName: "Chime" },
   { type: JobSource.GREENHOUSE, companySlug: "mercury", companyName: "Mercury" },
   { type: JobSource.ASHBY, companySlug: "ramp", companyName: "Ramp" },
+
+  // Real CDL / commercial-driving inventory (2026-07-18). Until now the
+  // "trucking-logistics" vertical held ~0 actual driving jobs — the LIVE rows
+  // there were misclassified warehouse/last-mile/telematics ops (Samsara,
+  // Deliveroo, Meesho). The /drive questionnaire (spec §3.4) had nothing real
+  // to match against. These boards post genuine CDL truck-driver, delivery/route
+  // driver, and autonomous-vehicle CDL safety/test-driver roles. All verified
+  // 2026-07-18 against the live crawlers: 0 dup externalIds, 0 missing
+  // title/location/description/id, 0 "(copy)"/demo placeholders. Real US
+  // locations throughout. Driver-title counts noted are the CDL/driving subset;
+  // the balance of each board (warehouse, AV engineering, ops) classifies into
+  // its own vertical once the tightened classifier runs. NOTE: none of the big
+  // OTR carriers (Swift/Schneider/Werner/JB Hunt) publish on Greenhouse/Lever/
+  // Ashby, so the honest CDL inventory available on these ATSs is grocery/
+  // meal-kit local & regional CDL delivery plus autonomous-truck safety drivers.
+  { type: JobSource.GREENHOUSE, companySlug: "misfitsmarket", companyName: "Misfits Market" }, // 93 jobs · 28 driving: CDL A/B, Class C & (Lead/PT) Delivery Drivers · US
+  { type: JobSource.GREENHOUSE, companySlug: "stackav", companyName: "Stack AV" },             // 20 jobs · 8 CDL-A "Operations Specialist" driving roles · US (TN, CO, GA, IL, AZ, FL, TX)
+  { type: JobSource.GREENHOUSE, companySlug: "kodiak", companyName: "Kodiak Robotics" },       // 73 jobs · 7 driving: Class A CDL & Class A Safety Drivers · US (TX, SF Bay)
+  { type: JobSource.GREENHOUSE, companySlug: "outrider", companyName: "Outrider" },            // 10 jobs · 3 driving: CDL-A Autonomous Vehicle Test Operators / Site Lead · San Antonio, TX
+  { type: JobSource.LEVER, companySlug: "waabi", companyName: "Waabi" },                       // 56 jobs · 1 driving: Vehicle Operator (CDL) · Dallas, TX
 ];
 
 async function main() {
