@@ -165,7 +165,7 @@ export default function ProfileEditor() {
           <section style={S.card}>
             <div style={S.cardLabel}>Where you stand</div>
             <div style={S.inferNote}>
-              Only {insights.targetJobs} {insights.fieldLabel.replace(/ \(broad\)$/, "")} {insights.targetJobs === 1 ? "job is" : "jobs are"} open to your region right now — too few for reliable stats or a roadmap. These sharpen as we add sources in your market.
+              Only {insights.targetJobs} {insights.fieldLabel.replace(/ roles( \(broad\))?$/, "")} {insights.targetJobs === 1 ? "role is" : "roles are"} open to your region right now — too few for reliable stats or a roadmap. These sharpen as we add sources in your market.
             </div>
           </section>
         )}

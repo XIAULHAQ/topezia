@@ -226,7 +226,7 @@ export default function FeedPage() {
           )}
           {insights && !insights.reliable && insights.fieldLabel && (
             <div style={S.standThin}>
-              Your market is still thin — only {insights.targetJobs} {insights.fieldLabel.replace(/ \(broad\)$/, "")} {insights.targetJobs === 1 ? "role is" : "roles are"} open to your region, too few for reliable stats yet. <a href="/profile" style={S.standLink}>More on your profile →</a>
+              Your market is still thin — only {insights.targetJobs} {insights.fieldLabel.replace(/ roles( \(broad\))?$/, "")} {insights.targetJobs === 1 ? "role is" : "roles are"} open to your region, too few for reliable stats yet. <a href="/profile" style={S.standLink}>More on your profile →</a>
             </div>
           )}
 
