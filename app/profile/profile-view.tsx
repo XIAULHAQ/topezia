@@ -83,8 +83,9 @@ export default function ProfileView() {
 
   return (
     <div>
+      <style>{"@media (max-width:820px){.pv-grid{grid-template-columns:1fr!important}.pv-2col{grid-template-columns:1fr!important}.pv-hero{padding:22px 20px!important}}"}</style>
       {/* ── Hero ── */}
-      <section style={S.hero}>
+      <section className="pv-hero" style={S.hero}>
         <div style={S.heroGlow1} />
         <div style={S.heroGlow2} />
         <div style={{ position: "relative", display: "flex", gap: 26, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -158,7 +159,7 @@ export default function ProfileView() {
       </div>
 
       {/* ── Two-column body ── */}
-      <div style={S.grid}>
+      <div className="pv-grid" style={S.grid}>
         <div style={{ display: "flex", flexDirection: "column", gap: 22, minWidth: 0 }}>
           {showAbout && (
             <Card>
@@ -216,7 +217,7 @@ export default function ProfileView() {
           )}
 
           {showEdu && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
+            <div className="pv-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
               <Card>
                 <SectionHead icon="grad" title="Education" />
                 {p.education.length > 0 ? p.education.map((e, i) => (
@@ -246,7 +247,7 @@ export default function ProfileView() {
           {showSkillsTab && (
             <Card>
               <SectionHead icon="gauge" title="Skills & proficiency" />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 28px" }}>
+              <div className="pv-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 28px" }}>
                 {p.skills.map((s) => (
                   <div key={s.name}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600, marginBottom: 7 }}><span>{s.name}</span><span style={{ color: C.c1 }}>{s.proficiency ? label(s.proficiency) : "—"}</span></div>

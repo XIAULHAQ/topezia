@@ -34,6 +34,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [name, setName] = useState<string | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
 
@@ -46,6 +48,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  // Close the mobile drawer on navigation so it never covers the new page.
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
+
   async function logout() {
     try {
       await createClient().auth.signOut();
@@ -55,13 +66,19 @@ export default function AppShell({ children }: { children: ReactNode }) {
     router.push("/");
   }
 
-  const w = open ? 236 : 78;
-  const disp = open ? "inline" : "none";
-  const just = open ? "flex-start" : "center";
+  // Mobile: the sidebar is an off-canvas drawer (always full labels). Desktop:
+  // in-flow sticky rail that collapses to icons.
+  const expanded = isMobile || open;
+  const disp = expanded ? "inline" : "none";
+  const just = expanded ? "flex-start" : "center";
+  const asideStyle: CSSProperties = isMobile
+    ? { width: 268, background: "#fff", borderRight: `1px solid ${C.line}`, display: "flex", flexDirection: "column", padding: "20px 14px", position: "fixed", left: 0, top: 0, height: "100vh", overflowY: "auto", overflowX: "hidden", zIndex: 60, transform: mobileOpen ? "translateX(0)" : "translateX(-100%)", transition: "transform .25s ease", boxShadow: mobileOpen ? "0 0 40px rgba(15,23,42,.25)" : "none" }
+    : { width: open ? 236 : 78, flex: "none", background: "#fff", borderRight: `1px solid ${C.line}`, display: "flex", flexDirection: "column", padding: "20px 14px", position: "sticky", top: 0, height: "100vh", overflowY: "auto", overflowX: "hidden", transition: "width .25s ease" };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: C.bg, fontFamily: FONT, color: C.ink }}>
-      <aside style={{ width: w, flex: "none", background: "#fff", borderRight: `1px solid ${C.line}`, display: "flex", flexDirection: "column", padding: "20px 14px", position: "sticky", top: 0, height: "100vh", overflowY: "auto", overflowX: "hidden", transition: "width .25s ease" }}>
+    <div style={{ display: "flex", minHeight: "100vh", background: C.bg, fontFamily: FONT, color: C.ink, overflowX: "hidden" }}>
+      {isMobile && mobileOpen && <div onClick={() => setMobileOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.4)", zIndex: 55 }} />}
+      <aside style={asideStyle}>
         <Link href="/feed" style={{ display: "flex", alignItems: "center", gap: 9, padding: "4px 10px 18px", justifyContent: just, textDecoration: "none", color: C.ink }}>
           <BrandMark />
           <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-0.5px", display: disp }}>topezia</span>
@@ -74,7 +91,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               <>
                 <Icon name={nv.icon} />
                 <span style={{ flex: 1, display: disp }}>{nv.label}</span>
-                {nv.soon && open && (
+                {nv.soon && expanded && (
                   <span style={{ background: "#F1F5F9", color: C.mut, fontSize: 9.5, fontWeight: 700, borderRadius: 999, padding: "2px 7px", border: `1px solid ${C.line}` }}>Soon</span>
                 )}
               </>
@@ -98,7 +115,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
 
-        {open && (
+        {expanded && (
           <div style={{ flex: "none", margin: "18px 4px 0", background: `linear-gradient(150deg, ${C.navy}, ${C.navy2})`, borderRadius: 14, padding: "18px 16px", color: "#fff", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", right: -30, top: -30, width: 110, height: 110, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.45), transparent 70%)" }} />
             <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 5 }}>Unlock full potential</div>
@@ -118,14 +135,16 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <main style={{ flex: 1, minWidth: 0, padding: "20px 28px 40px" }}>
+      <main style={{ flex: 1, minWidth: 0, padding: isMobile ? "14px 16px 40px" : "20px 28px 40px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 22 }}>
-          <div onClick={() => setOpen((o) => !o)} title="Toggle sidebar" style={{ width: 40, height: 40, flex: "none", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 11, display: "grid", placeItems: "center", cursor: "pointer", color: C.slate }}>
+          <div onClick={() => (isMobile ? setMobileOpen((o) => !o) : setOpen((o) => !o))} title="Menu" style={{ width: 40, height: 40, flex: "none", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 11, display: "grid", placeItems: "center", cursor: "pointer", color: C.slate }}>
             <Icon name="panel" />
           </div>
-          <div style={{ flex: 1, maxWidth: 480, display: "flex", alignItems: "center", gap: 10, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: "10px 14px", color: C.mut, fontSize: 13 }} title="Search — coming soon">
-            <Icon name="search" size={15} />Search jobs, companies…
-          </div>
+          {!isMobile && (
+            <div style={{ flex: 1, maxWidth: 480, display: "flex", alignItems: "center", gap: 10, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: "10px 14px", color: C.mut, fontSize: 13 }} title="Search — coming soon">
+              <Icon name="search" size={15} />Search jobs, companies…
+            </div>
+          )}
           <div style={{ flex: 1 }} />
           <Link href="/profile" style={{ display: "flex", alignItems: "center", gap: 9, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 999, padding: "4px 14px 4px 4px", textDecoration: "none", color: C.ink }}>
             {photo ? (
