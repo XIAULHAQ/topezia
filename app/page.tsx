@@ -87,12 +87,6 @@ export default async function Home() {
             <h1 style={S.h1}>The AI that <Grad>actually understands</Grad> your career</h1>
             <p style={S.heroSub}>Topezia&apos;s AI reads your real experience, benchmarks it against 1.4M live roles every week, and builds a step-by-step roadmap to the role you want — no endless scrolling, no guesswork.</p>
 
-            <div style={S.searchBar}>
-              <div style={{ flex: 1.2, display: "flex", alignItems: "center", gap: 9, padding: "10px 14px", color: C.mut, fontSize: 13, borderRight: `1px solid ${C.line}` }}><Ic n="search" s={15} />Job title or skill</div>
-              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 9, padding: "10px 14px", color: C.mut, fontSize: 13 }}><Ic n="pin" s={15} />Location</div>
-              <Link href="/jobs" className="h-bright" style={S.searchBtn}>Search</Link>
-            </div>
-
             <Link href="/onboard" className="h-upload" style={S.upload}>
               <span style={{ width: 38, height: 38, borderRadius: 10, background: GRAD, color: "#fff", display: "grid", placeItems: "center", flex: "none" }}><Ic n="upload" s={17} /></span>
               <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>Or upload your resume</div><div style={{ fontSize: 11.5, color: C.mut, marginTop: 2 }}>Our AI reads it and builds your profile + career score in 2 minutes</div></div>
@@ -358,7 +352,7 @@ const HOVER_CSS = `
 .h-flink:hover{color:#fff!important}
 .h-bright:hover{filter:brightness(1.1)}
 .h-card:hover{border-color:#A5B4FC!important;box-shadow:0 12px 32px rgba(99,102,241,.1)}
-.h-upload:hover{border-color:${C.c1}!important;background:#EEF2FF!important}
+.h-upload:hover{border-color:${C.c1}!important;box-shadow:0 12px 30px rgba(99,102,241,.18)!important;transform:translateY(-1px)}
 @media (max-width:820px){ .tz-h1{font-size:36px!important} }
 `;
 
@@ -372,9 +366,7 @@ const S: Record<string, CSSProperties> = {
   badge: { display: "inline-flex", alignItems: "center", gap: 8, background: "#EEF2FF", border: "1px solid #C7D2FE", color: "#4F46E5", fontSize: 11.5, fontWeight: 600, borderRadius: 999, padding: "6px 14px", marginBottom: 22 },
   h1: { margin: 0, fontSize: 46, fontWeight: 800, letterSpacing: "-1.6px", lineHeight: 1.12 },
   heroSub: { margin: "18px 0 0", fontSize: 15.5, lineHeight: 1.65, color: C.mut, maxWidth: 480 },
-  searchBar: { display: "flex", marginTop: 28, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, padding: 6, boxShadow: "0 10px 30px rgba(15,23,42,.07)", maxWidth: 520 },
-  searchBtn: { background: GRAD, color: "#fff", borderRadius: 10, padding: "11px 22px", fontSize: 13, fontWeight: 600, flex: "none", textDecoration: "none", display: "flex", alignItems: "center" },
-  upload: { display: "flex", alignItems: "center", gap: 14, marginTop: 16, maxWidth: 520, border: "1.5px dashed #C7D2FE", background: "#F5F7FF", borderRadius: 14, padding: "13px 18px", textDecoration: "none", transition: "border-color .2s, background .2s" },
+  upload: { display: "flex", alignItems: "center", gap: 14, marginTop: 28, maxWidth: 520, border: `1px solid ${C.line}`, background: "#fff", borderRadius: 14, padding: "14px 18px", textDecoration: "none", boxShadow: "0 8px 24px rgba(15,23,42,.08)", transition: "border-color .2s, box-shadow .2s, transform .1s" },
   floatCardL: { position: "absolute", left: -24, bottom: 34, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, padding: "13px 16px", boxShadow: "0 14px 34px rgba(15,23,42,.14)", display: "flex", alignItems: "center", gap: 12 },
   floatCardR: { position: "absolute", right: -14, top: 30, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 15px", boxShadow: "0 14px 34px rgba(15,23,42,.14)", display: "flex", alignItems: "center", gap: 10 },
   trustInner: { maxWidth: 1180, margin: "0 auto", padding: "20px 24px", display: "flex", alignItems: "center", gap: 28, flexWrap: "wrap", justifyContent: "center" },
