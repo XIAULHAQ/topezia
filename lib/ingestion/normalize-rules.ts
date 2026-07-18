@@ -191,6 +191,22 @@ function locationParts(s: string): string[] {
   return s.split(/[,;()\/:]|\s+-\s+/).map((p) => p.trim()).filter(Boolean);
 }
 
+/**
+ * Last-resort scan for a dictionary key appearing as a whole word anywhere in
+ * a string — for messy free-text like "utah united states" (no comma) that the
+ * component-based matching above can't split. Longest key first so "west
+ * virginia" beats "virginia" and "united states" beats a stray "us". Only ever
+ * reached AFTER the precise component matching fails, so it can't corrupt the
+ * clean job-board locations that resolve earlier.
+ */
+function scanWholeString(s: string, dict: Record<string, string>): string | null {
+  const padded = ` ${s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
+  for (const key of Object.keys(dict).sort((a, b) => b.length - a.length)) {
+    if (padded.includes(` ${key} `)) return dict[key];
+  }
+  return null;
+}
+
 export function stripHtml(input: string): string {
   // Decode entities FIRST. Greenhouse returns entity-ENCODED html
   // (`&lt;p class=&quot;author-d-1gg9uz…&quot;&gt;`), which has no literal tags
@@ -239,7 +255,8 @@ export function extractLocationState(locationRaw: string | null): string | null 
     if (metro) return metro;
   }
 
-  return null;
+  // Free-text fallback: a state name anywhere in the string ("utah united states").
+  return scanWholeString(cleaned, STATE_NAME_TO_ABBR) ?? scanWholeString(cleaned, US_METRO_TO_STATE);
 }
 
 /**
@@ -279,7 +296,10 @@ export function extractCountry(locationRaw: string | null): string | null {
       if (US_METRO_TO_STATE[head]) return "US";
     }
   }
-  return null;
+
+  // Free-text fallback: a country or city name anywhere in the string
+  // ("somewhere in united kingdom", "based karachi pakistan").
+  return scanWholeString(locationRaw, COUNTRY_NAME_TO_ISO) ?? scanWholeString(locationRaw, CITY_TO_COUNTRY);
 }
 
 /**
