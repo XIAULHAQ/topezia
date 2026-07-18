@@ -18,7 +18,7 @@ type Skill = { name: string; proficiency: string | null; source: string };
 interface Profile {
   fullName: string | null; headline: string | null; seniority: string | null; photoUrl: string | null;
   yearsExperience: number | null; currentLocation: string | null; country: string | null;
-  industries: string[]; remoteTypes: string[]; skills: Skill[]; tier: string; entryPath: string;
+  industries: string[]; remoteTypes: string[]; skills: Skill[]; tier: string; entryPath: string; publicSlug: string | null;
   workHistory: { title?: string; company?: string; years?: string }[];
   education: { degree?: string; institution?: string; year?: string }[];
   certifications: string[];
@@ -31,7 +31,7 @@ interface Insights {
 
 const PROF_PCT: Record<string, number> = { EXPERT: 96, ADVANCED: 86, PROFICIENT: 72, FAMILIAR: 55 };
 const profPct = (p: string | null) => (p ? PROF_PCT[p] ?? 65 : 65);
-const TABS = ["Overview", "Experience", "Skills", "Projects", "Education", "Activity"] as const;
+const TABS = ["Overview", "Experience", "Skills", "Projects", "Education"] as const;
 type Tab = (typeof TABS)[number];
 
 const HERO_LOGO_BG = ["linear-gradient(135deg,#334155,#0F172A)", "linear-gradient(135deg,#3B82F6,#22D3EE)"];
@@ -40,6 +40,16 @@ export default function ProfileView() {
   const [p, setP] = useState<Profile | null>(null);
   const [ins, setIns] = useState<Insights | null>(null);
   const [tab, setTab] = useState<Tab>("Overview");
+  const [shared, setShared] = useState(false);
+
+  async function shareProfile() {
+    if (!p?.publicSlug) return;
+    const url = `${window.location.origin}/p/${p.publicSlug}`;
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) { await navigator.share({ title: "My Topezia profile", url }); return; }
+    } catch { /* share sheet dismissed — fall through to copy */ }
+    try { await navigator.clipboard.writeText(url); setShared(true); setTimeout(() => setShared(false), 2000); } catch { /* clipboard blocked */ }
+  }
 
   useEffect(() => {
     fetch("/api/profile").then((r) => (r.ok ? r.json() : null)).then((d) => d && setP(d.profile)).catch(() => {});
@@ -70,7 +80,6 @@ export default function ProfileView() {
   const showProjects = tab === "Overview" || tab === "Projects";
   const showEdu = tab === "Overview" || tab === "Education";
   const showSkillsTab = tab === "Skills";
-  const showActivity = tab === "Activity";
 
   return (
     <div>
@@ -124,7 +133,9 @@ export default function ProfileView() {
             </div>
             <div style={{ display: "flex", gap: 9 }}>
               <a href="/profile/edit" style={S.editBtn}><Icon name="edit" size={15} />Edit profile</a>
-              <span title="Public profile sharing — coming soon" style={S.shareBtn}><Icon name="share" size={15} />Share</span>
+              {p.publicSlug && (
+                <button onClick={shareProfile} title="Share your public profile" style={{ ...S.shareBtn, cursor: "pointer", fontFamily: "inherit" }}><Icon name="share" size={15} />{shared ? "Link copied!" : "Share"}</button>
+              )}
             </div>
           </div>
         </div>
@@ -246,13 +257,6 @@ export default function ProfileView() {
             </Card>
           )}
 
-          {showActivity && (
-            <Card style={{ padding: "48px 26px", textAlign: "center" }}>
-              <div style={{ width: 52, height: 52, borderRadius: 14, background: "#EEF2FF", color: C.c1, display: "grid", placeItems: "center", margin: "0 auto 14px" }}><Icon name="trend" size={22} /></div>
-              <div style={{ fontSize: 15, fontWeight: 700 }}>Activity feed — coming soon</div>
-              <div style={{ fontSize: 12.5, color: C.mut, marginTop: 6 }}>Updates and shared work will appear here.</div>
-            </Card>
-          )}
         </div>
 
         {/* ── Right column ── */}

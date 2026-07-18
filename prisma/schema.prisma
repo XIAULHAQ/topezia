@@ -301,6 +301,9 @@ model Profile {
   // small thumbnail data URI — NOT the résumé file itself, which we still never
   // store. Null when the CV had no usable photo. User-editable later.
   photoUrl         String?
+  // SEO-friendly slug for the public profile at /p/{publicSlug}
+  // (e.g. "raheel-ali-k3m9x2"). Stable once set.
+  publicSlug       String?  @unique
 
   fullName         String?
   headlineRoleId   String?

@@ -168,7 +168,36 @@ export async function createOrUpdateProfile(params: {
     await writeProfileEmbedding(prisma, profile.id, embedding);
   }
 
+  await ensurePublicSlug(profile.id, parsed.fullName); // stable /p/{slug} URL
+
   return { profileId: profile.id, embedded: Boolean(embedding) };
+}
+
+/** name → "raheel-ali" (empty → "user"), capped so the slug stays sane. */
+function slugifyName(name: string | null): string {
+  const base = (name ?? "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 40);
+  return base || "user";
+}
+
+/**
+ * Give a profile a stable, unique public slug ("raheel-ali-k3m9x2") if it
+ * doesn't have one. Retries on the (rare) suffix collision. Best-effort — a
+ * failure here never blocks the save.
+ */
+export async function ensurePublicSlug(profileId: string, fullName: string | null): Promise<string | null> {
+  try {
+    const cur = await prisma.profile.findUnique({ where: { id: profileId }, select: { publicSlug: true } });
+    if (cur?.publicSlug) return cur.publicSlug;
+    const base = slugifyName(fullName);
+    for (let i = 0; i < 6; i++) {
+      const slug = `${base}-${randomUUID().replace(/-/g, "").slice(0, 6)}`;
+      try {
+        await prisma.profile.update({ where: { id: profileId }, data: { publicSlug: slug } });
+        return slug;
+      } catch { /* unique collision — try a new suffix */ }
+    }
+  } catch { /* non-fatal */ }
+  return null;
 }
 
 
