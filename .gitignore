@@ -10,3 +10,5 @@ next-env.d.ts
 
 # Local dev server config (machine-specific absolute paths)
 .claude/launch.json
+.vercel
+.env*
