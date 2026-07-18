@@ -508,4 +508,12 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟡 **The feed "Refine" box was a disabled placeholder that looked active** —
   owner tried to filter with it. Now a dashed "Soon" pill, clearly not-yet-built.
   The real filters are the pills (All matches / Remote / Hourly). "Saved" also
-  still returns empty (saves not wired).
+  still returns empty (saves not wired).- 🟢 **Build-time DB dependency crashed a deploy — fixed.** The /jobs hub was
+  statically pre-rendered and called getBrowseHub (7 DB aggregates) at build, so
+  a transient "can't reach database server" during one Vercel build failed the
+  whole deploy — and Vercel kept serving the previous good build, so an
+  unrelated nav fix silently never shipped. /jobs is now force-dynamic (no
+  build-time DB) and getBrowseHub returns an empty hub on DB error. Audited: no
+  other statically-pre-rendered page hits the DB unprotected (API routes and
+  cookie/searchParam pages are all dynamic). Lesson: a failed prod build is
+  invisible unless you look — worth a staging/CI build check before launch.
