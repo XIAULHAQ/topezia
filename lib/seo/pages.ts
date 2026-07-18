@@ -223,7 +223,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
     return {
       kind: "role",
       heading: `${role.name} jobs`,
-      intro: `${total} verified ${role.name.toLowerCase()} ${total === 1 ? "opening" : "openings"}, aggregated from company career pages across the US and re-checked so you don't click a dead listing. Upload your résumé once and see an honest match score — and the skill gaps — for every one.`,
+      intro: `${total} verified ${role.name.toLowerCase()} ${total === 1 ? "opening" : "openings"}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your résumé once and see an honest match score — and the skill gaps — for every one.`,
       canonicalPath: `/jobs/${role.slug}`,
       slug: role.slug,
       jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
