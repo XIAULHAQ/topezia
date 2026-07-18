@@ -57,7 +57,7 @@ export interface ProfileInsights {
 // noise, not signal — on a 12-job sample a single posting swings a stat 8
 // points, and "0% coverage" reads as a verdict when it's really thin inventory.
 // The UI shows an honest "your market is still thin" note instead.
-export const MEANINGFUL_MIN = 20;
+export const MEANINGFUL_MIN = 10;
 
 /**
  * Eligible-in-your-field job ids for a profile.
@@ -67,7 +67,7 @@ export const MEANINGFUL_MIN = 20;
  * global-remote job, or a posting whose country we couldn't determine — never
  * hide on absence of evidence.
  */
-const ROLE_SCOPE_MIN = 20; // below this, the role is too thin — widen to its vertical
+const ROLE_SCOPE_MIN = 10; // role-scope when it has enough jobs; else widen to the vertical
 
 async function targetJobIds(p: {
   profileId: string;
@@ -202,27 +202,61 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
       .map((s) => [s.id, s.name])
   );
 
+  // Match your skills to demanded skills by NORMALIZED name, not exact skillId.
+  // The taxonomy fragments the same concept into distinct skills — "social media
+  // marketing" vs "Social media", "creative team leadership" vs "Team
+  // leadership" — so exact-id matching reported 0% coverage for a marketer whose
+  // skills clearly overlap. Token-subset match lines the concepts up: your skill
+  // covers a demanded one when one's word-set contains the other's.
+  const RANK: Record<string, number> = { FAMILIAR: 1, PROFICIENT: 2, ADVANCED: 3, EXPERT: 4 };
+  const STOP = new Set(["and", "the", "of", "for", "a", "an", "with", "to", "in"]);
+  const toks = (name: string) =>
+    new Set(name.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((t) => t.length > 1 && !STOP.has(t)));
+  const mine = profile.skills.map((s) => ({ tokens: toks(s.skill.name), prof: s.proficiency }));
+  const covered = (a: Set<string>, d: Set<string>) => {
+    if (!a.size || !d.size) return false;
+    const [sm, big] = a.size <= d.size ? [a, d] : [d, a];
+    for (const t of sm) if (!big.has(t)) return false;
+    return true;
+  };
+  // Your best proficiency in anything that covers this demanded skill, or null.
+  const myLevelFor = (demandName: string): string | null => {
+    const dt = toks(demandName);
+    let best: string | null = null;
+    for (const m of mine) {
+      if (!covered(m.tokens, dt)) continue;
+      const lvl = m.prof ?? "PROFICIENT"; // a listed skill with no set level still counts as had
+      if (!best || RANK[lvl] > RANK[best]) best = lvl;
+    }
+    return best;
+  };
+
   const STRONG = new Set(["PROFICIENT", "ADVANCED", "EXPERT"]);
+  // A skill counts as "asked for" at >=2 postings (or 8% of a larger sample).
+  // The floor of 3 excluded real signals in thin markets: a marketer's social/
+  // campaign skills, wanted by 2 of 12 jobs, were dropped while design tools
+  // (wanted by 3-4) dominated — producing 0% coverage for a competent marketer.
+  const common = (n: number) => n >= Math.max(2, ids.length * 0.08);
   const gaps: SkillGap[] = demand
     .map((d) => {
-      const mine = mySkills.has(d.skillId) ? mySkills.get(d.skillId) ?? null : null;
-      const covered = mine !== null && STRONG.has(mine);
-      return { skillId: d.skillId, jobsWanting: d._count.jobId, mine, covered };
+      const name = skillNames.get(d.skillId) ?? "—";
+      const lvl = myLevelFor(name);
+      return { name, jobsWanting: d._count.jobId, lvl, covered: lvl !== null && STRONG.has(lvl) };
     })
-    .filter((d) => !d.covered && d.jobsWanting >= Math.max(3, ids.length * 0.08)) // must be genuinely common
+    .filter((d) => !d.covered && common(d.jobsWanting))
     .sort((a, b) => b.jobsWanting - a.jobsWanting)
     .slice(0, 6)
     .map((d) => ({
-      skill: skillNames.get(d.skillId) ?? "—",
+      skill: d.name,
       jobsWanting: d.jobsWanting,
       pct: Math.round((d.jobsWanting / ids.length) * 100),
-      youHave: d.mine,
+      youHave: d.lvl,
     }));
 
   // Coverage: of the distinct skills your field asks for (that matter), how many
-  // do you already have at any level?
-  const wanted = demand.filter((d) => d._count.jobId >= Math.max(3, ids.length * 0.08));
-  const haveCount = wanted.filter((d) => mySkills.has(d.skillId)).length;
+  // do you have — matched by normalized name.
+  const wanted = demand.filter((d) => common(d._count.jobId));
+  const haveCount = wanted.filter((d) => myLevelFor(skillNames.get(d.skillId) ?? "") !== null).length;
   const coveragePct = wanted.length ? Math.round((haveCount / wanted.length) * 100) : null;
 
   // Seniority fit, from the enum every posting carries.
