@@ -10,7 +10,7 @@
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import type { EmploymentType, RemoteType, SalaryPeriod, SkillSource, WorkAuthorization } from "@prisma/client";
+import type { EmploymentType, EntryPath, RemoteType, SalaryPeriod, SkillSource, WorkAuthorization } from "@prisma/client";
 import { resolveRole, resolveSkillsMap } from "@/lib/ingestion/resolve-taxonomy";
 import { extractCountry } from "@/lib/ingestion/normalize-rules";
 import { embedText, writeProfileEmbedding } from "@/lib/ingestion/embed";
@@ -44,8 +44,13 @@ export async function createOrUpdateProfile(params: {
   resumeFileUrl?: string | null;
   parsed: ParsedResume;
   preferences: ProfilePreferences;
+  /** How this profile was built. Drives entryPath + the skills' source badge:
+   *  a questionnaire answer is USER_ADDED (the person asserted it), a résumé
+   *  parse is RESUME (we read it off the page). Defaults to the résumé path. */
+  entryPath?: EntryPath;
 }): Promise<{ profileId: string; embedded: boolean }> {
-  const { userId, resumeText, resumeFileUrl, parsed, preferences } = params;
+  const { userId, resumeText, resumeFileUrl, parsed, preferences, entryPath = "RESUME" } = params;
+  const skillSource: SkillSource = entryPath === "QUESTIONNAIRE" ? "USER_ADDED" : "RESUME";
 
   // Resolve headline role against the taxonomy (null is fine — matching still
   // works off the embedding + skills).
@@ -104,7 +109,7 @@ export async function createOrUpdateProfile(params: {
       salaryPeriod: preferences.salaryPeriod ?? null,
       workAuthorization: preferences.workAuthorization ?? "NOT_SPECIFIED",
       verticalsOptIn: preferences.verticalsOptIn ?? [],
-      entryPath: "RESUME",
+      entryPath,
       matchVersion,
     },
     update: {
@@ -128,6 +133,7 @@ export async function createOrUpdateProfile(params: {
       salaryPeriod: preferences.salaryPeriod ?? null,
       workAuthorization: preferences.workAuthorization ?? "NOT_SPECIFIED",
       verticalsOptIn: preferences.verticalsOptIn ?? [],
+      entryPath,
       matchVersion,
     },
     select: { id: true },
@@ -142,7 +148,7 @@ export async function createOrUpdateProfile(params: {
         skillId,
         confidence: v.confidence,
         proficiency: v.proficiency,
-        source: "RESUME" as SkillSource,
+        source: skillSource,
       })),
       skipDuplicates: true,
     });

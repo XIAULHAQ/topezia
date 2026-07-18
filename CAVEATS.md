@@ -565,3 +565,27 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   alerts — confirmed "no real users yet". Note: without SUPABASE_SERVICE_ROLE_KEY
   locally we could only delete Profile rows, not the orphaned Supabase auth
   users; those clear via the app's delete flow once the key is on Vercel.
+- 🟢 **Trucking questionnaire built (spec §3.4).** `/drive` — 8 questions (CDL
+  class, endorsements, years, route, home-time, freight, clean record, pay
+  floor) + optional location. Maps DETERMINISTICALLY (no LLM → zero Anthropic
+  spend) to the same ParsedResume + preferences shape the résumé flow produces,
+  commits via createOrUpdateProfile with entryPath=QUESTIONNAIRE (skills tagged
+  USER_ADDED), embeds via Voyage, lands on the same /feed. Verified end-to-end
+  in the browser: role resolves (OTR Driver→"OTR Truck Driver"), country derives
+  from location, matches flow, feed renders, and the email-alert card even
+  personalizes to "OTR Truck Driver jobs". Entry points: a link on /onboard and
+  the direct /drive URL.
+- 🟡 **Questionnaire deliberately sets NO employment/remote hard-filter.** Those
+  are HARD filters in match.ts; the driver never chose them, so assuming
+  "full-time / onsite only" would silently hide part-time or mislabeled driving
+  jobs. Left empty — their answers drive matching via skills + embedding; only
+  the pay floor they explicitly gave stays a filter. (Résumé flow is safe: the
+  user actively ticks those there.)
+- 🔴 **No real CDL driving inventory yet.** The corpus has ~0 actual driving
+  jobs: the 21 "trucking-logistics" LIVE jobs are MISCLASSIFIED warehouse /
+  last-mile / telematics roles (Samsara, Deliveroo, Meesho — several
+  international). So a driver today gets adjacent logistics-ops matches and ~0%
+  skill coverage (top "gap" comes back as "inventory management"). The feed
+  shows this honestly rather than faking fit. Before this path delivers real
+  value: add actual trucking/driver job sources, and fix the classifier that
+  files warehouse/last-mile ops under trucking-logistics.

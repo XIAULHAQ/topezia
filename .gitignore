@@ -7,3 +7,6 @@ node_modules/
 next-env.d.ts
 *.tsbuildinfo
 .env.seoul-backup
+
+# Local dev server config (machine-specific absolute paths)
+.claude/launch.json

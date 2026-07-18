@@ -224,6 +224,11 @@ export default function OnboardClient() {
               Only have LinkedIn? Open your profile → <strong>More</strong> → <strong>Save to PDF</strong>, and drop that in.
             </p>
 
+            {/* Drivers rarely have a résumé — give them the questionnaire path. */}
+            <p style={S.hint}>
+              Drive for a living? <a href="/drive" style={{ color: INDIGO, fontWeight: 700, textDecoration: "none" }}>Skip the résumé — answer 8 quick questions →</a>
+            </p>
+
             <details style={S.details}>
               <summary style={S.summary}>…or paste the text instead</summary>
               <textarea
