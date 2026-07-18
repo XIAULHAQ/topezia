@@ -65,13 +65,13 @@ export default function TermsPage() {
       <P>You can stop using the Service and delete your account anytime. We may suspend or terminate access if you breach these Terms or to protect the Service or other users. Sections that by their nature should survive termination (e.g., IP, disclaimers, liability) will survive.</P>
 
       <H2>13. Governing law &amp; disputes</H2>
-      <P>These Terms are governed by the laws of <Placeholder>[state/country — e.g. Delaware, USA]</Placeholder>, without regard to conflict-of-laws rules, and disputes will be resolved in the courts of <Placeholder>[jurisdiction]</Placeholder>. Nothing here removes mandatory consumer-protection rights you have where you live.</P>
+      <P>These Terms are governed by the laws of the State of Wyoming, United States, without regard to conflict-of-laws rules, and disputes will be resolved in the state or federal courts located in Sheridan County, Wyoming. Nothing here removes mandatory consumer-protection rights you have where you live.</P>
 
       <H2>14. Changes</H2>
       <P>We may update these Terms; we&apos;ll change the &quot;Last updated&quot; date and, for material changes, provide additional notice. Continued use after changes take effect means you accept them.</P>
 
       <H2>15. Contact</H2>
-      <P>Questions about these Terms: <Placeholder>legal@topezia.com</Placeholder> — Topezia, <Placeholder>[registered address]</Placeholder>.</P>
+      <P>Questions about these Terms: <strong>hello@topezia.com</strong> — Topezia, Sheridan County, Sheridan, WY 82801, United States.</P>
     </LegalShell>
   );
 }

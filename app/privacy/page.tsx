@@ -58,7 +58,7 @@ export default function PrivacyPage() {
 
       <H2>5. International transfers</H2>
       <P>
-        We are based in / process data primarily in the <Placeholder>[United States]</Placeholder>. If you are in the EEA, UK or elsewhere, your data may be transferred to and processed in countries whose laws differ from yours. Where required, we rely on appropriate safeguards such as the European Commission&apos;s Standard Contractual Clauses and the UK International Data Transfer Addendum.
+        We are based in / process data primarily in the United States. If you are in the EEA, UK or elsewhere, your data may be transferred to and processed in countries whose laws differ from yours. Where required, we rely on appropriate safeguards such as the European Commission&apos;s Standard Contractual Clauses and the UK International Data Transfer Addendum.
       </P>
 
       <H2>6. How long we keep it</H2>
@@ -71,7 +71,7 @@ export default function PrivacyPage() {
       <P><strong>Everyone</strong> can, from the <a href="/settings" style={{ color: "#8B5CF6" }}>Settings</a> page, export their data, clear their stored résumé text, and delete their account and profile.</P>
       <P>If you are in the <strong>EEA or UK (GDPR / UK GDPR)</strong>, you also have the right to access, rectify, erase, restrict or object to processing, to data portability, and to withdraw consent — without affecting prior processing. You have the right to lodge a complaint with your local supervisory authority.</P>
       <P>If you are a <strong>California resident (CCPA/CPRA)</strong> — or in another US state with a comparable law — you have the right to know what we collect, to access and delete it, to correct it, and to opt out of any &quot;sale&quot; or &quot;sharing&quot; (we do neither). We will not discriminate against you for exercising these rights.</P>
-      <P>To exercise any right not covered by Settings, email <Placeholder>privacy@topezia.com</Placeholder>. We will verify your request and respond within the timeframe the law requires (generally 30 days under GDPR, 45 days under CCPA).</P>
+      <P>To exercise any right not covered by Settings, email <strong>hello@topezia.com</strong>. We will verify your request and respond within the timeframe the law requires (generally 30 days under GDPR, 45 days under CCPA).</P>
 
       <H2>9. Children</H2>
       <P>Topezia is not intended for anyone under 16 (or the minimum age in your country). We do not knowingly collect data from children; if you believe a child has provided us data, contact us and we will delete it.</P>
@@ -81,8 +81,8 @@ export default function PrivacyPage() {
 
       <H2>11. Contact us</H2>
       <P>
-        Data controller: Topezia, <Placeholder>[registered address]</Placeholder>.
-        Privacy contact: <Placeholder>privacy@topezia.com</Placeholder>.
+        Data controller: Topezia, Sheridan County, Sheridan, WY 82801, United States.
+        Privacy contact: <strong>hello@topezia.com</strong>.
         {" "}EEA/UK data protection representative: <Placeholder>[appoint if required under GDPR Art. 27 / UK GDPR]</Placeholder>.
       </P>
     </LegalShell>
