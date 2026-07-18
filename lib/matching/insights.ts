@@ -210,8 +210,31 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
   // covers a demanded one when one's word-set contains the other's.
   const RANK: Record<string, number> = { FAMILIAR: 1, PROFICIENT: 2, ADVANCED: 3, EXPERT: 4 };
   const STOP = new Set(["and", "the", "of", "for", "a", "an", "with", "to", "in"]);
-  const toks = (name: string) =>
-    new Set(name.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((t) => t.length > 1 && !STOP.has(t)));
+  // The taxonomy fragments one concept into spelling/acronym variants —
+  // "Data analysis" vs "Data analytics", "GTM strategy" vs "Go-To-Market
+  // Strategy". Left raw they count as distinct demanded skills, so the same gap
+  // is listed twice in the roadmap and the coverage denominator is inflated
+  // (making a competent person look worse than they are). canon() folds the
+  // word families that are genuinely the same — conservative on purpose: only
+  // stem/expand where the meaning is identical, never merge adjacent-but-
+  // distinct skills like "content marketing" vs "content strategy".
+  const ACRONYM: Record<string, string> = { gtm: "go market", abm: "account based", cro: "conversion", roi: "return" };
+  const stem = (t: string): string => {
+    if (/^analy(s|t|z)/.test(t)) return "analyt"; // analysis / analytics / analyze
+    if (/^strateg/.test(t)) return "strateg"; // strategy / strategic
+    if (/^optimi[sz]/.test(t)) return "optim"; // optimisation / optimization
+    if (/^manag/.test(t)) return "manag"; // management / manager / managing
+    return t;
+  };
+  const toks = (name: string): Set<string> => {
+    const out = new Set<string>();
+    for (const raw of name.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/)) {
+      if (ACRONYM[raw]) { ACRONYM[raw].split(" ").forEach((x) => out.add(x)); continue; }
+      const t = stem(raw);
+      if (t.length > 1 && !STOP.has(t)) out.add(t);
+    }
+    return out;
+  };
   const mine = profile.skills.map((s) => ({ tokens: toks(s.skill.name), prof: s.proficiency }));
   const covered = (a: Set<string>, d: Set<string>) => {
     if (!a.size || !d.size) return false;
@@ -232,16 +255,30 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
   };
 
   const STRONG = new Set(["PROFICIENT", "ADVANCED", "EXPERT"]);
-  // A skill counts as "asked for" at >=2 postings (or 8% of a larger sample).
+
+  // Collapse taxonomy-duplicate demanded skills into one concept before scoring.
+  // Two demanded skills are the same concept when one's canonical token-set
+  // contains the other's ("go market strateg" ⊇ "go market"); we keep the
+  // higher-demand name as the label and the peak posting-count, so a concept is
+  // counted — and shown as a gap — exactly once, never twice.
+  const groups: { name: string; tokens: Set<string>; jobs: number }[] = [];
+  for (const d of demand
+    .map((d) => ({ name: skillNames.get(d.skillId) ?? "—", tokens: toks(skillNames.get(d.skillId) ?? ""), jobs: d._count.jobId }))
+    .sort((a, b) => b.jobs - a.jobs)) {
+    const hit = groups.find((g) => covered(g.tokens, d.tokens));
+    if (hit) hit.jobs = Math.max(hit.jobs, d.jobs);
+    else groups.push(d);
+  }
+
+  // A concept counts as "asked for" at >=2 postings (or 8% of a larger sample).
   // The floor of 3 excluded real signals in thin markets: a marketer's social/
   // campaign skills, wanted by 2 of 12 jobs, were dropped while design tools
   // (wanted by 3-4) dominated — producing 0% coverage for a competent marketer.
   const common = (n: number) => n >= Math.max(2, ids.length * 0.08);
-  const gaps: SkillGap[] = demand
+  const gaps: SkillGap[] = groups
     .map((d) => {
-      const name = skillNames.get(d.skillId) ?? "—";
-      const lvl = myLevelFor(name);
-      return { name, jobsWanting: d._count.jobId, lvl, covered: lvl !== null && STRONG.has(lvl) };
+      const lvl = myLevelFor(d.name);
+      return { name: d.name, jobsWanting: d.jobs, lvl, covered: lvl !== null && STRONG.has(lvl) };
     })
     .filter((d) => !d.covered && common(d.jobsWanting))
     .sort((a, b) => b.jobsWanting - a.jobsWanting)
@@ -253,10 +290,11 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
       youHave: d.lvl,
     }));
 
-  // Coverage: of the distinct skills your field asks for (that matter), how many
-  // do you have — matched by normalized name.
-  const wanted = demand.filter((d) => common(d._count.jobId));
-  const haveCount = wanted.filter((d) => myLevelFor(skillNames.get(d.skillId) ?? "") !== null).length;
+  // Coverage: of the distinct concepts your field asks for (that matter), how
+  // many do you have — matched by normalized name, deduped so one concept can't
+  // be double-counted against you.
+  const wanted = groups.filter((d) => common(d.jobs));
+  const haveCount = wanted.filter((d) => myLevelFor(d.name) !== null).length;
   const coveragePct = wanted.length ? Math.round((haveCount / wanted.length) * 100) : null;
 
   // Seniority fit, from the enum every posting carries.
