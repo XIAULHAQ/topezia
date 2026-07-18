@@ -53,6 +53,14 @@ function freshness(iso: string): string {
   return `verified ${Math.round(h / 24)}d ago`;
 }
 
+interface FeedInsights {
+  fieldLabel: string | null;
+  targetJobs: number;
+  seniority: { level: string; atOrAbove: number; below: number } | null;
+  coveragePct: number | null;
+  skillGaps: { skill: string; pct: number; youHave: string | null }[];
+}
+
 export default function FeedPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -64,6 +72,17 @@ export default function FeedPage() {
   const [enriching, setEnriching] = useState(false);
   const [authed, setAuthed] = useState(true); // default true to avoid a flash of the save prompt
   const [alert, setAlert] = useState<{ slug: string; place?: string; label: string } | null>(null);
+  const [insights, setInsights] = useState<FeedInsights | null>(null);
+
+  useEffect(() => {
+    // Insights power the "Where you stand" snapshot — optional, never blocks the feed.
+    (async () => {
+      try {
+        const r = await fetch("/api/profile/insights");
+        if (r.ok) setInsights((await r.json()).insights ?? null);
+      } catch { /* optional */ }
+    })();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -182,6 +201,29 @@ export default function FeedPage() {
             ))}
           </div>
 
+          {insights && insights.targetJobs >= 5 && insights.skillGaps.length > 0 && (
+            <div style={S.stand}>
+              <div style={S.standHead}>Where you stand · you against {insights.targetJobs} {insights.fieldLabel ?? "jobs"}</div>
+              <div style={S.standGrid}>
+                <div style={S.standStat}>
+                  <div style={S.standNum}>{insights.coveragePct ?? "—"}%</div>
+                  <div style={S.standLabel}>of the skills your field asks for, you already have</div>
+                </div>
+                {insights.seniority && (
+                  <div style={S.standStat}>
+                    <div style={S.standNum}>{insights.seniority.atOrAbove}</div>
+                    <div style={S.standLabel}>roles at or above your level ({label(insights.seniority.level)}); {insights.seniority.below} below</div>
+                  </div>
+                )}
+                <div style={S.standStat}>
+                  <div style={S.standNum}>{insights.skillGaps[0].pct}%</div>
+                  <div style={S.standLabel}>want {insights.skillGaps[0].skill}{insights.skillGaps[0].youHave ? ` — you're only ${insights.skillGaps[0].youHave.toLowerCase()}` : ", which you don't list"}</div>
+                </div>
+              </div>
+              <a href="/profile" style={S.standLink}>See your full breakdown and roadmap →</a>
+            </div>
+          )}
+
           {enriching && (
             <div style={S.enriching}>
               <span style={S.enrichDot} /> Scoring your fit and writing why-lines…
@@ -297,6 +339,13 @@ const S: Record<string, CSSProperties> = {
   saveBtn: { padding: "9px 16px", background: INDIGO, color: "#fff", borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: "none", whiteSpace: "nowrap" },
   body: { maxWidth: 1080, margin: "0 auto", padding: 24, display: "flex", gap: 24, alignItems: "flex-start" },
   feedCol: { flex: 1, minWidth: 0 },
+  stand: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 18, marginBottom: 14 },
+  standHead: { fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: MUTED, marginBottom: 12 },
+  standGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 12 },
+  standStat: { background: "#f7f7fb", borderRadius: 10, padding: 12 },
+  standNum: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO },
+  standLabel: { fontSize: 12, color: MUTED, lineHeight: 1.4, marginTop: 4 },
+  standLink: { color: INDIGO, textDecoration: "none", fontSize: 14, fontWeight: 700 },
   pills: { display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" },
   pillOn: { padding: "8px 14px", borderRadius: 999, border: `1px solid ${INDIGO}`, background: INDIGO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
   pillOff: { padding: "8px 14px", borderRadius: 999, border: "1px solid #d9d9e3", background: "#fff", color: INK, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
