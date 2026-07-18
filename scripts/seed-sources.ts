@@ -49,6 +49,22 @@ const SEED_SOURCES: { type: JobSource; companySlug: string; companyName: string 
   { type: JobSource.ASHBY, companySlug: "wealthsimple", companyName: "Wealthsimple" },   // 38  · CA
   { type: JobSource.LEVER, companySlug: "meesho", companyName: "Meesho" },               // 44  · IN
   { type: JobSource.LEVER, companySlug: "qonto", companyName: "Qonto" },                 // 50  · FR, ES, DE, IT, BE, RS
+
+  // US-focused expansion (2026-07-18): US-heavy boards with real marketing/design
+  // volume, to grow inventory in our launch market. All verified with the real
+  // crawlers: 0 missing fields, 0 "(copy)"/demo titles, unique externalIds.
+  { type: JobSource.GREENHOUSE, companySlug: "reddit", companyName: "Reddit" },
+  { type: JobSource.GREENHOUSE, companySlug: "pinterest", companyName: "Pinterest" },
+  { type: JobSource.GREENHOUSE, companySlug: "roblox", companyName: "Roblox" },
+  { type: JobSource.GREENHOUSE, companySlug: "samsara", companyName: "Samsara" },
+  { type: JobSource.GREENHOUSE, companySlug: "instacart", companyName: "Instacart" },
+  { type: JobSource.GREENHOUSE, companySlug: "twilio", companyName: "Twilio" },
+  { type: JobSource.GREENHOUSE, companySlug: "coinbase", companyName: "Coinbase" },
+  { type: JobSource.GREENHOUSE, companySlug: "robinhood", companyName: "Robinhood" },
+  { type: JobSource.GREENHOUSE, companySlug: "affirm", companyName: "Affirm" },
+  { type: JobSource.GREENHOUSE, companySlug: "chime", companyName: "Chime" },
+  { type: JobSource.GREENHOUSE, companySlug: "mercury", companyName: "Mercury" },
+  { type: JobSource.ASHBY, companySlug: "ramp", companyName: "Ramp" },
 ];
 
 async function main() {

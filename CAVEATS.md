@@ -517,3 +517,11 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   other statically-pre-rendered page hits the DB unprotected (API routes and
   cookie/searchParam pages are all dynamic). Lesson: a failed prod build is
   invisible unless you look — worth a staging/CI build check before launch.
+- 🟢 **US source expansion: +12 boards (13 → 25 sources).** Reddit, Pinterest,
+  Roblox, Samsara, Instacart, Twilio, Coinbase, Robinhood, Affirm, Chime,
+  Mercury, Ramp — all US-heavy (60-100%) with real marketing/design volume, all
+  verified with the live crawlers (0 missing, 0 "(copy)"/demo, unique
+  externalIds). Seeded, NOT yet ingested — the next cron `Ingest jobs` run (or a
+  manual trigger) crawls them. Projected to roughly double the US corpus and
+  take US marketing/design inventory from thin (~60) to a few hundred, which
+  lifts it over the stats confidence floor for real marketing/design users.
