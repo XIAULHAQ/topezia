@@ -10,7 +10,7 @@
  * soon" badge so nothing reads as a real number about this person.
  */
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { C, GRAD, Icon, Card, SoonTag } from "@/app/_components/ui";
+import { C, GRAD, Icon, Card, SoonTag, initials } from "@/app/_components/ui";
 
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
 
@@ -49,7 +49,7 @@ export default function ProfileView() {
   if (!p) return <div style={{ color: C.mut, padding: "40px 0" }}>Loading your profile…</div>;
 
   const name = p.fullName || "Your profile";
-  const initials = (p.fullName ?? "").trim().split(/\s+/).slice(0, 2).map((x) => x[0]?.toUpperCase() ?? "").join("") || "You";
+  const avatarInitials = initials(p.fullName);
   const field = ins?.fieldLabel ? label(ins.fieldLabel.replace(/ roles.*/, "")) : p.industries[0] ? label(p.industries[0]) : "Your field";
   const isRemote = p.remoteTypes.some((r) => r.startsWith("REMOTE"));
   const topSkills = [...p.skills].sort((a, b) => profPct(b.proficiency) - profPct(a.proficiency)).slice(0, 6);
@@ -84,7 +84,7 @@ export default function ProfileView() {
               // eslint-disable-next-line @next/next/no-img-element
               <img src={p.photoUrl} alt={name} style={{ width: 112, height: 112, borderRadius: "50%", objectFit: "cover", display: "block", background: C.navy }} />
             ) : (
-              <div style={{ width: 112, height: 112, borderRadius: "50%", background: C.navy, display: "grid", placeItems: "center", fontSize: 34, fontWeight: 800, color: "#fff" }}>{initials}</div>
+              <div style={{ width: 112, height: 112, borderRadius: "50%", background: C.navy, display: "grid", placeItems: "center", fontSize: 34, fontWeight: 800, color: "#fff" }}>{avatarInitials}</div>
             )}
           </div>
           <div style={{ flex: 1, minWidth: 280, paddingTop: 6 }}>

@@ -14,7 +14,7 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { C, GRAD, FONT, Icon, BrandMark } from "./ui";
+import { C, GRAD, FONT, Icon, BrandMark, initials } from "./ui";
 
 type NavItem = { icon: string; label: string; href?: string; soon?: boolean };
 
@@ -29,12 +29,6 @@ const NAV: NavItem[] = [
   { icon: "gauge", label: "Skill Assessment", soon: true },
   { icon: "spark", label: "Career Coach", soon: true },
 ];
-
-function initialsOf(name: string | null): string {
-  if (!name) return "You";
-  const parts = name.trim().split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "You";
-}
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -138,7 +132,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               // eslint-disable-next-line @next/next/no-img-element
               <img src={photo} alt={name ?? "You"} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", display: "block" }} />
             ) : (
-              <div style={{ width: 32, height: 32, borderRadius: "50%", background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700 }}>{initialsOf(name)}</div>
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700 }}>{initials(name)}</div>
             )}
             {name && <span style={{ fontSize: 13, fontWeight: 600 }}>{name}</span>}
             <Icon name="chev" size={14} />

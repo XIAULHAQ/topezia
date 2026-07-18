@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
+import { initials } from "@/app/_components/ui";
 
 const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
@@ -170,7 +171,7 @@ export default function ProfileEditor() {
               <img src={p.photoUrl} alt="Profile" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", border: "1px solid #ececf2" }} />
             ) : (
               <div style={{ width: 72, height: 72, borderRadius: "50%", background: "#eef0ff", color: INDIGO, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 24 }}>
-                {(p.fullName ?? "You").trim().split(/\s+/).slice(0, 2).map((x) => x[0]?.toUpperCase() ?? "").join("") || "You"}
+                {initials(p.fullName)}
               </div>
             )}
             <div style={{ flex: 1 }}>

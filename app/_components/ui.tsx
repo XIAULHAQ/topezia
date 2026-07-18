@@ -22,6 +22,17 @@ export const C = {
 export const GRAD = `linear-gradient(135deg, ${C.c1}, ${C.c2})`;
 export const FONT = "'Sora', system-ui, sans-serif";
 
+/**
+ * The 2-character avatar initials used everywhere there's no photo.
+ * "Maria Lopez" → "ML", single-word "Madonna" → "MA", unknown → "You".
+ */
+export function initials(name: string | null | undefined): string {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "You";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
 /** SVG path sets for the icon set (stroke, 24x24 viewBox). */
 const PATHS: Record<string, string[]> = {
   home: ["M3 10 12 3l9 7v11H3V10z", "M9 21v-7h6v7"],
