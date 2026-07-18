@@ -16,7 +16,7 @@ const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g,
 
 type Skill = { name: string; proficiency: string | null; source: string };
 interface Profile {
-  fullName: string | null; headline: string | null; seniority: string | null;
+  fullName: string | null; headline: string | null; seniority: string | null; photoUrl: string | null;
   yearsExperience: number | null; currentLocation: string | null; country: string | null;
   industries: string[]; remoteTypes: string[]; skills: Skill[]; tier: string; entryPath: string;
   workHistory: { title?: string; company?: string; years?: string }[];
@@ -80,7 +80,12 @@ export default function ProfileView() {
         <div style={S.heroGlow2} />
         <div style={{ position: "relative", display: "flex", gap: 26, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div style={{ flex: "none", padding: 4, borderRadius: "50%", background: GRAD }}>
-            <div style={{ width: 112, height: 112, borderRadius: "50%", background: C.navy, display: "grid", placeItems: "center", fontSize: 34, fontWeight: 800, color: "#fff" }}>{initials}</div>
+            {p.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={p.photoUrl} alt={name} style={{ width: 112, height: 112, borderRadius: "50%", objectFit: "cover", display: "block", background: C.navy }} />
+            ) : (
+              <div style={{ width: 112, height: 112, borderRadius: "50%", background: C.navy, display: "grid", placeItems: "center", fontSize: 34, fontWeight: 800, color: "#fff" }}>{initials}</div>
+            )}
           </div>
           <div style={{ flex: 1, minWidth: 280, paddingTop: 6 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>

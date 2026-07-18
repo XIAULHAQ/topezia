@@ -11,6 +11,7 @@ type Prov = "RESUME" | "CONFIRMED" | "USER_ADDED";
 interface Skill { name: string; proficiency: string | null; confidence: number; source: Prov }
 interface Profile {
   fullName: string | null;
+  photoUrl: string | null;
   headline: string | null;
   seniority: string | null;
   yearsExperience: number | null;
@@ -133,6 +134,7 @@ export default function ProfileEditor() {
           salaryTarget: p.salaryTarget,
           salaryPeriod: p.salaryPeriod ?? "YEAR",
           workAuthorization: p.workAuthorization,
+          photoUrl: p.photoUrl,
           skills: p.skills.map((s) => ({ name: s.name, proficiency: s.proficiency, source: s.source })),
           workHistory: p.workHistory.filter((w) => w.title || w.company),
           education: p.education.filter((e) => e.degree || e.institution),
@@ -159,6 +161,28 @@ export default function ProfileEditor() {
           {p.tier === "PREMIUM" && <span style={S.tier}>Premium</span>}
         </div>
         <p style={S.sub}>Edit anything. The badges show where we got it — your résumé, our inference, or your own hand. Saving re-scores your matches.</p>
+
+        <section style={S.card}>
+          <div style={S.cardLabel}>Profile photo <Badge kind="told" /></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            {p.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={p.photoUrl} alt="Profile" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", border: "1px solid #ececf2" }} />
+            ) : (
+              <div style={{ width: 72, height: 72, borderRadius: "50%", background: "#eef0ff", color: INDIGO, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 24 }}>
+                {(p.fullName ?? "You").trim().split(/\s+/).slice(0, 2).map((x) => x[0]?.toUpperCase() ?? "").join("") || "You"}
+              </div>
+            )}
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.5 }}>
+                {p.photoUrl ? "Pulled from your CV. Uploading a new one is coming soon." : "No photo found in your CV. Uploading one is coming soon."}
+              </div>
+              {p.photoUrl && (
+                <button style={{ ...S.addRow, background: "#fff", border: "1px solid #d4d4d8", color: INK, marginTop: 10 }} onClick={() => set("photoUrl", null)}>Remove photo</button>
+              )}
+            </div>
+          </div>
+        </section>
 
         {insights && !insights.reliable && insights.fieldLabel && (
           <section style={S.card}>

@@ -56,7 +56,7 @@ export default function OnboardClient() {
   }, [loading]);
 
   /** Persist the parse, then route to auth (or straight to edit if signed in). */
-  async function saveAndContinue(parsed: Parsed, text: string) {
+  async function saveAndContinue(parsed: Parsed, text: string, photo: string | null) {
     setPhaseLabel("Building your profile");
     const res = await fetch("/api/profile", {
       method: "POST",
@@ -64,6 +64,7 @@ export default function OnboardClient() {
       body: JSON.stringify({
         parsed,
         resumeText: text,
+        photo,
         // Preferences aren't in a résumé — the user sets them on /profile/edit.
         // Left empty so nothing is hard-filtered on an assumption.
         preferences: { employmentTypes: [], remoteTypes: [], locations: [] },
@@ -88,7 +89,7 @@ export default function OnboardClient() {
       const res = await fetch("/api/parse", { method: "POST", body, headers });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Couldn't read that");
-      await saveAndContinue(data.parsed as Parsed, data.resumeText ?? resumeText);
+      await saveAndContinue(data.parsed as Parsed, data.resumeText ?? resumeText, data.photo ?? null);
       // On success we navigate away; keep the spinner up through the redirect.
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");

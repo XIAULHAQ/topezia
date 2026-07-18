@@ -17,7 +17,7 @@ import { currentIdentity } from "@/lib/identity";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  let body: { parsed?: ParsedResume; preferences?: ProfilePreferences; resumeText?: string };
+  let body: { parsed?: ParsedResume; preferences?: ProfilePreferences; resumeText?: string; photo?: string | null };
   try {
     body = await req.json();
   } catch {
@@ -26,6 +26,9 @@ export async function POST(req: NextRequest) {
   if (!body.parsed || !body.preferences) {
     return NextResponse.json({ error: "Missing parsed profile or preferences." }, { status: 400 });
   }
+  // Only accept an extracted-photo data URI (never an arbitrary URL from the
+  // client), and cap the size so a bad payload can't bloat the row.
+  const photoUrl = typeof body.photo === "string" && body.photo.startsWith("data:image/") && body.photo.length < 1_000_000 ? body.photo : null;
 
   // Signed-in users key their profile to the auth id; anonymous visitors get a
   // one-off id stored in a cookie (upgraded to the account on later sign-in).
@@ -38,6 +41,7 @@ export async function POST(req: NextRequest) {
       resumeText: body.resumeText ?? null,
       parsed: body.parsed,
       preferences: body.preferences,
+      photoUrl,
     });
     const res = NextResponse.json({ profileId, embedded });
     if (!authed) {
@@ -68,7 +72,7 @@ export async function GET() {
       seniority: true, yearsExperience: true, currentLocation: true, country: true,
       industries: true, employmentTypes: true, remoteTypes: true, locations: true,
       salaryFloor: true, salaryTarget: true, salaryPeriod: true, workAuthorization: true,
-      tier: true, headlineRoleId: true, fullName: true,
+      tier: true, headlineRoleId: true, fullName: true, photoUrl: true,
       workHistory: true, education: true, certifications: true, entryPath: true,
       skills: { select: { proficiency: true, confidence: true, source: true, skill: { select: { name: true } } } },
     },
@@ -96,6 +100,7 @@ export async function GET() {
     roleGroups,
     profile: {
       fullName: p.fullName, headline, seniority: p.seniority, yearsExperience: p.yearsExperience,
+      photoUrl: p.photoUrl,
       currentLocation: p.currentLocation, country: p.country, industries: p.industries,
       employmentTypes: p.employmentTypes, remoteTypes: p.remoteTypes, locations: p.locations,
       salaryFloor: p.salaryFloor, salaryTarget: p.salaryTarget, salaryPeriod: p.salaryPeriod,

@@ -48,8 +48,12 @@ export async function createOrUpdateProfile(params: {
    *  a questionnaire answer is USER_ADDED (the person asserted it), a résumé
    *  parse is RESUME (we read it off the page). Defaults to the résumé path. */
   entryPath?: EntryPath;
+  /** Profile photo (data URI) extracted from the CV. Only set on create or when
+   *  a fresh upload provides one — a re-parse without a photo won't wipe an
+   *  existing one. */
+  photoUrl?: string | null;
 }): Promise<{ profileId: string; embedded: boolean }> {
-  const { userId, resumeText, resumeFileUrl, parsed, preferences, entryPath = "RESUME" } = params;
+  const { userId, resumeText, resumeFileUrl, parsed, preferences, entryPath = "RESUME", photoUrl } = params;
   const skillSource: SkillSource = entryPath === "QUESTIONNAIRE" ? "USER_ADDED" : "RESUME";
 
   // Resolve headline role against the taxonomy (null is fine — matching still
@@ -91,6 +95,7 @@ export async function createOrUpdateProfile(params: {
       userId,
       resumeText,
       resumeFileUrl: resumeFileUrl ?? null,
+      photoUrl: photoUrl ?? null,
       fullName: parsed.fullName,
       headlineRoleId,
       seniority: parsed.seniority,
@@ -115,6 +120,8 @@ export async function createOrUpdateProfile(params: {
     update: {
       resumeText,
       resumeFileUrl: resumeFileUrl ?? null,
+      // Only overwrite the photo when this upload actually carried one.
+      ...(photoUrl ? { photoUrl } : {}),
       fullName: parsed.fullName,
       headlineRoleId,
       seniority: parsed.seniority,
@@ -185,6 +192,7 @@ export interface ProfileFieldEdit {
   workHistory?: { title?: string; company?: string; years?: string }[];
   education?: { degree?: string; institution?: string; year?: string }[];
   certifications?: string[];
+  photoUrl?: string | null; // set a new photo, or null to remove
 }
 
 /**
@@ -229,6 +237,7 @@ export async function updateProfileFields(
   if (edit.workHistory !== undefined) data.workHistory = edit.workHistory as unknown as Prisma.InputJsonValue;
   if (edit.education !== undefined) data.education = edit.education as unknown as Prisma.InputJsonValue;
   if (edit.certifications !== undefined) data.certifications = edit.certifications;
+  if (edit.photoUrl !== undefined) data.photoUrl = edit.photoUrl;
 
   await prisma.profile.update({ where: { id: existing.id }, data });
 

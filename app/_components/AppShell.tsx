@@ -41,13 +41,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [open, setOpen] = useState(true);
   const [name, setName] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<string | null>(null);
 
   useEffect(() => {
-    // Self-contained identity: the top-bar avatar needs the signed-in name,
+    // Self-contained identity: the top-bar avatar needs the signed-in name/photo,
     // and this shell wraps pages that don't otherwise fetch it.
     fetch("/api/profile")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setName(d?.profile?.fullName ?? null))
+      .then((d) => { setName(d?.profile?.fullName ?? null); setPhoto(d?.profile?.photoUrl ?? null); })
       .catch(() => {});
   }, []);
 
@@ -133,7 +134,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div style={{ flex: 1 }} />
           <Link href="/profile" style={{ display: "flex", alignItems: "center", gap: 9, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 999, padding: "4px 14px 4px 4px", textDecoration: "none", color: C.ink }}>
-            <div style={{ width: 32, height: 32, borderRadius: "50%", background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700 }}>{initialsOf(name)}</div>
+            {photo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photo} alt={name ?? "You"} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", display: "block" }} />
+            ) : (
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700 }}>{initialsOf(name)}</div>
+            )}
             {name && <span style={{ fontSize: 13, fontWeight: 600 }}>{name}</span>}
             <Icon name="chev" size={14} />
           </Link>

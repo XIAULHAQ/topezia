@@ -8,11 +8,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseResume } from "@/lib/matching/parse-resume";
 import { extractResumeText, ResumeExtractError, MAX_RESUME_BYTES } from "@/lib/matching/extract-text";
+import { extractResumePhoto } from "@/lib/matching/extract-photo";
 
 export const maxDuration = 60;
 export const runtime = "nodejs"; // pdf/docx parsing needs Node, not edge
 
-async function resumeTextFrom(req: NextRequest): Promise<string> {
+async function resumeInputFrom(req: NextRequest): Promise<{ text: string; photo: string | null }> {
   const contentType = req.headers.get("content-type") ?? "";
 
   if (contentType.includes("multipart/form-data")) {
@@ -21,19 +22,24 @@ async function resumeTextFrom(req: NextRequest): Promise<string> {
     if (!file || typeof file === "string") throw new ResumeExtractError("No file received.");
     if (file.size > MAX_RESUME_BYTES) throw new ResumeExtractError("That file is over 4MB.");
     const buffer = Buffer.from(await file.arrayBuffer());
-    return extractResumeText({ buffer, filename: file.name, type: file.type });
+    const src = { buffer, filename: file.name, type: file.type };
+    const text = await extractResumeText(src);
+    // Best-effort — a missing/odd photo never blocks the parse.
+    const photo = await extractResumePhoto(src);
+    return { text, photo };
   }
 
   const body = (await req.json()) as { resumeText?: string };
   const text = (body.resumeText ?? "").trim();
   if (text.length < 40) throw new ResumeExtractError("Please paste your full résumé text.");
-  return text;
+  return { text, photo: null };
 }
 
 export async function POST(req: NextRequest) {
   let resumeText: string;
+  let photo: string | null = null;
   try {
-    resumeText = await resumeTextFrom(req);
+    ({ text: resumeText, photo } = await resumeInputFrom(req));
   } catch (err) {
     // Extraction problems are the user's to fix (wrong file, a scan, too big),
     // so they get a real message rather than a generic 500.
@@ -43,9 +49,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const parsed = await parseResume(resumeText);
-    // Hand the text back so the client can submit it with the profile — it's
-    // already in the browser's hands, and this saves re-extracting the file.
-    return NextResponse.json({ parsed, resumeText });
+    // Hand the text (and any extracted photo) back so the client can submit it
+    // with the profile — it's already in the browser's hands, and this saves
+    // re-extracting the file.
+    return NextResponse.json({ parsed, resumeText, photo });
   } catch (err) {
     console.error("parse failed:", err);
     return NextResponse.json({ error: "Couldn't parse that résumé — try again." }, { status: 502 });

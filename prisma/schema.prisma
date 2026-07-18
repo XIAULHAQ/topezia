@@ -297,6 +297,10 @@ model Profile {
 
   resumeFileUrl    String?  // stays null: résumés are parsed in memory, not stored
   resumeText       String?
+  // Profile photo. Best-effort extracted from the uploaded CV (DOCX/PDF) as a
+  // small thumbnail data URI — NOT the résumé file itself, which we still never
+  // store. Null when the CV had no usable photo. User-editable later.
+  photoUrl         String?
 
   fullName         String?
   headlineRoleId   String?
