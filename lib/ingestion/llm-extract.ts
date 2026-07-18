@@ -21,7 +21,8 @@ const EXTRACTION_MODEL = "claude-haiku-4-5-20251001";
 // assigns itself — never ask the model to pick it).
 export const CLASSIFIABLE_VERTICALS = [
   "tech-software",
-  "marketing-creative",
+  "marketing",
+  "design-creative",
   "healthcare-allied",
   "trucking-logistics",
   "sales",
@@ -54,7 +55,8 @@ const EXTRACTION_PROMPT = `You extract structured hiring data from a job posting
   "roleGuess": string,      // normalized job function in 2-4 words, lowercase, e.g. "backend engineer"
   "vertical": string,       // the single best-fit category for this job, EXACTLY one of:
                             //   "tech-software"      (engineering, data, IT, product, design-in-tech)
-                            //   "marketing-creative" (marketing, design, content, brand, PR)
+                            //   "marketing"          (marketing, growth, content, brand, PR, SEO, social)
+                            //   "design-creative"    (product/UX design, graphic design, video, illustration)
                             //   "healthcare-allied"  (clinical/allied health: therapy, imaging, lab, pharmacy, nursing)
                             //   "trucking-logistics" (drivers, dispatch, warehouse, supply chain)
                             //   "sales"              (account executives, SDRs, sales management, sales engineering)

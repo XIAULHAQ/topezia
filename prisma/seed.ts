@@ -16,7 +16,8 @@ async function main() {
   // ── Verticals (spec §2) ───────────────────────────────
   const verticals = [
     { slug: "tech-software", name: "Tech & Software", isDeepTier: true, cardLayout: CardLayout.KNOWLEDGE_WORK },
-    { slug: "marketing-creative", name: "Marketing & Creative", isDeepTier: true, cardLayout: CardLayout.KNOWLEDGE_WORK },
+    { slug: "marketing", name: "Marketing", isDeepTier: true, cardLayout: CardLayout.KNOWLEDGE_WORK },
+    { slug: "design-creative", name: "Design & Creative", isDeepTier: false, cardLayout: CardLayout.KNOWLEDGE_WORK },
     { slug: "healthcare-allied", name: "Healthcare — Allied Health", isDeepTier: true, cardLayout: CardLayout.STRUCTURED_HOURLY },
     { slug: "trucking-logistics", name: "Trucking & Logistics", isDeepTier: true, cardLayout: CardLayout.STRUCTURED_HOURLY },
     // Breadth tier — aggregator-only, no custom ingestion (§4.1)
@@ -49,10 +50,10 @@ async function main() {
     { slug: "devops-engineer", name: "DevOps Engineer", vertical: "tech-software", aliases: ["Site Reliability Engineer", "Platform Engineer", "SRE"] },
     { slug: "data-engineer", name: "Data Engineer", vertical: "tech-software", aliases: ["Data Pipeline Engineer", "Analytics Engineer"] },
     // Creative / marketing
-    { slug: "graphic-designer", name: "Graphic Designer", vertical: "marketing-creative", aliases: ["Visual Designer", "Brand Designer"] },
-    { slug: "video-editor", name: "Video Editor", vertical: "marketing-creative", aliases: ["Videographer", "Video Producer"] },
-    { slug: "content-marketer", name: "Content Marketer", vertical: "marketing-creative", aliases: ["Content Strategist", "Copywriter"] },
-    { slug: "social-media-manager", name: "Social Media Manager", vertical: "marketing-creative", aliases: ["Social Media Coordinator", "Community Manager"] },
+    { slug: "graphic-designer", name: "Graphic Designer", vertical: "design-creative", aliases: ["Visual Designer", "Brand Designer"] },
+    { slug: "video-editor", name: "Video Editor", vertical: "design-creative", aliases: ["Videographer", "Video Producer"] },
+    { slug: "content-marketer", name: "Content Marketer", vertical: "marketing", aliases: ["Content Strategist", "Copywriter"] },
+    { slug: "social-media-manager", name: "Social Media Manager", vertical: "marketing", aliases: ["Social Media Coordinator", "Community Manager"] },
     // Healthcare — allied
     { slug: "physical-therapist", name: "Physical Therapist", vertical: "healthcare-allied", aliases: ["PT", "Physiotherapist"] },
     { slug: "radiologic-technologist", name: "Radiologic Technologist", vertical: "healthcare-allied", aliases: ["Rad Tech", "Imaging Tech", "X-Ray Tech"] },
@@ -70,10 +71,10 @@ async function main() {
     { slug: "product-manager", name: "Product Manager", vertical: "tech-software", aliases: ["PM", "Technical Product Manager", "Group Product Manager"] },
     { slug: "engineering-manager", name: "Engineering Manager", vertical: "tech-software", aliases: ["EM", "Software Engineering Manager", "Director of Engineering"] },
     // Marketing / creative — additions
-    { slug: "product-designer", name: "Product Designer", vertical: "marketing-creative", aliases: ["UX Designer", "UI Designer", "UI/UX Designer", "Senior Product Designer"] },
-    { slug: "marketing-manager", name: "Marketing Manager", vertical: "marketing-creative", aliases: ["Growth Marketer", "Demand Generation Manager", "Growth Marketing Manager"] },
-    { slug: "seo-specialist", name: "SEO Specialist", vertical: "marketing-creative", aliases: ["SEO Manager", "Search Marketing Manager"] },
-    { slug: "product-marketing-manager", name: "Product Marketing Manager", vertical: "marketing-creative", aliases: ["PMM"] },
+    { slug: "product-designer", name: "Product Designer", vertical: "design-creative", aliases: ["UX Designer", "UI Designer", "UI/UX Designer", "Senior Product Designer"] },
+    { slug: "marketing-manager", name: "Marketing Manager", vertical: "marketing", aliases: ["Growth Marketer", "Demand Generation Manager", "Growth Marketing Manager"] },
+    { slug: "seo-specialist", name: "SEO Specialist", vertical: "marketing", aliases: ["SEO Manager", "Search Marketing Manager"] },
+    { slug: "product-marketing-manager", name: "Product Marketing Manager", vertical: "marketing", aliases: ["PMM"] },
     // Sales
     { slug: "account-executive", name: "Account Executive", vertical: "sales", aliases: ["AE", "Enterprise Account Executive", "Sales Executive", "Technical Account Executive", "Enterprise AE", "Commercial Account Executive"] },
     { slug: "account-manager", name: "Account Manager", vertical: "sales", aliases: ["Client Manager", "Strategic Account Manager", "Key Account Manager"] },

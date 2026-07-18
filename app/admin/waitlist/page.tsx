@@ -34,7 +34,9 @@ type Stats = {
 
 const VERTICAL_LABELS: Record<string, string> = {
   "tech-software": "Tech & Software",
-  "marketing-creative": "Marketing & Creative",
+  "marketing": "Marketing",
+  "design-creative": "Design & Creative",
+  "marketing-creative": "Marketing & Creative", // legacy waitlist rows before the split
   "healthcare-allied": "Healthcare",
   "trucking-logistics": "Trucking & Logistics",
   other: "Other",

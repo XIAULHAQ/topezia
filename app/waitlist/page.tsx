@@ -21,7 +21,8 @@ const BRAND = {
 
 const VERTICALS = [
   { slug: "tech-software", label: "Tech & Software" },
-  { slug: "marketing-creative", label: "Marketing & Creative" },
+  { slug: "marketing", label: "Marketing" },
+  { slug: "design-creative", label: "Design & Creative" },
   { slug: "healthcare-allied", label: "Healthcare" },
   { slug: "trucking-logistics", label: "Trucking & Logistics" },
   { slug: "other", label: "Other" },
