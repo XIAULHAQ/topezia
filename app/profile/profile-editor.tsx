@@ -77,6 +77,8 @@ export default function ProfileEditor() {
   const [saved, setSaved] = useState(false);
   const [newSkill, setNewSkill] = useState("");
   const [newCert, setNewCert] = useState("");
+  const [reup, setReup] = useState<"idle" | "working">("idle");
+  const [reupErr, setReupErr] = useState<string | null>(null);
   const [industriesText, setIndustriesText] = useState("");
   const [locationsText, setLocationsText] = useState("");
   const [insights, setInsights] = useState<Insights | null>(null);
@@ -151,6 +153,47 @@ export default function ProfileEditor() {
     }
   }
 
+  /**
+   * Re-upload a résumé to overwrite the parsed side of the profile (skills,
+   * experience, education, certifications, headline, photo) while KEEPING the
+   * job preferences and salary the person set by hand — we pass the current
+   * preferences straight back so createOrUpdateProfile's upsert doesn't wipe them.
+   */
+  async function reupload(file: File) {
+    if (!p) return;
+    setReup("working"); setReupErr(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const pr = await fetch("/api/parse", { method: "POST", body: form });
+      const pd = await pr.json();
+      if (!pr.ok) throw new Error(pd.error || "Couldn't read that file");
+      const res = await fetch("/api/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parsed: pd.parsed,
+          resumeText: pd.resumeText,
+          photo: pd.photo,
+          preferences: {
+            employmentTypes: p.employmentTypes,
+            remoteTypes: p.remoteTypes,
+            locations: p.locations,
+            salaryFloor: p.salaryFloor,
+            salaryTarget: p.salaryTarget,
+            salaryPeriod: p.salaryPeriod ?? null,
+            workAuthorization: p.workAuthorization,
+          },
+        }),
+      });
+      if (!res.ok) throw new Error("Couldn't save the new résumé");
+      window.location.reload(); // reload the editor with the fresh parse
+    } catch (e) {
+      setReupErr(e instanceof Error ? e.message : "Something went wrong");
+      setReup("idle");
+    }
+  }
+
   if (error && !p) return <div style={S.wrap}><p style={{ color: MUTED }}>{error}</p></div>;
   if (!p) return <div style={S.wrap}><p style={{ color: MUTED }}>Loading your profile…</p></div>;
 
@@ -162,6 +205,18 @@ export default function ProfileEditor() {
           {p.tier === "PREMIUM" && <span style={S.tier}>Premium</span>}
         </div>
         <p style={S.sub}>Edit anything. The badges show where we got it — your résumé, our inference, or your own hand. Saving re-scores your matches.</p>
+
+        <section style={S.card}>
+          <div style={S.cardLabel}>Replace your résumé</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <label style={reup === "working" ? S.reupBtnBusy : S.reupBtn}>
+              <input type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" style={{ display: "none" }} disabled={reup === "working"} onChange={(e) => { const f = e.target.files?.[0]; if (f) reupload(f); }} />
+              {reup === "working" ? "Reading your new résumé…" : "Upload a new résumé"}
+            </label>
+            <div style={{ ...S.hint, flex: 1, minWidth: 220, marginTop: 0 }}>Refreshes your skills, experience, education and photo from the new file. Your job preferences and salary stay as they are.</div>
+          </div>
+          {reupErr && <p style={{ color: "#dc2626", fontSize: 13, margin: "10px 0 0" }}>{reupErr}</p>}
+        </section>
 
         <section style={S.card}>
           <div style={S.cardLabel}>Profile photo <Badge kind="told" /></div>
@@ -440,6 +495,8 @@ const S: Record<string, CSSProperties> = {
   chips: { display: "flex", flexWrap: "wrap", gap: 8 },
   histRow: { padding: "12px 0", borderTop: "1px solid #f2f2f5" },
   addRow: { marginTop: 12, background: "#eef0ff", color: INDIGO, border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  reupBtn: { display: "inline-flex", alignItems: "center", gap: 8, background: INDIGO, color: "#fff", borderRadius: 10, padding: "11px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
+  reupBtnBusy: { display: "inline-flex", alignItems: "center", gap: 8, background: "#c7c7d1", color: "#fff", borderRadius: 10, padding: "11px 20px", fontSize: 14, fontWeight: 700, cursor: "default", whiteSpace: "nowrap" },
   certChip: { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", background: "#f0eaff", color: "#5a3ccf", borderRadius: 999, fontSize: 13, fontWeight: 600 },
   chipX: { background: "transparent", border: "none", color: "inherit", cursor: "pointer", fontSize: 15, lineHeight: 1, padding: 0 },
   pillOn: { padding: "8px 16px", borderRadius: 20, border: `1px solid ${INDIGO}`, background: INDIGO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
