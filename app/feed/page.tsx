@@ -1,19 +1,18 @@
 "use client";
 
 /**
- * Screen B — the feed (spec §6.2).
- * Honest, explained job matches: big score, have/gap skill chips, a why-line,
- * freshness stamp, and a tracked View-job click-out. Low-score cards render
- * compact with a "Why low?" expander. Right rail = the whole profile surface.
+ * Screen B — the feed (spec §6.2), redesigned onto the global AppShell.
+ * Honest, explained job matches: match ring, have/gap skill chips, a why-line,
+ * freshness stamp, and a tracked View/Apply click-out. The dark hero shows the
+ * REAL "Where you stand" insights; the right rail mixes real panels (your
+ * preferences, email alerts, strong-match count) with clearly-labelled
+ * "Coming soon" panels for features we don't back with data yet.
  */
-import { useEffect, useState } from "react";
-import AlertCapture from "@/app/jobs/_components/AlertCapture";
-import type { CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-
-const INDIGO = "#4f46e5";
-const INK = "#1a1a2e";
-const MUTED = "#6b7280";
+import AppShell from "@/app/_components/AppShell";
+import AlertCapture from "@/app/jobs/_components/AlertCapture";
+import { C, GRAD, FONT, Icon, MatchRing, Card, SoonTag } from "@/app/_components/ui";
 
 type Match = {
   jobId: string; title: string; company: string; verticalSlug: string; cardLayout: string;
@@ -27,7 +26,6 @@ type Match = {
 const FILTERS = ["All matches", "Remote", "Hourly", "Saved"] as const;
 type Filter = (typeof FILTERS)[number];
 
-const scoreColor = (s: number) => (s >= 80 ? "#059669" : s >= 70 ? INDIGO : s >= 50 ? "#d97706" : "#9ca3af");
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
 
 const REGION_LABEL: Record<string, string> = {
@@ -35,7 +33,6 @@ const REGION_LABEL: Record<string, string> = {
   EUROPE: "Europe", NORTH_AMERICA: "North America",
 };
 
-/** Where a job actually is — "Remote (Poland)" beats a bare "Remote". */
 function placeLabel(m: Match): string {
   if (m.remoteType === "ONSITE" || m.remoteType === "HYBRID") {
     return m.locationState || REGION_LABEL[m.remoteScope ?? ""] || m.country || label(m.remoteType);
@@ -46,11 +43,26 @@ function placeLabel(m: Match): string {
   return `Remote (${REGION_LABEL[scope] ?? scope})`;
 }
 
+function freshHours(iso: string): number {
+  return Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 3.6e6));
+}
 function freshness(iso: string): string {
-  const h = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 3.6e6));
-  if (h < 1) return "verified live just now";
-  if (h < 48) return `verified live ${h}h ago`;
-  return `verified ${Math.round(h / 24)}d ago`;
+  const h = freshHours(iso);
+  if (h < 1) return "just now";
+  if (h < 48) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+function fmtSalary(m: Match): string | null {
+  if (m.salaryMin == null && m.salaryMax == null) return null;
+  const per = m.salaryPeriod === "HOUR" ? "/hr" : m.salaryPeriod === "PER_MILE" ? "/mi" : m.salaryPeriod === "DAY" ? "/day" : "/yr";
+  const k = (n: number) => (m.salaryPeriod === "YEAR" && n >= 1000 ? `${Math.round(n / 1000)}k` : `${n.toLocaleString()}`);
+  const lo = m.salaryMin, hi = m.salaryMax;
+  if (lo != null && hi != null) return `$${k(lo)}–${k(hi)}${per}`;
+  return `$${k((lo ?? hi)!)}${per}`;
+}
+function greeting(): string {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 }
 
 interface FeedInsights {
@@ -61,6 +73,15 @@ interface FeedInsights {
   skillGaps: { skill: string; pct: number; youHave: string | null }[];
   reliable: boolean;
 }
+interface Prefs {
+  fullName: string | null;
+  headline: string | null;
+  remoteTypes: string[];
+  locations: string[];
+  salaryFloor: number | null;
+  salaryTarget: number | null;
+  salaryPeriod: string | null;
+}
 
 export default function FeedPage() {
   const router = useRouter();
@@ -68,19 +89,27 @@ export default function FeedPage() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [stats, setStats] = useState<{ strong: number; totalLive: number } | null>(null);
   const [filter, setFilter] = useState<Filter>("All matches");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
-  const [authed, setAuthed] = useState(true); // default true to avoid a flash of the save prompt
   const [alert, setAlert] = useState<{ slug: string; place?: string; label: string } | null>(null);
   const [insights, setInsights] = useState<FeedInsights | null>(null);
+  const [prefs, setPrefs] = useState<Prefs | null>(null);
 
   useEffect(() => {
-    // Insights power the "Where you stand" snapshot — optional, never blocks the feed.
     (async () => {
       try {
         const r = await fetch("/api/profile/insights");
         if (r.ok) setInsights((await r.json()).insights ?? null);
+      } catch { /* optional */ }
+    })();
+    (async () => {
+      try {
+        const r = await fetch("/api/profile");
+        if (r.ok) {
+          const d = await r.json();
+          const p = d.profile;
+          if (p) setPrefs({ fullName: p.fullName, headline: p.headline, remoteTypes: p.remoteTypes ?? [], locations: p.locations ?? [], salaryFloor: p.salaryFloor, salaryTarget: p.salaryTarget, salaryPeriod: p.salaryPeriod });
+        }
       } catch { /* optional */ }
     })();
   }, []);
@@ -89,35 +118,24 @@ export default function FeedPage() {
     let cancelled = false;
     (async () => {
       try {
-        // Stage 1 — fast: jobs appear in ~2s with provisional scores.
         const res = await fetch("/api/matches");
-        if (res.status === 401) {
-          router.replace("/onboard");
-          return;
-        }
+        if (res.status === 401) { router.replace("/onboard"); return; }
         if (!res.ok) throw new Error(`server ${res.status}`);
         const data = await res.json();
         if (cancelled) return;
         setMatches(data.matches || []);
         setStats(data.stats || null);
-        setAuthed(data.authed ?? false);
         setAlert(data.alert ?? null);
         setLoading(false);
 
-        // Stage 2 — enrich the pending cards with real LLM scores + why-lines.
         if (data.pending) {
           setEnriching(true);
           try {
             const r2 = await fetch("/api/matches/rerank", { method: "POST" });
             if (r2.ok) {
               const d2 = await r2.json();
-              if (!cancelled) {
-                setMatches(d2.matches || []);
-                setStats(d2.stats || null);
-              }
+              if (!cancelled) { setMatches(d2.matches || []); setStats(d2.stats || null); }
             } else if (!cancelled) {
-              // Rerank endpoint failed outright — don't leave cards spinning on
-              // "scoring…". Commit the provisional scores as final.
               setMatches((prev) => prev.map((m) => ({ ...m, pending: false })));
             }
           } catch {
@@ -132,264 +150,258 @@ export default function FeedPage() {
         setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [router]);
 
-  if (error) {
-    return (
-      <main style={S.page}>
-        <div style={S.loadingWrap}>
-          <div style={S.brand}>topezia</div>
-          <p style={{ color: MUTED, margin: "20px 0" }}>{error}</p>
-          <button style={S.retry} onClick={() => window.location.reload()}>Try again</button>
-        </div>
-      </main>
-    );
-  }
-
-  // Until the rerank lands, every score is a provisional similarity number, so
-  // "strong matches" would read 0 for reasons that have nothing to do with fit.
   const statsReady = stats !== null && !enriching && !matches.some((m) => m.pending);
-
   const shown = matches.filter((m) => {
     if (filter === "Remote") return m.remoteType.startsWith("REMOTE");
     if (filter === "Hourly") return m.salaryPeriod === "HOUR" || m.employmentType === "HOURLY";
-    if (filter === "Saved") return false; // saves not wired yet
+    if (filter === "Saved") return false;
     return true;
   });
+  const topId = matches.filter((m) => !m.pending).sort((a, b) => b.score - a.score)[0]?.jobId;
+  const name = (prefs?.fullName ?? "").split(/\s+/)[0] || "there";
 
-  const topGaps = Object.entries(
-    matches.flatMap((m) => m.gapSkills).reduce<Record<string, number>>((a, g) => ((a[g] = (a[g] || 0) + 1), a), {})
-  ).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
+  if (error) {
+    return (
+      <AppShell>
+        <div style={{ textAlign: "center", padding: "80px 16px", color: C.mut }}>
+          <p style={{ marginBottom: 20 }}>{error}</p>
+          <button style={{ padding: "12px 24px", background: GRAD, color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: FONT }} onClick={() => window.location.reload()}>Try again</button>
+        </div>
+      </AppShell>
+    );
+  }
   if (loading) {
     return (
-      <main style={S.page}>
+      <AppShell>
         <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
-        <div style={S.loadingWrap}>
-          <div style={S.brand}>topezia</div>
-          <div style={S.spinner} />
-          <p style={{ color: MUTED }}>Reading thousands of jobs, scoring your fit…</p>
+        <div style={{ textAlign: "center", padding: "100px 16px" }}>
+          <div style={{ width: 36, height: 36, border: `3px solid ${C.line}`, borderTopColor: C.c1, borderRadius: "50%", margin: "0 auto 20px", animation: "spin .8s linear infinite" }} />
+          <p style={{ color: C.mut }}>Reading thousands of jobs, scoring your fit…</p>
         </div>
-      </main>
+      </AppShell>
     );
   }
 
   return (
-    <main style={S.page}>
-      <style>{"@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}"}</style>
-      <header style={S.topbar}>
-        <div style={S.brand}>topezia</div>
-        <div style={S.refine} title="Conversational refine — coming soon" aria-disabled="true">
-          <span style={S.refineText}>Refine — e.g. &quot;more remote, less agency work&quot;</span>
-          <span style={S.soon}>Soon</span>
-        </div>
-        <nav style={S.navLinks}>
-          <a href="/profile" style={S.navLink}>Profile</a>
-          <a href="/settings" style={S.navLink}>Settings</a>
-          {authed ? (
-            <a href="/profile" style={{ ...S.avatar, textDecoration: "none" }}>You</a>
-          ) : (
-            <a href="/login" style={S.saveBtn}>Save matches →</a>
-          )}
-        </nav>
-      </header>
+    <AppShell>
+      <style>{"@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}"}</style>
+      <div style={{ display: "flex", gap: 22, alignItems: "flex-start", flexWrap: "wrap" }}>
+        {/* ── Main column ── */}
+        <div style={{ flex: "1 1 480px", minWidth: 0 }}>
+          {/* Dark hero — greeting + REAL "where you stand" insights */}
+          <section style={S.hero}>
+            <div style={S.heroGlow} />
+            <div style={{ position: "relative" }}>
+              <h1 style={{ margin: 0, fontSize: 21, fontWeight: 800, letterSpacing: "-0.4px" }}>{greeting()}, {name} 👋</h1>
+              {insights && insights.reliable ? (
+                <>
+                  <div style={S.eyebrow}>Where you stand · you against {insights.targetJobs} {insights.fieldLabel ?? "roles"}</div>
+                  <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 12 }}>
+                    <div style={S.heroStat}><div style={S.heroNum}>{insights.coveragePct ?? "—"}%</div><div style={S.heroSub}>of the skills your field asks for, you already have</div></div>
+                    {insights.seniority && (
+                      <div style={S.heroStat}><div style={S.heroNum}>{insights.seniority.atOrAbove}</div><div style={S.heroSub}>roles at or above your level ({label(insights.seniority.level)}); {insights.seniority.below} below</div></div>
+                    )}
+                    {insights.skillGaps[0] && (
+                      <div style={S.heroStat}><div style={S.heroNum}>{insights.skillGaps[0].pct}%</div><div style={S.heroSub}>want {insights.skillGaps[0].skill}{insights.skillGaps[0].youHave ? ` — you're only ${insights.skillGaps[0].youHave.toLowerCase()}` : ", which you don't list"}</div></div>
+                    )}
+                  </div>
+                  <a href="/profile" style={S.heroLink}>See your full breakdown and roadmap <Icon name="arrowR" size={14} /></a>
+                </>
+              ) : (
+                <p style={{ margin: "12px 0 0", fontSize: 13, color: "#B9C0D4", lineHeight: 1.6, maxWidth: 520 }}>
+                  {insights?.fieldLabel
+                    ? <>Your market is still thin — only {insights.targetJobs} {insights.fieldLabel.replace(/ roles( \(broad\))?$/, "")} {insights.targetJobs === 1 ? "role is" : "roles are"} open to your region, too few for reliable stats yet. </>
+                    : "We're scoring every live job against your résumé — real numbers, including the low ones. "}
+                  <a href="/profile" style={{ ...S.heroLink, display: "inline", marginTop: 0 }}>More on your profile →</a>
+                </p>
+              )}
+            </div>
+          </section>
 
-      <div style={S.body}>
-        <div style={S.feedCol}>
-          <div style={S.pills}>
+          {/* Filter pills */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
             {FILTERS.map((f) => (
-              <button key={f} style={filter === f ? S.pillOn : S.pillOff} onClick={() => setFilter(f)}>
-                {f}
-                {f === "All matches" && ` · ${matches.length}`}
+              <button key={f} onClick={() => setFilter(f)} style={filter === f ? S.pillOn : S.pillOff}>
+                {f}{f === "All matches" ? ` · ${matches.length}` : ""}
               </button>
             ))}
+            <div style={{ flex: 1 }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.mut, fontWeight: 500 }}>
+              <Icon name="sliders" size={14} />Sort: Best match <SoonTag />
+            </div>
           </div>
 
-          {insights && insights.reliable && (
-            <div style={S.stand}>
-              <div style={S.standHead}>Where you stand · you against {insights.targetJobs} {insights.fieldLabel ?? "jobs"}</div>
-              <div style={S.standGrid}>
-                <div style={S.standStat}>
-                  <div style={S.standNum}>{insights.coveragePct ?? "—"}%</div>
-                  <div style={S.standLabel}>of the skills your field asks for, you already have</div>
-                </div>
-                {insights.seniority && (
-                  <div style={S.standStat}>
-                    <div style={S.standNum}>{insights.seniority.atOrAbove}</div>
-                    <div style={S.standLabel}>roles at or above your level ({label(insights.seniority.level)}); {insights.seniority.below} below</div>
-                  </div>
-                )}
-                <div style={S.standStat}>
-                  <div style={S.standNum}>{insights.skillGaps[0].pct}%</div>
-                  <div style={S.standLabel}>want {insights.skillGaps[0].skill}{insights.skillGaps[0].youHave ? ` — you're only ${insights.skillGaps[0].youHave.toLowerCase()}` : ", which you don't list"}</div>
-                </div>
-              </div>
-              <a href="/profile" style={S.standLink}>See your full breakdown and roadmap →</a>
-            </div>
-          )}
-          {insights && !insights.reliable && insights.fieldLabel && (
-            <div style={S.standThin}>
-              Your market is still thin — only {insights.targetJobs} {insights.fieldLabel.replace(/ roles( \(broad\))?$/, "")} {insights.targetJobs === 1 ? "role is" : "roles are"} open to your region, too few for reliable stats yet. <a href="/profile" style={S.standLink}>More on your profile →</a>
-            </div>
-          )}
-
           {enriching && (
-            <div style={S.enriching}>
-              <span style={S.enrichDot} /> Scoring your fit and writing why-lines…
-            </div>
+            <div style={S.enriching}><span style={S.enrichDot} /> Scoring your fit and writing why-lines…</div>
           )}
 
           {shown.length === 0 && (
-            <div style={S.empty}>
-              {filter === "Saved" ? "Saving jobs is coming soon." : "No matches in this view yet — try “All matches”, or widen your preferences."}
-            </div>
+            <div style={S.empty}>{filter === "Saved" ? "Saving jobs is coming soon." : "No matches in this view yet — try “All matches”, or widen your preferences."}</div>
           )}
 
-          {shown.map((m, i) => {
-            const low = !m.pending && m.score < 70;
-            const open = expanded[m.jobId];
-            return (
-              <div key={m.jobId} style={low && !open ? S.cardLow : S.card}>
-                <div style={S.cardTop}>
-                  <div style={{ flex: 1 }}>
-                    <div style={S.jobTitle}>{m.title}</div>
-                    <div style={S.jobMeta}>
-                      {m.company} · {placeLabel(m)} · {label(m.employmentType)}
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {shown.map((m, i) => {
+              const sal = fmtSalary(m);
+              const isNew = freshHours(m.lastVerifiedAt) < 24;
+              const isTop = m.jobId === topId && !m.pending;
+              return (
+                <article key={m.jobId} style={S.card}>
+                  {isTop && <div style={S.topRibbon}>TOP MATCH</div>}
+                  <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap", paddingTop: isTop ? 10 : 0 }}>
+                    <div style={{ ...S.logo, background: GRAD }}>{(m.company || "?")[0].toUpperCase()}</div>
+                    <div style={{ flex: 1, minWidth: 220 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{m.title}</h2>
+                        {isNew && <span style={S.newTag}>NEW</span>}
+                      </div>
+                      <div style={{ fontSize: 12.5, color: C.slate, fontWeight: 600, marginTop: 4 }}>{m.company}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginTop: 8, fontSize: 11.5, color: C.mut }}>
+                        <span style={S.metaItem}><Icon name="pin" size={13} />{placeLabel(m)}</span>
+                        <span style={S.metaItem}><Icon name="clock" size={13} />{label(m.employmentType)}</span>
+                        {sal && <span style={{ ...S.metaItem, color: "#059669", fontWeight: 600 }}><Icon name="coins" size={13} />{sal}</span>}
+                      </div>
+                      {(m.matchedSkills.length > 0 || m.gapSkills.length > 0) && (
+                        <div style={{ display: "flex", gap: 6, marginTop: 11, flexWrap: "wrap" }}>
+                          {m.matchedSkills.slice(0, 4).map((t) => <span key={t} style={S.tagHave}>{t}</span>)}
+                          {m.gapSkills.slice(0, 2).map((t) => <span key={t} style={S.tagGap}>{t}</span>)}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ flex: "none", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <MatchRing value={m.score} pending={m.pending} />
+                        <div style={{ fontSize: 10.5, color: C.mut, width: 46, lineHeight: 1.35 }}>{m.pending ? "scoring…" : "match to you"}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 7 }}>
+                        <div title="Save — coming soon" style={S.iconBtn}><Icon name="bookmark" size={15} /></div>
+                        <a href={`/job/${m.jobId}?score=${m.score}&pos=${i + 1}`} style={S.applyBtn}>View job</a>
+                      </div>
                     </div>
                   </div>
-                  <div style={S.scoreBox}>
-                    <div style={{ ...S.score, color: m.pending ? "#c7c7d1" : scoreColor(m.score) }}>{m.score}</div>
-                    <div style={S.scoreLabel}>{m.pending ? "scoring…" : "match to your profile"}</div>
-                  </div>
-                </div>
-
-                {m.pending ? (
-                  <p style={S.scoring}>Scoring your fit…</p>
-                ) : low && !open ? (
-                  <button style={S.whyLow} onClick={() => setExpanded({ ...expanded, [m.jobId]: true })}>Why low?</button>
-                ) : (
-                  <>
-                    {m.whyLine && <p style={S.why}>{m.whyLine}</p>}
-                    <div style={S.chips}>
-                      {m.matchedSkills.slice(0, 6).map((s) => (
-                        <span key={s} style={S.chipHave}>{s}</span>
-                      ))}
-                      {m.gapSkills.slice(0, 4).map((s) => (
-                        <span key={s} style={S.chipGap}>{s}</span>
-                      ))}
+                  {(m.whyLine || m.pending) && (
+                    <div style={S.cardFoot}>
+                      <Icon name="spark" size={14} color={C.c1} />
+                      <span style={{ flex: 1 }}>{m.pending ? "Scoring your fit…" : m.whyLine}</span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#059669" }}>● verified {freshness(m.lastVerifiedAt)}</span>
                     </div>
-                  </>
-                )}
-
-                <div style={S.cardFoot}>
-                  <span style={S.fresh}>● {freshness(m.lastVerifiedAt)}</span>
-                  <span style={S.via}>via {label(m.source)} → applies on company site</span>
-                  <a style={S.viewBtn} href={`/job/${m.jobId}?score=${m.score}&pos=${i + 1}`}>View job</a>
-                </div>
-              </div>
-            );
-          })}
+                  )}
+                </article>
+              );
+            })}
+          </div>
         </div>
 
-        <aside style={S.rail}>
-          <div style={S.railCard}>
-            <div style={S.railH}>How Topezia reads you</div>
-            <p style={S.railP}>
-              We matched you against {stats?.totalLive ?? 0} verified live jobs using your skills and trajectory — real scores, including the low ones.
-            </p>
-            <a style={S.railLink} href="/profile">Correct anything →</a>
-          </div>
+        {/* ── Right rail ── */}
+        <div style={S.rail}>
+          {/* REAL: preferences */}
+          <Card>
+            <div style={{ display: "flex", alignItems: "baseline", marginBottom: 14 }}>
+              <h2 style={S.railH}>Your job preferences</h2><a href="/profile" style={S.railEdit}>Edit</a>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12.5, color: C.slate }}>
+              <PrefRow k="Role" v={prefs?.headline || "Not set yet"} />
+              <PrefRow k="Work type" v={prefs && prefs.remoteTypes.length ? prefs.remoteTypes.map((r) => label(r)).join(", ") : "Open to all"} />
+              <PrefRow k="Locations" v={prefs && prefs.locations.length ? prefs.locations.join(" · ") : "Anywhere eligible"} />
+              <PrefRow k="Salary target" v={prefs?.salaryTarget ? `$${prefs.salaryTarget.toLocaleString()}${prefs.salaryPeriod === "HOUR" ? "/hr" : "/yr"}` : "—"} />
+            </div>
+          </Card>
+
+          {/* REAL: email alert */}
           {alert ? (
             <AlertCapture slug={alert.slug} place={alert.place} label={alert.label} />
           ) : (
-            <div style={S.railCard}>
-              <div style={S.railH}>Get matches by email</div>
+            <Card>
+              <h2 style={S.railH}>Get matches by email</h2>
               <p style={S.railP}>Set your job title on your profile and we&apos;ll email new matching jobs as they land.</p>
-              <a style={S.railLink} href="/profile">Set your role →</a>
-            </div>
+              <a href="/profile" style={S.railEdit}>Set your role →</a>
+            </Card>
           )}
-          <div style={S.railCard}>
-            <div style={S.railH}>Right now</div>
-            <p style={S.railBig}>
+
+          {/* REAL: honest strong-match count */}
+          <Card>
+            <h2 style={S.railH}>Right now</h2>
+            <p style={{ fontSize: 16, margin: "6px 0 2px" }}>
               {statsReady
-                ? <><b style={{ color: INDIGO }}>{stats!.strong}</b> strong matches</>
-                : <><b style={S.railPending}>—</b> <span style={{ color: MUTED }}>counting strong matches…</span></>}
+                ? <><b style={{ color: C.c1, fontWeight: 800 }}>{stats!.strong}</b> strong matches</>
+                : <><b style={{ color: "#c7c7d1" }}>—</b> <span style={{ color: C.mut }}>counting…</span></>}
             </p>
-            <p style={S.railP}>over {stats?.totalLive ?? 0} verified jobs</p>
-          </div>
-          {topGaps.length > 0 && (
-            <div style={S.railCard}>
-              <div style={S.railH}>Unlock more matches</div>
-              <p style={S.railP}>Skills that keep coming up as gaps:</p>
-              <div style={S.chips}>
-                {topGaps.map(([g, n]) => (
-                  <span key={g} style={S.chipGap}>{g} · {n}</span>
-                ))}
-              </div>
+            <p style={S.railP}>matched against {stats?.totalLive ?? 0} verified jobs open to you</p>
+          </Card>
+
+          {/* Dark AI coach tip — real gap data, learning path Soon */}
+          <section style={S.coach}>
+            <div style={S.coachGlow} />
+            <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <Icon name="spark" size={18} color="#fff" /><h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>AI coach tip</h2>
             </div>
-          )}
-        </aside>
+            <p style={{ position: "relative", margin: 0, fontSize: 12.5, lineHeight: 1.65, color: "#C7CEE4" }}>
+              {insights?.skillGaps?.[0]
+                ? <>Learning <strong style={{ color: "#fff" }}>{insights.skillGaps[0].skill}</strong> would line you up with the <strong style={{ color: "#4ADE80" }}>{insights.skillGaps[0].pct}%</strong> of roles in your field that ask for it.</>
+                : <>Keep your skills current — as your profile sharpens, so do your matches.</>}
+            </p>
+            <div style={S.coachBtn}>Start learning path <SoonTag style={{ background: "rgba(255,255,255,.15)", color: "#fff", borderColor: "transparent" }} /></div>
+          </section>
+
+          {/* Coming soon: saved searches */}
+          <Card style={{ position: "relative" }}>
+            <div style={{ display: "flex", alignItems: "baseline", marginBottom: 14 }}>
+              <h2 style={S.railH}>Saved searches</h2><SoonTag label="Coming soon" />
+            </div>
+            <p style={{ ...S.railP, margin: 0 }}>Save a search and we&apos;ll keep it a click away, with fresh counts.</p>
+          </Card>
+
+          {/* Coming soon: recent history */}
+          <Card>
+            <div style={{ display: "flex", alignItems: "baseline", marginBottom: 14 }}>
+              <h2 style={S.railH}>Recent search history</h2><SoonTag label="Coming soon" />
+            </div>
+            <p style={{ ...S.railP, margin: 0 }}>Your recent searches will show up here so you can pick up where you left off.</p>
+          </Card>
+        </div>
       </div>
-    </main>
+    </AppShell>
+  );
+}
+
+function PrefRow({ k, v }: { k: string; v: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+      <span style={{ color: C.mut }}>{k}</span><span style={{ fontWeight: 600, textAlign: "right" }}>{v}</span>
+    </div>
   );
 }
 
 const S: Record<string, CSSProperties> = {
-  page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "'Plus Jakarta Sans', sans-serif", color: INK },
-  railPending: { color: "#c7c7d1" } as const,
-  loadingWrap: { maxWidth: 640, margin: "0 auto", padding: "120px 16px", textAlign: "center" },
-  spinner: { width: 36, height: 36, border: `3px solid #e2e2ea`, borderTopColor: INDIGO, borderRadius: "50%", margin: "20px auto", animation: "spin 0.8s linear infinite" },
-  retry: { padding: "12px 24px", background: INDIGO, color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "'Plus Jakarta Sans', sans-serif" },
-  brand: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO },
-  topbar: { display: "flex", alignItems: "center", gap: 16, padding: "14px 24px", background: "#fff", borderBottom: "1px solid #ececf2", position: "sticky", top: 0, zIndex: 10 },
-  refine: { flex: 1, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 12px 10px 14px", borderRadius: 999, border: "1px dashed #d4d4dc", fontSize: 14, background: "transparent", cursor: "default" },
-  refineText: { color: "#a1a1aa", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  soon: { flexShrink: 0, fontSize: 11, fontWeight: 700, color: MUTED, background: "#ececf2", borderRadius: 999, padding: "2px 8px" },
-  navLinks: { display: "flex", gap: 16, alignItems: "center" },
-  navLink: { color: MUTED, textDecoration: "none", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" },
-  avatar: { width: 36, height: 36, borderRadius: "50%", background: "#eef0ff", color: INDIGO, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 },
-  saveBtn: { padding: "9px 16px", background: INDIGO, color: "#fff", borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: "none", whiteSpace: "nowrap" },
-  body: { maxWidth: 1080, margin: "0 auto", padding: 24, display: "flex", gap: 24, alignItems: "flex-start" },
-  feedCol: { flex: 1, minWidth: 0 },
-  stand: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 18, marginBottom: 14 },
-  standHead: { fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: MUTED, marginBottom: 12 },
-  standGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 12 },
-  standStat: { background: "#f7f7fb", borderRadius: 10, padding: 12 },
-  standNum: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO },
-  standLabel: { fontSize: 12, color: MUTED, lineHeight: 1.4, marginTop: 4 },
-  standLink: { color: INDIGO, textDecoration: "none", fontSize: 14, fontWeight: 700 },
-  standThin: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 16, marginBottom: 14, fontSize: 13, color: MUTED, lineHeight: 1.5 },
-  pills: { display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" },
-  pillOn: { padding: "8px 14px", borderRadius: 999, border: `1px solid ${INDIGO}`, background: INDIGO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
-  pillOff: { padding: "8px 14px", borderRadius: 999, border: "1px solid #d9d9e3", background: "#fff", color: INK, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
-  card: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 20, marginBottom: 14 },
-  cardLow: { background: "#fbfbfd", border: "1px solid #f0f0f5", borderRadius: 16, padding: "14px 20px", marginBottom: 14, opacity: 0.92 },
-  cardTop: { display: "flex", alignItems: "flex-start", gap: 12 },
-  jobTitle: { fontFamily: "'Sora', sans-serif", fontWeight: 700, fontSize: 18 },
-  jobMeta: { color: MUTED, fontSize: 14, marginTop: 3 },
-  scoreBox: { display: "flex", flexDirection: "column", alignItems: "flex-end", textAlign: "right", maxWidth: 96, flexShrink: 0 },
-  score: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 30, lineHeight: 1 },
-  scoreLabel: { fontSize: 11, color: MUTED, lineHeight: 1.3, marginTop: 3 },
-  why: { fontSize: 15, lineHeight: 1.5, margin: "12px 0", color: "#374151" },
-  scoring: { fontSize: 14, color: "#9ca3af", margin: "10px 0", fontStyle: "italic" },
-  enriching: { display: "flex", alignItems: "center", gap: 8, background: "#eef0ff", color: INDIGO, padding: "10px 14px", borderRadius: 10, fontSize: 14, fontWeight: 600, marginBottom: 14 },
-  enrichDot: { width: 10, height: 10, borderRadius: "50%", background: INDIGO, animation: "pulse 1s ease-in-out infinite", display: "inline-block" },
-  chips: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 },
-  chipHave: { padding: "4px 9px", background: "#ecfdf5", color: "#059669", border: "1px solid #a7f3d0", borderRadius: 999, fontSize: 13, fontWeight: 600 },
-  chipGap: { padding: "4px 9px", background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a", borderRadius: 999, fontSize: 13, fontWeight: 600 },
-  whyLow: { marginTop: 8, background: "transparent", border: "none", color: INDIGO, fontWeight: 700, fontSize: 14, cursor: "pointer", padding: 0, fontFamily: "inherit" },
-  cardFoot: { display: "flex", alignItems: "center", gap: 12, marginTop: 16, flexWrap: "wrap", fontSize: 13 },
-  fresh: { color: "#059669", fontWeight: 600 },
-  via: { color: MUTED, flex: 1, minWidth: 120 },
-  viewBtn: { padding: "8px 16px", background: INDIGO, color: "#fff", borderRadius: 10, fontWeight: 700, textDecoration: "none", fontSize: 14 },
-  empty: { background: "#fff", border: "1px dashed #d9d9e3", borderRadius: 16, padding: 32, textAlign: "center", color: MUTED },
-  rail: { width: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 14, position: "sticky", top: 88 },
-  railCard: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 18 },
-  railH: { fontFamily: "'Sora', sans-serif", fontWeight: 700, fontSize: 15, marginBottom: 8 },
-  railP: { color: MUTED, fontSize: 14, lineHeight: 1.5, margin: "0 0 8px" },
-  railBig: { fontSize: 16, margin: "0 0 2px" },
-  railLink: { color: INDIGO, fontWeight: 700, fontSize: 14, textDecoration: "none" },
+  hero: { background: C.navy, borderRadius: 18, padding: "24px 28px", color: "#fff", position: "relative", overflow: "hidden", marginBottom: 18 },
+  heroGlow: { position: "absolute", top: -100, right: -40, width: 320, height: 320, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.32), transparent 68%)" },
+  eyebrow: { fontSize: 11, fontWeight: 700, letterSpacing: ".8px", color: "#A5B4FC", textTransform: "uppercase", marginTop: 14 },
+  heroStat: { flex: 1, minWidth: 180, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 12, padding: "14px 16px" },
+  heroNum: { fontSize: 22, fontWeight: 800, background: "linear-gradient(135deg,#A5B4FC,#C4B5FD)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" },
+  heroSub: { fontSize: 12, color: "#B9C0D4", marginTop: 5, lineHeight: 1.5 },
+  heroLink: { display: "inline-flex", alignItems: "center", gap: 7, marginTop: 14, fontSize: 13, fontWeight: 700, color: "#A5B4FC", textDecoration: "none" },
+  pillOn: { padding: "8px 17px", borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: "pointer", background: GRAD, color: "#fff", border: "1px solid transparent", boxShadow: "0 5px 14px rgba(99,102,241,.3)", fontFamily: FONT },
+  pillOff: { padding: "8px 17px", borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: "pointer", background: "#fff", color: C.slate, border: `1px solid ${C.line}`, fontFamily: FONT },
+  enriching: { display: "flex", alignItems: "center", gap: 8, background: "#EEF2FF", color: C.c1, padding: "10px 14px", borderRadius: 10, fontSize: 13, fontWeight: 600, marginBottom: 14 },
+  enrichDot: { width: 10, height: 10, borderRadius: "50%", background: C.c1, animation: "pulse 1s ease-in-out infinite", display: "inline-block" },
+  empty: { background: "#fff", border: `1px dashed ${C.line}`, borderRadius: 16, padding: 32, textAlign: "center", color: C.mut, marginBottom: 14 },
+  card: { background: "#fff", border: `1px solid ${C.line}`, borderRadius: 16, padding: "20px 22px", position: "relative", overflow: "hidden" },
+  topRibbon: { position: "absolute", top: 0, left: 0, background: GRAD, color: "#fff", fontSize: 10, fontWeight: 700, letterSpacing: ".5px", padding: "4px 12px", borderRadius: "0 0 10px 0" },
+  logo: { width: 48, height: 48, borderRadius: 13, color: "#fff", display: "grid", placeItems: "center", fontSize: 17, fontWeight: 800, flex: "none" },
+  newTag: { background: "#EEF2FF", color: "#4F46E5", fontSize: 10, fontWeight: 700, borderRadius: 999, padding: "2px 9px" },
+  metaItem: { display: "inline-flex", alignItems: "center", gap: 5 },
+  tagHave: { background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", borderRadius: 7, padding: "3px 10px", fontSize: 10.5, fontWeight: 600 },
+  tagGap: { background: "#FFFBEB", color: "#B45309", border: "1px solid #FDE68A", borderRadius: 7, padding: "3px 10px", fontSize: 10.5, fontWeight: 600 },
+  iconBtn: { width: 34, height: 34, border: `1px solid ${C.line}`, borderRadius: 9, display: "grid", placeItems: "center", color: C.mut, cursor: "default" },
+  applyBtn: { background: GRAD, color: "#fff", borderRadius: 9, padding: "8px 17px", fontSize: 12, fontWeight: 600, textDecoration: "none", display: "inline-flex", alignItems: "center" },
+  cardFoot: { display: "flex", alignItems: "center", gap: 8, marginTop: 14, paddingTop: 12, borderTop: "1px solid #F1F5F9", fontSize: 11, color: C.mut },
+  rail: { flex: "1 1 280px", maxWidth: 320, marginLeft: "auto", display: "flex", flexDirection: "column", gap: 18, position: "sticky", top: 20 },
+  railH: { margin: 0, fontSize: 15, fontWeight: 700, flex: 1 },
+  railEdit: { fontSize: 12, fontWeight: 600, color: C.c1, textDecoration: "none" },
+  railP: { color: C.mut, fontSize: 12.5, lineHeight: 1.55, margin: "0 0 4px" },
+  coach: { background: `linear-gradient(160deg, ${C.navy}, ${C.navy2})`, borderRadius: 16, padding: "22px 24px", color: "#fff", position: "relative", overflow: "hidden" },
+  coachGlow: { position: "absolute", top: -60, right: -60, width: 190, height: 190, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.35), transparent 70%)" },
+  coachBtn: { position: "relative", marginTop: 14, background: GRAD, borderRadius: 10, padding: "10px", textAlign: "center", fontSize: 12.5, fontWeight: 600, cursor: "default", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 },
 };

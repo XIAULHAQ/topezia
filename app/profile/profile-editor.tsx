@@ -141,20 +141,12 @@ export default function ProfileEditor() {
     }
   }
 
-  if (error && !p) return <main style={S.page}><div style={S.wrap}><p style={{ color: MUTED }}>{error}</p></div></main>;
-  if (!p) return <main style={S.page}><div style={S.wrap}><p style={{ color: MUTED }}>Loading your profile…</p></div></main>;
+  if (error && !p) return <div style={S.wrap}><p style={{ color: MUTED }}>{error}</p></div>;
+  if (!p) return <div style={S.wrap}><p style={{ color: MUTED }}>Loading your profile…</p></div>;
 
   return (
-    <main style={S.page}>
-      <header style={S.nav}>
-        <Link href="/feed" style={S.brand}>topezia</Link>
-        <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
-          <Link href="/feed" style={S.navLink}>Feed</Link>
-          <Link href="/settings" style={S.navLink}>Settings</Link>
-        </div>
-      </header>
-
-      <div style={S.wrap}>
+    <div style={S.wrap}>
+      <Link href="/profile" style={S.back}>← Back to profile</Link>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <h1 style={S.h1}>{p.fullName || "Your profile"}</h1>
           {p.tier === "PREMIUM" && <span style={S.tier}>Premium</span>}
@@ -329,8 +321,7 @@ export default function ProfileEditor() {
           <button style={S.saveBtn} onClick={save} disabled={saving}>{saving ? "Saving…" : saved ? "Saved ✓" : "Save changes"}</button>
           {saved && <span style={S.savedNote}>Re-scored your matches.</span>}
         </div>
-      </div>
-    </main>
+    </div>
   );
 }
 
@@ -339,7 +330,8 @@ const S: Record<string, CSSProperties> = {
   nav: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", background: "#fff", borderBottom: "1px solid #ececf2" },
   brand: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, textDecoration: "none" },
   navLink: { color: MUTED, textDecoration: "none", fontSize: 14, fontWeight: 600 },
-  wrap: { maxWidth: 720, margin: "0 auto", padding: "36px 20px 80px" },
+  wrap: { maxWidth: 760, margin: "0 auto", padding: "0 0 80px" },
+  back: { display: "inline-block", color: MUTED, textDecoration: "none", fontSize: 13, fontWeight: 600, marginBottom: 16 },
   h1: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 30, margin: "0 0 8px" },
   tier: { fontSize: 12, fontWeight: 700, color: "#7a3cff", background: "#f0eaff", padding: "4px 12px", borderRadius: 20 },
   sub: { color: MUTED, fontSize: 15, lineHeight: 1.55, margin: "0 0 24px" },

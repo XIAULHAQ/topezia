@@ -1,26 +1,24 @@
 /**
- * /profile — the profile VIEW (redesigned). A read-only, LinkedIn-style
- * presentation of the real profile (experience, skills, education, insights)
- * with clearly-labelled "Sample"/"Coming soon" panels for parts we don't back
- * with data yet. "Edit profile" goes to /profile/edit.
+ * /profile/edit — the editable profile (Panel 1, spec §3.4), now inside the
+ * global app shell. /profile is the read view; this is where you change fields.
  */
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import AppShell from "@/app/_components/AppShell";
-import ProfileView from "./profile-view";
+import ProfileEditor from "../profile-editor";
 
-export const metadata: Metadata = { title: "Your profile — Topezia", robots: { index: false } };
+export const metadata: Metadata = { title: "Edit your profile — Topezia", robots: { index: false } };
 
-export default async function ProfilePage() {
+export default async function ProfileEditPage() {
   const { userId } = await currentIdentity();
   if (!userId) redirect("/onboard");
   const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
   if (!profile) redirect("/onboard");
   return (
     <AppShell>
-      <ProfileView />
+      <ProfileEditor />
     </AppShell>
   );
 }

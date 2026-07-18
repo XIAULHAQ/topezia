@@ -2,7 +2,6 @@
 
 import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
 const INDIGO = "#4f46e5";
@@ -96,19 +95,10 @@ export default function SettingsClient() {
     }
   }
 
-  if (error && !acct) return <main style={S.page}><div style={S.wrap}><p style={{ color: MUTED }}>{error}</p></div></main>;
-  if (!acct) return <main style={S.page}><div style={S.wrap}><p style={{ color: MUTED }}>Loading…</p></div></main>;
+  if (error && !acct) return <div style={S.wrap}><p style={{ color: MUTED }}>{error}</p></div>;
+  if (!acct) return <div style={S.wrap}><p style={{ color: MUTED }}>Loading…</p></div>;
 
   return (
-    <main style={S.page}>
-      <header style={S.nav}>
-        <Link href="/feed" style={S.brand}>topezia</Link>
-        <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
-          <Link href="/profile" style={S.navLink}>Profile</Link>
-          <Link href="/feed" style={S.navLink}>Feed</Link>
-        </div>
-      </header>
-
       <div style={S.wrap}>
         <h1 style={S.h1}>Settings</h1>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 24 }}>
@@ -162,7 +152,6 @@ export default function SettingsClient() {
 
         {error && <p style={{ color: DANGER, fontSize: 14 }}>{error}</p>}
       </div>
-    </main>
   );
 }
 
@@ -171,7 +160,7 @@ const S: Record<string, CSSProperties> = {
   nav: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", background: "#fff", borderBottom: "1px solid #ececf2" },
   brand: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, textDecoration: "none" },
   navLink: { color: MUTED, textDecoration: "none", fontSize: 14, fontWeight: 600 },
-  wrap: { maxWidth: 640, margin: "0 auto", padding: "36px 20px 80px" },
+  wrap: { maxWidth: 680, margin: "0 auto", padding: "0 0 60px" },
   h1: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 30, margin: "0 0 8px" },
   sub: { color: MUTED, fontSize: 15, margin: "0 0 24px" },
   card: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 20, marginBottom: 16 },
