@@ -13,6 +13,7 @@
  * then — don't fake it now.
  */
 import { prisma } from "@/lib/prisma";
+import { REGION_MEMBERS } from "@/lib/ingestion/normalize-rules";
 
 const SENIORITY_RANK: Record<string, number> = {
   INTERN: 1, JUNIOR: 2, MID: 3, SENIOR: 4, LEAD: 5, EXEC: 6, NOT_APPLICABLE: 0,
@@ -48,6 +49,7 @@ export interface ProfileInsights {
   skillGaps: SkillGap[]; // most-wanted skills you lack or are only familiar with
   certs: { label: string; jobs: number }[]; // certs named in your field's postings
   premiumFrom: number; // index into skillGaps: below this is free, at/after is premium
+  inferred: boolean; // field was guessed from matches (no resolved job title) — show a "set your title" nudge
 }
 
 /**
@@ -61,6 +63,7 @@ export interface ProfileInsights {
 const ROLE_SCOPE_MIN = 20; // below this, the role is too thin — widen to its vertical
 
 async function targetJobIds(p: {
+  profileId: string;
   country: string | null;
   headlineRoleId: string | null;
   skillIds: string[];
@@ -72,6 +75,9 @@ async function targetJobIds(p: {
       { remoteScope: "GLOBAL" as const },
     ],
   };
+  const eligibleRegions = p.country
+    ? Object.entries(REGION_MEMBERS).filter(([, m]) => m.includes(p.country!)).map(([r]) => r)
+    : [];
 
   // Prefer the person's ACTUAL role — "backend engineer" jobs, not the whole
   // "tech & software" vertical, which would surface frontend skills as gaps for
@@ -88,12 +94,55 @@ async function targetJobIds(p: {
       return { ids: roleJobs.map((r) => r.id), verticalId: role?.verticalId ?? null, scope: "role", label: role?.name?.toLowerCase() ?? null };
     }
     if (role?.verticalId) {
-      const vJobs = await prisma.job.findMany({ where: { status: "LIVE", verticalId: role.verticalId, ...eligibility }, select: { id: true }, take: 4000 });
-      const vName = (await prisma.vertical.findUnique({ where: { id: role.verticalId }, select: { name: true } }))?.name?.toLowerCase() ?? null;
-      return { ids: vJobs.map((r) => r.id), verticalId: role.verticalId, scope: "vertical", label: vName };
+      return scopeToVertical(role.verticalId, eligibility);
     }
   }
+
+  // No resolved headline role (their title didn't map to the taxonomy). Infer
+  // the field from their embedding — the dominant vertical among the jobs the
+  // matcher already finds closest to them. Skill-count inference mislabels
+  // (a marketer's business-development skills swamp into sales); the embedding
+  // knows they're marketing because it matched them to marketing jobs.
+  if (p.profileId) {
+    const rows = await prisma.$queryRawUnsafe<{ verticalId: string; n: number }[]>(
+      `SELECT j."verticalId", COUNT(*)::int AS n
+       FROM "Job" j CROSS JOIN "Profile" p
+       WHERE p.id = $1 AND p.embedding IS NOT NULL AND j.status = 'LIVE' AND j.embedding IS NOT NULL
+       AND (
+         $2::text IS NULL OR j."remoteScope" = 'GLOBAL' OR j.country = $2
+         OR j."remoteScope" = $2 OR j."remoteScope" = ANY($3::text[])
+         OR (j.country IS NULL AND j."remoteScope" IS NULL)
+       )
+       AND j."verticalId" IN (
+         SELECT "verticalId" FROM "Job" j2
+         WHERE j2.id IN (
+           SELECT j3.id FROM "Job" j3 CROSS JOIN "Profile" p3
+           WHERE p3.id = $1 AND p3.embedding IS NOT NULL AND j3.status = 'LIVE' AND j3.embedding IS NOT NULL
+           ORDER BY j3.embedding <=> p3.embedding LIMIT 50
+         )
+       )
+       GROUP BY j."verticalId" ORDER BY n DESC LIMIT 1`,
+      p.profileId, p.country, eligibleRegions
+    );
+    if (rows[0]) {
+      const vName = (await prisma.vertical.findUnique({ where: { id: rows[0].verticalId }, select: { name: true, slug: true } }));
+      if (vName && vName.slug !== "unsorted") {
+        const scoped = await scopeToVertical(rows[0].verticalId, eligibility);
+        if (scoped.ids.length >= 5) return scoped;
+      }
+    }
+  }
+
   return { ids: [], verticalId: null, scope: "none", label: null };
+}
+
+async function scopeToVertical(
+  verticalId: string,
+  eligibility: object
+): Promise<{ ids: string[]; verticalId: string | null; scope: "vertical"; label: string | null }> {
+  const vJobs = await prisma.job.findMany({ where: { status: "LIVE", verticalId, ...eligibility }, select: { id: true }, take: 4000 });
+  const vName = (await prisma.vertical.findUnique({ where: { id: verticalId }, select: { name: true } }))?.name?.toLowerCase() ?? null;
+  return { ids: vJobs.map((r) => r.id), verticalId, scope: "vertical", label: vName };
 }
 
 export async function getProfileInsights(profileId: string): Promise<ProfileInsights | null> {
@@ -108,14 +157,18 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
 
   const mySkills = new Map(profile.skills.map((s) => [s.skillId, s.proficiency]));
   const { ids, scope, label } = await targetJobIds({
+    profileId,
     country: profile.country,
     headlineRoleId: profile.headlineRoleId,
     skillIds: [...mySkills.keys()],
   });
+  // Field was guessed (no resolved job title) → the UI shows a "set your title
+  // to refine" nudge so an approximate field never reads as a confident claim.
+  const inferred = !profile.headlineRoleId && scope !== "none";
 
   const empty: ProfileInsights = {
     fieldLabel: null, targetJobs: ids.length, seniority: null, coveragePct: null,
-    skillGaps: [], certs: [], premiumFrom: 2,
+    skillGaps: [], certs: [], premiumFrom: 2, inferred: false,
   };
   if (ids.length < 5) return empty; // too thin to say anything honest
 
@@ -190,5 +243,6 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
     skillGaps: gaps,
     certs: certs.slice(0, 4),
     premiumFrom: 2, // first 2 gaps free (the diagnosis); the rest is premium later
+    inferred,
   };
 }

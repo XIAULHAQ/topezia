@@ -37,6 +37,7 @@ interface Insights {
   skillGaps: SkillGap[];
   certs: { label: string; jobs: number }[];
   premiumFrom: number;
+  inferred: boolean;
 }
 
 const SENIORITIES = ["INTERN", "JUNIOR", "MID", "SENIOR", "LEAD", "EXEC", "NOT_APPLICABLE"];
@@ -161,6 +162,11 @@ export default function ProfileEditor() {
           <>
             <section style={S.card}>
               <div style={S.cardLabel}>Where you stand · you against {insights.targetJobs} {insights.fieldLabel ?? "jobs"}</div>
+              {insights.inferred && (
+                <div style={S.inferNote}>
+                  We guessed your field from your closest matches. Set your job title above to sharpen this.
+                </div>
+              )}
               <div style={S.statGrid}>
                 <div style={S.stat}>
                   <div style={S.statNum}>{insights.coveragePct ?? "—"}%</div>
@@ -311,6 +317,7 @@ const S: Record<string, CSSProperties> = {
   tier: { fontSize: 12, fontWeight: 700, color: "#7a3cff", background: "#f0eaff", padding: "4px 12px", borderRadius: 20 },
   sub: { color: MUTED, fontSize: 15, lineHeight: 1.55, margin: "0 0 24px" },
   card: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 20, marginBottom: 16 },
+  inferNote: { fontSize: 12, color: "#8a5a00", background: "#fdf0d5", borderRadius: 8, padding: "8px 10px", marginBottom: 12, lineHeight: 1.45 } as const,
   statGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 },
   stat: { background: "#f7f7fb", borderRadius: 10, padding: 14 },
   statNum: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 26, color: INDIGO },
