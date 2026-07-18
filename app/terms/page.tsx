@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import LegalShell, { H2, P, UL, LI, Placeholder } from "@/app/_components/LegalShell";
+import LegalShell, { H2, P, UL, LI } from "@/app/_components/LegalShell";
 
 export const metadata: Metadata = {
   title: "Terms of Service — Topezia",
@@ -56,7 +56,7 @@ export default function TermsPage() {
       <P>The Service is provided &quot;as is&quot; and &quot;as available,&quot; without warranties of any kind, whether express or implied, including merchantability, fitness for a particular purpose, and non-infringement. We do not warrant that the Service will be uninterrupted or error-free, that match scores are accurate, or that using Topezia will result in a job.</P>
 
       <H2>10. Limitation of liability</H2>
-      <P>To the maximum extent permitted by law, Topezia and its suppliers will not be liable for any indirect, incidental, special, consequential or punitive damages, or for lost profits, data, or goodwill, arising from your use of the Service. Our total liability for any claim will not exceed the greater of the amount you paid us in the 12 months before the claim or <Placeholder>[USD 100]</Placeholder>. Some jurisdictions don&apos;t allow certain limitations, so some of the above may not apply to you.</P>
+      <P>To the maximum extent permitted by law, Topezia and its suppliers will not be liable for any indirect, incidental, special, consequential or punitive damages, or for lost profits, data, or goodwill, arising from your use of the Service. Our total liability for any claim will not exceed the greater of the amount you paid us in the 12 months before the claim or USD 100. Some jurisdictions don&apos;t allow certain limitations, so some of the above may not apply to you.</P>
 
       <H2>11. Indemnification</H2>
       <P>You agree to indemnify and hold Topezia harmless from claims arising out of Your Content or your misuse of the Service or violation of these Terms, to the extent permitted by law.</P>
