@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
+import { SiteHeader, SiteFooter } from "@/app/_components/SiteChrome";
 import type { CSSProperties, ReactNode } from "react";
 
 /**
@@ -60,23 +61,8 @@ export default async function Home() {
     <div style={{ minHeight: "100vh", background: "#fff", fontFamily: FONT, color: C.ink }}>
       <style>{HOVER_CSS}</style>
 
-      {/* ── Header ── */}
-      <header style={S.header}>
-        <div style={S.headerInner}>
-          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <Brand /><span style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.5px" }}>topezia</span>
-          </div>
-          <nav style={S.hnav}>
-            <Link href="/jobs" className="h-link" style={S.hlink}>Find jobs</Link>
-            <Link href="/onboard" className="h-link" style={S.hlink}>AI Career Coach</Link>
-            <Link href="/waitlist" className="h-link" style={S.hlink}>For employers</Link>
-            <Link href="/waitlist" className="h-link" style={S.hlink}>Pricing</Link>
-          </nav>
-          <div style={{ flex: 1 }} />
-          <Link href="/login" className="h-link" style={{ ...S.hlink, padding: "9px 14px" }}>Sign in</Link>
-          <Link href="/onboard" className="h-bright" style={S.joinBtn}>Join free</Link>
-        </div>
-      </header>
+      {/* ── Header — THE global bar (SiteChrome), Pricing replaced by Projects ── */}
+      <SiteHeader />
 
       {/* ── Hero ── */}
       <section style={{ position: "relative", overflow: "hidden", background: "linear-gradient(180deg,#F8FAFF,#fff)" }}>
@@ -278,24 +264,8 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ── Footer ── */}
-      <footer style={{ borderTop: `1px solid ${C.line}`, background: C.ink, color: "#fff" }}>
-        <div style={S.footInner}>
-          <div style={{ flex: 1.4, minWidth: 220 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 9 }}><Brand h={22} /><span style={{ fontSize: 18, fontWeight: 700 }}>topezia</span></div>
-            <div style={{ fontSize: 12, color: "#8B96B5", marginTop: 12, lineHeight: 1.6 }}>Infinite potential. Intelligent future.</div>
-          </div>
-          {FOOTER_COLS.map((col) => (
-            <div key={col.head} style={{ flex: 1, minWidth: 140 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12 }}>{col.head}</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 9, fontSize: 12 }}>
-                {col.links.map((l) => <Link key={l.label} href={l.href} className="h-flink" style={{ color: "#8B96B5" }}>{l.label}</Link>)}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div style={{ borderTop: "1px solid rgba(255,255,255,.08)" }}><div style={{ maxWidth: 1180, margin: "0 auto", padding: "16px 24px", fontSize: 11, color: "#64748B" }}>© 2026 Topezia. All rights reserved.</div></div>
-      </footer>
+      {/* ── Footer — THE global footer (SiteChrome) ── */}
+      <SiteFooter />
     </div>
   );
 }
@@ -341,12 +311,7 @@ const PRINCIPLES = [
   { icon: "target", label: "Counted, not invented", text: "Your roadmap steps come from real open postings in your field — each one counted from the market, so \"the skill that unlocks 14 roles\" is a fact, not a guess." },
   { icon: "shield", label: "Straight to the source", text: "We send you to the original posting on the company's own site. No application trapping, no middleman between you and the employer." },
 ];
-const FOOTER_COLS = [
-  { head: "Product", links: [{ label: "Find jobs", href: "/jobs" }, { label: "AI Career Score", href: "/onboard" }, { label: "Skill assessments", href: "/onboard" }, { label: "Resume builder", href: "/onboard" }] },
-  { head: "Employers", links: [{ label: "Post a role", href: "/waitlist" }, { label: "Search talent", href: "/waitlist" }, { label: "Pricing", href: "/waitlist" }] },
-  { head: "Company", links: [{ label: "About", href: "/" }, { label: "Contact", href: "/waitlist" }] },
-  { head: "Legal", links: [{ label: "Privacy Policy", href: "/privacy" }, { label: "Terms of Service", href: "/terms" }, { label: "Cookie Policy", href: "/cookies" }] },
-];
+// Footer columns live in SiteChrome now — one footer globally.
 
 const HOVER_CSS = `
 .h-link:hover{color:${C.c1}!important}

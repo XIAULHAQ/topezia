@@ -5,6 +5,7 @@ import { countrySlugFor, countryName } from "@/lib/seo/pages";
 import { decodeHtmlEntities } from "@/lib/sanitize";
 import AlertCapture from "./AlertCapture";
 import SiteNav from "@/app/_components/SiteNav";
+import { SiteFooter } from "@/app/_components/SiteChrome";
 
 const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
@@ -143,6 +144,7 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
           </nav>
         )}
       </div>
+      <SiteFooter />
     </main>
   );
 }

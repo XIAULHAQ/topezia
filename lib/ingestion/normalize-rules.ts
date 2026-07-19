@@ -428,12 +428,19 @@ export function applyRulesPass(input: {
 }) {
   const descriptionText = stripHtml(input.descriptionRaw);
 
+  // remoteScope only means something for a REMOTE job. Extracting it
+  // unconditionally let company boilerplate ("anywhere in the world") stamp
+  // GLOBAL onto onsite postings — an onsite Gurugram job then passed the
+  // "hireable from anywhere" eligibility check in every country's feed.
+  const remoteType = extractRemoteType(input.locationRaw, descriptionText);
+  const isRemote = remoteType === RemoteType.REMOTE_US || remoteType === RemoteType.REMOTE_GLOBAL || remoteType === RemoteType.REMOTE_INTL;
+
   return {
     descriptionText,
     locationState: extractLocationState(input.locationRaw),
     country: extractCountry(input.locationRaw),
-    remoteScope: extractRemoteScope(input.locationRaw, descriptionText),
-    remoteType: extractRemoteType(input.locationRaw, descriptionText),
+    remoteScope: isRemote ? extractRemoteScope(input.locationRaw, descriptionText) : null,
+    remoteType,
     employmentType: extractEmploymentType(input.titleRaw, descriptionText, input.leverCommitment),
     salary: extractSalary(descriptionText),
   };

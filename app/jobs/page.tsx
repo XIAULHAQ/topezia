@@ -9,6 +9,7 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import { getBrowseHub, type HubLink } from "@/lib/seo/pages";
+import { SiteHeader, SiteFooter } from "@/app/_components/SiteChrome";
 
 // Rendered on-demand, NOT pre-rendered at build: getBrowseHub hits the database,
 // and a build-time DB blip (as happened once) would otherwise crash the whole
@@ -47,10 +48,7 @@ export default async function JobsHubPage() {
   const hub = await getBrowseHub();
   return (
     <main style={S.page}>
-      <header style={S.nav}>
-        <Link href="/" style={S.brand}>topezia</Link>
-        <Link href="/login" style={S.navLink}>Log in</Link>
-      </header>
+      <SiteHeader />
 
       <div style={S.wrap}>
         <h1 style={S.h1}>Browse jobs</h1>
@@ -69,6 +67,7 @@ export default async function JobsHubPage() {
           <p style={S.empty}>No pages have enough live jobs to publish yet — check back soon.</p>
         )}
       </div>
+      <SiteFooter />
     </main>
   );
 }

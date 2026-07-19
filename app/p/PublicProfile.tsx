@@ -11,6 +11,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import ShareButton from "./ShareButton";
+import { SiteFooter } from "@/app/_components/SiteChrome";
 
 const C = { c1: "#8B5CF6", c2: "#3B82F6", ink: "#0F172A", slate: "#334155", mut: "#64748B", line: "#E2E8F0", bg: "#F1F5F9", navy: "#0F172A", navy2: "#1E1B4B" };
 const GRAD = `linear-gradient(135deg, ${C.c1}, ${C.c2})`;
@@ -314,6 +315,7 @@ export default function PublicProfile({ p, tab }: { p: PubProfile; tab: PublicTa
           </div>
         </div>
       </main>
+      <SiteFooter />
     </div>
   );
 }

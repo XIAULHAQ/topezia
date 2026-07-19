@@ -17,6 +17,7 @@ import { prisma } from "@/lib/prisma";
 import { sanitizeJobHtml, renderJobDescription } from "@/lib/sanitize";
 import { MIN_JOBS_FOR_PAGE } from "@/lib/seo/pages";
 import SiteNav from "@/app/_components/SiteNav";
+import { SiteFooter } from "@/app/_components/SiteChrome";
 import { curSym } from "@/lib/currency";
 
 const INDIGO = "#4f46e5";
@@ -187,6 +188,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
           </div>
         )}
       </div>
+      <SiteFooter />
     </main>
   );
 }

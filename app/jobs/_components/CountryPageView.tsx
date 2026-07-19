@@ -18,6 +18,7 @@ import { countryName } from "@/lib/seo/pages";
 import { COUNTRY_HEADER_IMAGES, type CountryExtras } from "@/lib/seo/country";
 import { curSym } from "@/lib/currency";
 import SiteNav from "@/app/_components/SiteNav";
+import { SiteFooter } from "@/app/_components/SiteChrome";
 import AlertCapture from "./AlertCapture";
 
 const C1 = "#8B5CF6", C2 = "#3B82F6";
@@ -215,6 +216,7 @@ export default function CountryPageView({ page, extras }: { page: SeoPage; extra
           <Ic n="upload" />Upload your resume
         </Link>
       </section>
+      <SiteFooter />
     </main>
   );
 }
