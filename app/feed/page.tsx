@@ -71,6 +71,7 @@ interface FeedInsights {
   seniority: { level: string; atOrAbove: number; below: number } | null;
   coveragePct: number | null;
   skillGaps: { skill: string; pct: number; youHave: string | null }[];
+  nextSkills: { skill: string; withSkill: string; pairJobs: number; pairPct: number }[];
   reliable: boolean;
 }
 interface Prefs {
@@ -358,7 +359,9 @@ export default function FeedPage() {
               <Icon name="spark" size={18} color="#fff" /><h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>AI coach tip</h2>
             </div>
             <p style={{ position: "relative", margin: 0, fontSize: 12.5, lineHeight: 1.65, color: "#C7CEE4" }}>
-              {insights?.skillGaps?.[0]
+              {insights?.nextSkills?.[0]
+                ? <><strong style={{ color: "#fff" }}>{insights.nextSkills[0].skill}</strong> rides along with your {insights.nextSkills[0].withSkill} — <strong style={{ color: "#4ADE80" }}>{insights.nextSkills[0].pairPct}%</strong> of postings wanting {insights.nextSkills[0].withSkill} also name it.</>
+                : insights?.skillGaps?.[0]
                 ? <>Learning <strong style={{ color: "#fff" }}>{insights.skillGaps[0].skill}</strong> would line you up with the <strong style={{ color: "#4ADE80" }}>{insights.skillGaps[0].pct}%</strong> of roles in your field that ask for it.</>
                 : <>Keep your skills current — as your profile sharpens, so do your matches.</>}
             </p>

@@ -40,12 +40,16 @@ interface Profile {
 }
 
 interface SkillGap { skill: string; jobsWanting: number; pct: number; youHave: string | null }
+interface NextSkill { skill: string; withSkill: string; pairJobs: number; pairPct: number }
+interface LadderStep { skill: string; nextPct: number; yourPct: number; jobs: number }
 interface Insights {
   fieldLabel: string | null;
   targetJobs: number;
   seniority: { level: string; atOrAbove: number; below: number } | null;
   coveragePct: number | null;
   skillGaps: SkillGap[];
+  nextSkills: NextSkill[];
+  ladder: { from: string; to: string; atLevelJobs: number; nextLevelJobs: number; steps: LadderStep[] } | null;
   certs: { label: string; jobs: number }[];
   premiumFrom: number;
   inferred: boolean;
@@ -308,6 +312,42 @@ export default function ProfileEditor() {
                 </div>
               );
             })}
+            {/* Learn-this-next: gaps ranked by the pull of skills you already have */}
+            {insights.nextSkills.length > 0 && (
+              <>
+                <div style={{ ...S.cardLabel, marginTop: 18 }}>Learn this next · what rides along with skills you have</div>
+                {insights.nextSkills.map((n, i) => {
+                  const premium = i >= 1 && tier !== "PREMIUM";
+                  return (
+                    <div key={n.skill} style={S.step}>
+                      <div style={{ flex: 1 }}>
+                        <div style={S.stepTitle}>{n.skill} — pairs with your {n.withSkill}</div>
+                        <div style={S.stepMeta}>{n.pairPct}% of postings wanting {n.withSkill} — which you have — also name {n.skill} ({n.pairJobs} postings)</div>
+                      </div>
+                      {i === 0 ? <span style={S.freeTag}>strongest pull</span> : premium ? <span style={S.premTag}>premium</span> : null}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+            {/* Ladder: the counted diff between your level's postings and the next level's */}
+            {insights.ladder && (
+              <>
+                <div style={{ ...S.cardLabel, marginTop: 18 }}>The jump to {label(insights.ladder.to)} · what the next level&apos;s postings add</div>
+                {insights.ladder.steps.map((s, i) => {
+                  const premium = i >= 1 && tier !== "PREMIUM";
+                  return (
+                    <div key={s.skill} style={S.step}>
+                      <div style={{ flex: 1 }}>
+                        <div style={S.stepTitle}>{s.skill}</div>
+                        <div style={S.stepMeta}>named in {s.nextPct}% of {label(insights.ladder!.to).toLowerCase()} postings vs {s.yourPct}% at your level ({s.jobs} of {insights.ladder!.nextLevelJobs} postings)</div>
+                      </div>
+                      {i === 0 ? <span style={S.freeTag}>next-level diff</span> : premium ? <span style={S.premTag}>premium</span> : null}
+                    </div>
+                  );
+                })}
+              </>
+            )}
             {insights.certs.length > 0 && (
               <div style={S.step}>
                 <div style={{ flex: 1 }}>
