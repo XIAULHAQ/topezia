@@ -17,6 +17,13 @@ export const ACCEPTED_EXTENSIONS = [".pdf", ".docx", ".txt", ".md"] as const;
 
 export class ResumeExtractError extends Error {}
 
+/**
+ * A PDF that opened fine but has no text layer — a scan or photo-export.
+ * Not a user error: the caller falls back to vision parsing (the model reads
+ * the page images directly) instead of telling the person to paste text.
+ */
+export class ResumeScannedError extends ResumeExtractError {}
+
 function extensionOf(filename: string): string {
   const i = filename.lastIndexOf(".");
   return i === -1 ? "" : filename.slice(i).toLowerCase();
@@ -79,11 +86,17 @@ export async function extractResumeText(file: {
 
   const clean = tidy(text);
 
-  // Scanned/image-only PDFs extract to almost nothing. Say so plainly rather
-  // than sending 3 characters to the model and returning a nonsense profile.
+  // Image-only files extract to almost nothing. For PDFs that's a scan —
+  // signal it distinctly so the parse route can fall back to vision parsing
+  // instead of dead-ending the person at the top of the funnel.
   if (clean.length < 100) {
+    if (ext === ".pdf" || file.type === "application/pdf") {
+      throw new ResumeScannedError(
+        "This looks like a scanned PDF — reading the pages as images instead."
+      );
+    }
     throw new ResumeExtractError(
-      "We couldn't find readable text in that file — it may be a scan or an image. Try a text-based PDF, or paste your résumé instead."
+      "We couldn't find readable text in that file — try a different export, or paste your résumé instead."
     );
   }
 

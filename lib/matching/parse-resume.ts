@@ -58,7 +58,12 @@ const PARSE_PROMPT = `You parse a job seeker's résumé into structured JSON. Re
 
 Base everything strictly on the résumé text. Do not invent skills or roles the résumé does not support.`;
 
-export async function parseResume(resumeText: string): Promise<ParsedResume> {
+/** One call to the parse model; returns the raw JSON object the model produced. */
+async function callParseModel(
+  system: string,
+  content: unknown,
+  maxTokens: number
+): Promise<Record<string, unknown>> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -68,10 +73,10 @@ export async function parseResume(resumeText: string): Promise<ParsedResume> {
     },
     body: JSON.stringify({
       model: PARSE_MODEL,
-      max_tokens: 1500,
+      max_tokens: maxTokens,
       temperature: 0,
-      system: PARSE_PROMPT,
-      messages: [{ role: "user", content: resumeText.slice(0, 12000) }],
+      system,
+      messages: [{ role: "user", content }],
     }),
   });
 
@@ -81,11 +86,48 @@ export async function parseResume(resumeText: string): Promise<ParsedResume> {
 
   const data = await res.json();
   const text = data.content?.find((b: { type: string }) => b.type === "text")?.text || "{}";
-  const cleaned = text.replace(/```json|```/g, "").trim();
+  return JSON.parse(text.replace(/```json|```/g, "").trim()) as Record<string, unknown>;
+}
 
-  const parsed = JSON.parse(cleaned) as Partial<ParsedResume>;
+export async function parseResume(resumeText: string): Promise<ParsedResume> {
+  const parsed = (await callParseModel(PARSE_PROMPT, resumeText.slice(0, 12000), 1500)) as Partial<ParsedResume>;
+  return normalizeParsed(parsed);
+}
 
-  // Normalize / guard the shape so downstream code can trust it.
+/**
+ * Vision fallback for scanned/image-only PDFs (no text layer). The model reads
+ * the page images directly — the PDF goes as a native document block, so no
+ * OCR service and no server-side page rendering. One call returns both the
+ * structured parse AND a plain-text transcription (stored as resumeText, so
+ * re-parse/export work the same as for text PDFs).
+ */
+export async function parseScannedResume(
+  pdfBuffer: Buffer
+): Promise<{ parsed: ParsedResume; transcription: string }> {
+  const system =
+    PARSE_PROMPT +
+    `\n\nThis résumé is a SCANNED document — read the page images. Add one extra top-level field to the JSON:\n` +
+    `  "transcription": string   // the résumé's full plain text, faithfully transcribed from the scan\n` +
+    `If the pages are illegible or clearly not a résumé, return {"transcription": ""}.`;
+
+  const raw = await callParseModel(
+    system,
+    [
+      {
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data: pdfBuffer.toString("base64") },
+      },
+      { type: "text", text: "Parse this scanned résumé into the JSON schema." },
+    ],
+    4000 // transcription + parse for a few pages
+  );
+
+  const transcription = typeof raw.transcription === "string" ? raw.transcription.trim() : "";
+  return { parsed: normalizeParsed(raw as Partial<ParsedResume>), transcription };
+}
+
+// Normalize / guard the shape so downstream code can trust it.
+function normalizeParsed(parsed: Partial<ParsedResume>): ParsedResume {
   return {
     fullName: parsed.fullName ?? null,
     headlineRole: parsed.headlineRole?.trim() || null,
