@@ -74,6 +74,13 @@ export default function ProfileEditor() {
   const [newCert, setNewCert] = useState("");
   const [reup, setReup] = useState<"idle" | "working">("idle");
   const [reupErr, setReupErr] = useState<string | null>(null);
+  const [reupLong, setReupLong] = useState(false); // >7s — likely a scanned PDF
+
+  useEffect(() => {
+    if (reup !== "working") { setReupLong(false); return; }
+    const t = setTimeout(() => setReupLong(true), 7000);
+    return () => clearTimeout(t);
+  }, [reup]);
   const [industriesText, setIndustriesText] = useState("");
   const [locationsText, setLocationsText] = useState("");
   const [insights, setInsights] = useState<Insights | null>(null);
@@ -294,6 +301,12 @@ export default function ProfileEditor() {
             <div style={{ ...S.hint, flex: 1, minWidth: 220, marginTop: 0 }}>Refreshes your skills, experience, education and photo from the new file. Your job preferences and salary stay as they are.</div>
           </div>
           {reupErr && <p style={{ color: "#dc2626", fontSize: 13, margin: "10px 0 0" }}>{reupErr}</p>}
+          {reup === "working" && reupLong && (
+            <p style={{ background: "#F5F3FF", border: "1.5px solid #C4B5FD", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#4C1D95", lineHeight: 1.5, margin: "12px 0 0" }}>
+              <strong>Taking a little longer —</strong> your PDF looks like a scanned or image-based file, so we&apos;re
+              reading the pages the way a person would. That adds 10–20 seconds; everything still imports.
+            </p>
+          )}
         </section>
 
         <section style={S.card}>

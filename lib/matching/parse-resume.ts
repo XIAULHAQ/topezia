@@ -94,20 +94,33 @@ export async function parseResume(resumeText: string): Promise<ParsedResume> {
   return normalizeParsed(parsed);
 }
 
+/** Tight box around the headshot on a scanned page — fractions of page size. */
+export interface ScannedPhotoBox {
+  page: number; // 1-based
+  x: number; y: number; w: number; h: number; // 0-1, origin top-left
+}
+
 /**
  * Vision fallback for scanned/image-only PDFs (no text layer). The model reads
  * the page images directly — the PDF goes as a native document block, so no
- * OCR service and no server-side page rendering. One call returns both the
- * structured parse AND a plain-text transcription (stored as resumeText, so
- * re-parse/export work the same as for text PDFs).
+ * OCR service and no server-side page rendering. One call returns the
+ * structured parse, a plain-text transcription (stored as resumeText, so
+ * re-parse/export work the same as for text PDFs), and — when the scan shows a
+ * headshot — its bounding box, so the photo cropper can cut the avatar out of
+ * the page image.
  */
 export async function parseScannedResume(
   pdfBuffer: Buffer
-): Promise<{ parsed: ParsedResume; transcription: string }> {
+): Promise<{ parsed: ParsedResume; transcription: string; photoBox: ScannedPhotoBox | null }> {
   const system =
     PARSE_PROMPT +
-    `\n\nThis résumé is a SCANNED document — read the page images. Add one extra top-level field to the JSON:\n` +
+    `\n\nThis résumé is a SCANNED document — read the page images. Add two extra top-level fields to the JSON:\n` +
     `  "transcription": string   // the résumé's full plain text, faithfully transcribed from the scan\n` +
+    `  "photoBox": { "page": number, "x": number, "y": number, "w": number, "h": number } | null\n` +
+    `                            // if the résumé shows a photo/headshot of the person: page is 1-based,\n` +
+    `                            // x,y is the box's TOP-LEFT corner and w,h its size, ALL as fractions (0-1)\n` +
+    `                            // of the page width/height. Draw the box tightly around just the photo.\n` +
+    `                            // null when there is no photo of the person (logos/icons don't count).\n` +
     `If the pages are illegible or clearly not a résumé, return {"transcription": ""}.`;
 
   const raw = await callParseModel(
@@ -123,7 +136,21 @@ export async function parseScannedResume(
   );
 
   const transcription = typeof raw.transcription === "string" ? raw.transcription.trim() : "";
-  return { parsed: normalizeParsed(raw as Partial<ParsedResume>), transcription };
+
+  // Trust nothing about the box shape — clamp fractions, require a sane size
+  // (a headshot is at least ~4% of the page in each direction, and never most
+  // of the page).
+  let photoBox: ScannedPhotoBox | null = null;
+  const b = raw.photoBox as Partial<ScannedPhotoBox> | null | undefined;
+  if (b && [b.page, b.x, b.y, b.w, b.h].every((v) => typeof v === "number" && Number.isFinite(v))) {
+    const x = Math.max(0, Math.min(1, b.x!)), y = Math.max(0, Math.min(1, b.y!));
+    const w = Math.min(1 - x, b.w!), h = Math.min(1 - y, b.h!);
+    if (w >= 0.04 && h >= 0.04 && w <= 0.6 && h <= 0.6) {
+      photoBox = { page: Math.max(1, Math.round(b.page!)), x, y, w, h };
+    }
+  }
+
+  return { parsed: normalizeParsed(raw as Partial<ParsedResume>), transcription, photoBox };
 }
 
 // Normalize / guard the shape so downstream code can trust it.

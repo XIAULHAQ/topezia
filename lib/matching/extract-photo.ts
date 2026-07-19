@@ -226,6 +226,66 @@ async function pdfPhotoViaPdfjs(buffer: Buffer): Promise<string | null> {
   return `data:image/png;base64,${png.toString("base64")}`;
 }
 
+/**
+ * Cut the headshot out of a SCANNED page. The vision parse tells us where the
+ * photo sits (fractions of the page); the page itself is one big embedded
+ * image, so we decode it via pdfjs, crop the box (with a little padding), and
+ * PNG-encode the result. Returns null on any doubt — a missing avatar is
+ * always better than a wrong crop.
+ */
+export async function cropScannedPhoto(
+  buffer: Buffer,
+  box: { page: number; x: number; y: number; w: number; h: number }
+): Promise<string | null> {
+  try {
+    const { getDocumentProxy, getResolvedPDFJS } = await import("unpdf");
+    const pdf = await getDocumentProxy(new Uint8Array(buffer));
+    const pageNum = Math.min(Math.max(1, box.page), pdf.numPages);
+    const page = await pdf.getPage(pageNum);
+    const OPS = (await getResolvedPDFJS()).OPS as { paintImageXObject: number };
+    const ops = await page.getOperatorList();
+    const names = new Set<string>();
+    for (let i = 0; i < ops.fnArray.length; i++) if (ops.fnArray[i] === OPS.paintImageXObject) names.add(ops.argsArray[i][0] as string);
+    const resolved = await Promise.all([...names].map((n) => resolvePdfImage(page as never, n)));
+    // The scan IS the page: take the largest decoded image (no headshot-shape
+    // filter here — we're cropping, not picking).
+    const imgs = resolved.filter((im): im is NonNullable<typeof im> => !!im && (im.kind === 2 || im.kind === 3));
+    if (imgs.length === 0) return null;
+    imgs.sort((a, b) => b.width * b.height - a.width * a.height);
+    const scan = imgs[0];
+    const channels = scan.kind === 3 ? 4 : 3;
+
+    // Box fractions -> pixels, padded ~2% of the page so a slightly-tight
+    // model box doesn't clip the chin/hair.
+    const pad = 0.02;
+    const sx = Math.max(0, Math.floor((box.x - pad) * scan.width));
+    const sy = Math.max(0, Math.floor((box.y - pad) * scan.height));
+    const ex = Math.min(scan.width, Math.ceil((box.x + box.w + pad) * scan.width));
+    let ey = Math.min(scan.height, Math.ceil((box.y + box.h + pad) * scan.height));
+    const cw = ex - sx;
+    // The model's box sometimes runs long and swallows the section below the
+    // photo. A headshot region is never much taller than wide — cap the aspect
+    // and trim from the BOTTOM (the face sits at the top of the region).
+    if (ey - sy > cw * 1.35) ey = sy + Math.round(cw * 1.35);
+    const ch = ey - sy;
+    if (cw < 40 || ch < 40) return null; // too small to be a real headshot crop
+
+    const src = Buffer.from(scan.data.buffer, scan.data.byteOffset, scan.data.byteLength);
+    const out = Buffer.alloc(cw * ch * channels);
+    for (let y = 0; y < ch; y++) {
+      const srcStart = ((sy + y) * scan.width + sx) * channels;
+      src.copy(out, y * cw * channels, srcStart, srcStart + cw * channels);
+    }
+    const scaled = downscale(out, cw, ch, channels, MAX_THUMB_DIM);
+    const png = encodePng(scaled.w, scaled.h, scaled.data, channels as 3 | 4);
+    if (png.length > MAX_PHOTO_BYTES) return null;
+    return `data:image/png;base64,${png.toString("base64")}`;
+  } catch (err) {
+    console.error("scanned photo crop failed (non-fatal):", err);
+    return null;
+  }
+}
+
 export async function extractResumePhoto(file: { buffer: Buffer; filename: string; type?: string }): Promise<string | null> {
   try {
     const ext = extensionOf(file.filename);

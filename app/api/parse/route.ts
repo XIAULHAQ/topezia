@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseResume, parseScannedResume } from "@/lib/matching/parse-resume";
 import { extractResumeText, ResumeExtractError, ResumeScannedError, MAX_RESUME_BYTES } from "@/lib/matching/extract-text";
-import { extractResumePhoto } from "@/lib/matching/extract-photo";
+import { extractResumePhoto, cropScannedPhoto } from "@/lib/matching/extract-photo";
 
 export const maxDuration = 60;
 export const runtime = "nodejs"; // pdf/docx parsing needs Node, not edge
@@ -59,17 +59,20 @@ export async function POST(req: NextRequest) {
 
   try {
     if ("scannedPdf" in input) {
-      // Scanned PDF: the model reads the page images and returns the parse plus
-      // a transcription (stored as resumeText, same as a text PDF). No photo —
-      // in a scan the "best embedded image" is the whole page, not a headshot.
-      const { parsed, transcription } = await parseScannedResume(input.scannedPdf);
+      // Scanned PDF: the model reads the page images and returns the parse, a
+      // transcription (stored as resumeText, same as a text PDF), and — when
+      // the scan shows a headshot — its location, which we crop out of the
+      // page image for the avatar. (The generic photo extractor is useless
+      // here: a scan's "best embedded image" is the whole page.)
+      const { parsed, transcription, photoBox } = await parseScannedResume(input.scannedPdf);
       if (transcription.length < 100) {
         return NextResponse.json(
           { error: "We couldn't read that scan — the pages may be blurry or incomplete. Try a clearer copy, or paste your résumé text instead." },
           { status: 400 }
         );
       }
-      return NextResponse.json({ parsed, resumeText: transcription, photo: null, scanned: true });
+      const photo = photoBox ? await cropScannedPhoto(input.scannedPdf, photoBox) : null;
+      return NextResponse.json({ parsed, resumeText: transcription, photo, scanned: true });
     }
 
     const parsed = await parseResume(input.text);

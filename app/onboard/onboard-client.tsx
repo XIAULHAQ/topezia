@@ -66,12 +66,18 @@ export default function OnboardClient() {
   const [error, setError] = useState<string | null>(null);
   const [tip, setTip] = useState(0);
   const [phase, setPhase] = useState(0);
+  const [longWait, setLongWait] = useState(false); // parse running >7s — likely a scanned PDF
 
   useEffect(() => {
-    if (!loading) { setTip(0); setPhase(0); return; }
+    if (!loading) { setTip(0); setPhase(0); setLongWait(false); return; }
     const t = setInterval(() => setTip((i) => (i + 1) % PARSE_TIPS.length), 3800);
     const s = setInterval(() => setPhase((i) => Math.min(i + 1, PARSE_STEPS.length - 1)), 2600);
-    return () => { clearInterval(t); clearInterval(s); };
+    // Scanned (image-only) PDFs go through vision parsing, which takes an
+    // extra 10-20s. We can't know it's a scan until the server answers, so
+    // after 7s we explain the likely reason prominently instead of looking
+    // stuck.
+    const w = setTimeout(() => setLongWait(true), 7000);
+    return () => { clearInterval(t); clearInterval(s); clearTimeout(w); };
   }, [loading]);
 
   async function saveAndContinue(parsed: Parsed, text: string, photo: string | null) {
@@ -157,6 +163,13 @@ export default function OnboardClient() {
             </div>
             <div style={S.bar}><div style={S.barFill} /></div>
             <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 18 }}>{phaseLabel === "Building your profile" ? "Building your profile" : PARSE_STEPS[phase]}…</div>
+            {longWait && phaseLabel !== "Building your profile" && fileName?.toLowerCase().endsWith(".pdf") && (
+              <div style={S.scanNote}>
+                <strong style={{ display: "block", marginBottom: 4 }}>Taking a little longer — hang tight.</strong>
+                Your PDF looks like a scanned or image-based file, so we&apos;re reading the pages the way a person
+                would. That adds 10–20 seconds. Don&apos;t refresh — everything still imports, including your photo.
+              </div>
+            )}
             <div style={S.tip} key={tip}>{PARSE_TIPS[tip]}</div>
           </div>
         ) : (
@@ -252,6 +265,7 @@ const S: Record<string, CSSProperties> = {
   trust: { display: "flex", gap: 26, justifyContent: "center", marginTop: 44, paddingTop: 26, borderTop: `1px solid ${C.line}`, flexWrap: "wrap" },
   trustItem: { display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.mut },
   parsing: { marginTop: 28, border: `1px solid ${C.line}`, borderRadius: 20, background: "#fff", padding: "36px 28px", textAlign: "center", boxShadow: "0 8px 24px rgba(15,23,42,.06)" },
+  scanNote: { background: "#F5F3FF", border: "1.5px solid #C4B5FD", borderRadius: 12, padding: "14px 18px", fontSize: 13.5, color: "#4C1D95", lineHeight: 1.55, textAlign: "left", margin: "0 auto 18px", maxWidth: 460, animation: "fade .4s ease" },
   parseRow: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 18, flexWrap: "wrap" },
   check: { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, borderRadius: 999, background: "#059669", color: "#fff", fontSize: 12, fontWeight: 700 },
   bar: { height: 6, borderRadius: 999, background: "#ececf2", overflow: "hidden", marginBottom: 14, maxWidth: 420, marginLeft: "auto", marginRight: "auto" },
