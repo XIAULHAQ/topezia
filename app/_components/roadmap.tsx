@@ -18,6 +18,16 @@ const MUTED = "#6b7280";
 export interface SkillGap { skill: string; jobsWanting: number; pct: number; youHave: string | null }
 export interface NextSkill { skill: string; withSkill: string; pairJobs: number; pairPct: number }
 export interface LadderStep { skill: string; nextPct: number; yourPct: number; jobs: number }
+export interface Momentum {
+  fresh7: number;
+  fresh30: number;
+  dated: number;
+  medianAgeDays: number;
+  corpusMedianAgeDays: number | null;
+  ageMix: { under1w: number; w1to4: number; over4w: number };
+  weeklyAdded: { weekStart: string; n: number }[] | null;
+  medianLifetimeDays: number | null;
+}
 export interface Insights {
   fieldLabel: string | null;
   targetJobs: number;
@@ -25,6 +35,7 @@ export interface Insights {
   coveragePct: number | null;
   skillGaps: SkillGap[];
   nextSkills: NextSkill[];
+  momentum: Momentum | null;
   ladder: { from: string; to: string; atLevelJobs: number; nextLevelJobs: number; steps: LadderStep[] } | null;
   certs: { label: string; jobs: number }[];
   premiumFrom: number;
@@ -145,6 +156,85 @@ export function RoadmapCard({ insights, tier }: { insights: Insights; tier: stri
   );
 }
 
+// Field momentum — how fresh the market's live inventory is, from the dates
+// the postings themselves declare. The growth trend and posting-lifetime rows
+// stay visibly locked until our own tracking has enough history to count them
+// (the engine returns null until then) — shown as locked, never estimated.
+export function MomentumCard({ momentum, fieldLabel }: { momentum: Momentum; fieldLabel: string | null }) {
+  const pct = (n: number) => Math.round((n / momentum.dated) * 100);
+  const peak = momentum.weeklyAdded ? Math.max(...momentum.weeklyAdded.map((w) => w.n), 1) : 1;
+  return (
+    <section style={R.card}>
+      <div style={R.cardLabel}>Field momentum · how fresh your market is</div>
+      <div style={R.diagnosis}>
+        <strong>{momentum.fresh7}</strong> of the {momentum.dated} dated postings in {fieldLabel ?? "your field"} went up in the last 7 days; <strong>{momentum.fresh30}</strong> in the last 30.
+      </div>
+      <div style={R.secSub}>Each bar is the share of the {momentum.dated} dated live postings in your field, by posting date.</div>
+      {([
+        ["posted this week", momentum.ageMix.under1w],
+        ["1–4 weeks up", momentum.ageMix.w1to4],
+        ["over 4 weeks up", momentum.ageMix.over4w],
+      ] as const).map(([lbl, n]) => (
+        <div key={lbl} style={R.lvlRow}>
+          <span style={{ ...R.lvlLabel, width: 104 }}>{lbl}</span>
+          <Meter pct={pct(n)} />
+          <span style={{ ...R.meterNote, minWidth: 76 }}>{n} postings</span>
+        </div>
+      ))}
+      <div style={{ ...R.gapRow, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <div style={R.rowTitle}>Median posting age: {momentum.medianAgeDays} days</div>
+          {momentum.corpusMedianAgeDays !== null && (
+            <div style={R.rowMeta}>across every field on Topezia it&apos;s {momentum.corpusMedianAgeDays} days</div>
+          )}
+        </div>
+      </div>
+      {/* Locked-until-counted rows: real once the engine has history, never estimated */}
+      <div style={R.gapRow}>
+        <div style={R.rowTop}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={R.rowTitle}>Postings added per week</div>
+            <div style={R.rowMeta}>
+              {momentum.weeklyAdded
+                ? null
+                : "unlocks once we've watched your market for 3 weeks — we won't read our own first crawl as a hiring spike"}
+            </div>
+          </div>
+          {!momentum.weeklyAdded && <span style={R.lockTag}>counting</span>}
+        </div>
+        {momentum.weeklyAdded && (
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 10, marginTop: 8 }}>
+            {momentum.weeklyAdded.map((w) => (
+              <div key={w.weekStart} style={{ flex: 1, maxWidth: 90 }}>
+                <div style={{ height: 42, display: "flex", alignItems: "flex-end" }}>
+                  <div style={{ width: "100%", borderRadius: 4, background: "#8B5CF6", height: `${Math.max(6, (w.n / peak) * 100)}%` }} />
+                </div>
+                <div style={{ ...R.meterNote, marginTop: 4 }}>{w.n} · wk of {w.weekStart.slice(5)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div style={R.gapRow}>
+        <div style={R.rowTop}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={R.rowTitle}>
+              {momentum.medianLifetimeDays !== null
+                ? `Postings in your field stay open a median ${momentum.medianLifetimeDays} days`
+                : "How long postings stay open"}
+            </div>
+            {momentum.medianLifetimeDays === null && (
+              <div style={R.rowMeta}>unlocks after we&apos;ve seen 20 of your field&apos;s postings actually close — counted from real expirations, not guessed</div>
+            )}
+          </div>
+          {momentum.medianLifetimeDays === null && <span style={R.lockTag}>counting</span>}
+        </div>
+      </div>
+      <div style={R.foot}>Posting dates come from the postings themselves. The locked rows light up when our own tracking can count them honestly.</div>
+    </section>
+  );
+}
+
 // The two-row hook beside profile editing: the diagnosis and the strongest
 // pull, with the full roadmap one click away in Career Coach.
 export function RoadmapTeaser({ insights }: { insights: Insights }) {
@@ -188,6 +278,7 @@ const R: Record<string, CSSProperties> = {
   lvlLabel: { fontSize: 11, fontWeight: 700, color: MUTED, width: 46, flexShrink: 0, letterSpacing: 0.3 },
   freeTag: { fontSize: 11, color: MUTED, whiteSpace: "nowrap" },
   premTag: { fontSize: 11, padding: "2px 9px", borderRadius: 12, background: "#f0eaff", color: "#7a3cff", whiteSpace: "nowrap" },
+  lockTag: { fontSize: 11, padding: "2px 9px", borderRadius: 12, background: "#f4f4f7", color: MUTED, whiteSpace: "nowrap" },
   foot: { fontSize: 12, color: MUTED, borderTop: "1px solid #f2f2f5", marginTop: 16, paddingTop: 12, lineHeight: 1.45 },
   coachLink: { fontSize: 12.5, fontWeight: 700, color: "#4f46e5", textDecoration: "none", whiteSpace: "nowrap" },
 };

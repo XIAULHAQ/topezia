@@ -69,6 +69,22 @@ export interface LadderStep {
   jobs: number; // next-level postings naming it
 }
 
+// How fresh the field's live inventory is, from the dates the postings
+// themselves declare. Deliberately NOT a growth claim: week-over-week "added"
+// from our own tracking would be an ingestion artifact until we have real
+// history, and posting lifetimes need observed expirations — both stay null
+// until the data can back them (see the thresholds in getProfileInsights).
+export interface Momentum {
+  fresh7: number; // live in-field postings posted in the last 7 days
+  fresh30: number;
+  dated: number; // postings carrying a source date (the denominator)
+  medianAgeDays: number; // median age of the dated live postings
+  corpusMedianAgeDays: number | null; // same stat across all fields, for contrast
+  ageMix: { under1w: number; w1to4: number; over4w: number };
+  weeklyAdded: { weekStart: string; n: number }[] | null; // unlocks at >=3 full ingestion weeks
+  medianLifetimeDays: number | null; // unlocks at >=20 observed in-field expirations
+}
+
 export interface ProfileInsights {
   fieldLabel: string | null; // "backend engineer roles", or null if we can't scope
   targetJobs: number; // eligible postings in your field
@@ -76,6 +92,7 @@ export interface ProfileInsights {
   coveragePct: number | null; // share of skills your field asks for that you have
   skillGaps: SkillGap[]; // most-wanted skills you lack or are only familiar with
   nextSkills: NextSkill[]; // gaps that co-occur with skills you already have
+  momentum: Momentum | null; // null when the field is too thin or nothing is dated
   ladder: {
     from: string; // your seniority
     to: string; // the next level up
@@ -110,7 +127,7 @@ async function targetJobIds(p: {
   country: string | null;
   headlineRoleId: string | null;
   skillIds: string[];
-}): Promise<{ ids: string[]; verticalId: string | null; scope: "role" | "vertical" | "none"; label: string | null }> {
+}): Promise<{ ids: string[]; verticalId: string | null; scope: "role" | "vertical" | "none"; label: string | null; fieldWhere: object | null }> {
   const eligibleRegions = p.country
     ? Object.entries(REGION_MEMBERS).filter(([, m]) => m.includes(p.country!)).map(([r]) => r)
     : [];
@@ -142,7 +159,11 @@ async function targetJobIds(p: {
       take: 4000,
     });
     if (roleJobs.length >= ROLE_SCOPE_MIN) {
-      return { ids: roleJobs.map((r) => r.id), verticalId: role?.verticalId ?? null, scope: "role", label: role?.name?.toLowerCase() ?? null };
+      return {
+        ids: roleJobs.map((r) => r.id), verticalId: role?.verticalId ?? null, scope: "role",
+        label: role?.name?.toLowerCase() ?? null,
+        fieldWhere: { roleId: p.headlineRoleId, ...eligibility },
+      };
     }
     if (role?.verticalId) {
       return scopeToVertical(role.verticalId, eligibility);
@@ -184,16 +205,16 @@ async function targetJobIds(p: {
     }
   }
 
-  return { ids: [], verticalId: null, scope: "none", label: null };
+  return { ids: [], verticalId: null, scope: "none", label: null, fieldWhere: null };
 }
 
 async function scopeToVertical(
   verticalId: string,
   eligibility: object
-): Promise<{ ids: string[]; verticalId: string | null; scope: "vertical"; label: string | null }> {
+): Promise<{ ids: string[]; verticalId: string | null; scope: "vertical"; label: string | null; fieldWhere: object }> {
   const vJobs = await prisma.job.findMany({ where: { status: "LIVE", verticalId, ...eligibility }, select: { id: true }, take: 4000 });
   const vName = (await prisma.vertical.findUnique({ where: { id: verticalId }, select: { name: true } }))?.name?.toLowerCase() ?? null;
-  return { ids: vJobs.map((r) => r.id), verticalId, scope: "vertical", label: vName };
+  return { ids: vJobs.map((r) => r.id), verticalId, scope: "vertical", label: vName, fieldWhere: { verticalId, ...eligibility } };
 }
 
 export async function getProfileInsights(profileId: string): Promise<ProfileInsights | null> {
@@ -207,7 +228,7 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
   if (!profile) return null;
 
   const mySkills = new Map(profile.skills.map((s) => [s.skillId, s.proficiency]));
-  const { ids, scope, label } = await targetJobIds({
+  const { ids, scope, label, fieldWhere } = await targetJobIds({
     profileId,
     country: profile.country,
     headlineRoleId: profile.headlineRoleId,
@@ -224,7 +245,7 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
   // silently showing nothing.
   if (ids.length < 5) {
     return { fieldLabel, targetJobs: ids.length, seniority: null, coveragePct: null,
-      skillGaps: [], nextSkills: [], ladder: null, certs: [], premiumFrom: 2, inferred, reliable: false };
+      skillGaps: [], nextSkills: [], momentum: null, ladder: null, certs: [], premiumFrom: 2, inferred, reliable: false };
   }
 
   // Skill demand across your field. One scan of the per-job rows (~8 skills/job)
@@ -393,14 +414,17 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
     .sort((a, b) => b.pairPct - a.pairPct || b.pairJobs - a.pairJobs)
     .slice(0, 3);
 
-  // Seniority fit, from the enum every posting carries. Per-job rows instead of
-  // an aggregate because the ladder below needs to know WHICH postings sit at
-  // which level, not just the counts.
+  // Per-job metadata in one fetch: seniority powers the mirror and the ladder
+  // (which need to know WHICH postings sit at which level, not just counts),
+  // postedAt powers the momentum lens.
+  const jobMeta = await prisma.job.findMany({ where: { id: { in: ids } }, select: { id: true, seniority: true, postedAt: true } });
+
+  // Seniority fit, from the enum every posting carries.
   let seniority: ProfileInsights["seniority"] = null;
   let ladder: ProfileInsights["ladder"] = null;
   if (profile.seniority) {
     const myRank = SENIORITY_RANK[profile.seniority] ?? 0;
-    const jobSen = await prisma.job.findMany({ where: { id: { in: ids } }, select: { id: true, seniority: true } });
+    const jobSen = jobMeta;
     let atOrAbove = 0, below = 0;
     for (const j of jobSen) {
       const r = SENIORITY_RANK[j.seniority] ?? 0;
@@ -460,6 +484,77 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
   );
   const certs = certCounts.filter((c) => c.jobs >= 3).sort((a, b) => b.jobs - a.jobs);
 
+  // Field momentum — what a snapshot can honestly say: how fresh the live
+  // inventory is, from the dates the postings themselves declare. What it
+  // can't: growth ("added this week" from a fresh ingest is an artifact of us
+  // arriving, not the market moving — every firstSeenAt is ingestion week) and
+  // lifetimes (no observed expirations yet). Those two unlock behind history
+  // gates below and stay null until the data can back them.
+  let momentum: Momentum | null = null;
+  {
+    const now = Date.now();
+    const DAY = 86_400_000;
+    const ages = jobMeta
+      .filter((j) => j.postedAt)
+      .map((j) => Math.max(0, (now - j.postedAt!.getTime()) / DAY))
+      .sort((a, b) => a - b);
+    if (ages.length >= 5) {
+      const corpusRow = await prisma.$queryRawUnsafe<{ p50: number | null }[]>(
+        `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (NOW() - "postedAt")) / 86400) AS p50
+         FROM "Job" WHERE status = 'LIVE' AND "postedAt" IS NOT NULL`
+      );
+
+      // History gates: weekly-added needs >=3 weeks of us actually watching
+      // (min firstSeenAt older than 21 days), lifetimes need >=20 in-field
+      // postings we've SEEN expire. Until then: null, never an estimate.
+      let weeklyAdded: Momentum["weeklyAdded"] = null;
+      let medianLifetimeDays: number | null = null;
+      if (fieldWhere) {
+        const oldest = await prisma.job.aggregate({ _min: { firstSeenAt: true } });
+        if (oldest._min.firstSeenAt && now - oldest._min.firstSeenAt.getTime() >= 21 * DAY) {
+          const rows = await prisma.job.findMany({
+            where: { ...fieldWhere, status: { not: "DUPLICATE" }, firstSeenAt: { gte: new Date(now - 28 * DAY) } },
+            select: { firstSeenAt: true },
+          });
+          const byWeek = new Map<string, number>();
+          for (const r of rows) {
+            const d = new Date(r.firstSeenAt);
+            d.setUTCHours(0, 0, 0, 0);
+            d.setUTCDate(d.getUTCDate() - d.getUTCDay()); // sunday-start weeks
+            const k = d.toISOString().slice(0, 10);
+            byWeek.set(k, (byWeek.get(k) ?? 0) + 1);
+          }
+          weeklyAdded = [...byWeek.entries()].sort().map(([weekStart, n]) => ({ weekStart, n }));
+        }
+        const expired = await prisma.job.findMany({
+          where: { ...fieldWhere, status: "EXPIRED" },
+          select: { firstSeenAt: true, updatedAt: true },
+        });
+        if (expired.length >= 20) {
+          const lives = expired
+            .map((e) => (e.updatedAt.getTime() - e.firstSeenAt.getTime()) / DAY)
+            .sort((a, b) => a - b);
+          medianLifetimeDays = Math.round(lives[Math.floor(lives.length / 2)]);
+        }
+      }
+
+      momentum = {
+        fresh7: ages.filter((a) => a <= 7).length,
+        fresh30: ages.filter((a) => a <= 30).length,
+        dated: ages.length,
+        medianAgeDays: Math.round(ages[Math.floor(ages.length / 2)]),
+        corpusMedianAgeDays: corpusRow[0]?.p50 != null ? Math.round(Number(corpusRow[0].p50)) : null,
+        ageMix: {
+          under1w: ages.filter((a) => a <= 7).length,
+          w1to4: ages.filter((a) => a > 7 && a <= 28).length,
+          over4w: ages.filter((a) => a > 28).length,
+        },
+        weeklyAdded,
+        medianLifetimeDays,
+      };
+    }
+  }
+
   return {
     fieldLabel,
     targetJobs: ids.length,
@@ -467,6 +562,7 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
     coveragePct,
     skillGaps: gaps,
     nextSkills,
+    momentum,
     ladder,
     certs: certs.slice(0, 4),
     premiumFrom: 2, // first 2 gaps free (the diagnosis); the rest is premium later

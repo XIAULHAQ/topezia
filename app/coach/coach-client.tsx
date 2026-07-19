@@ -8,7 +8,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { SoonTag } from "@/app/_components/ui";
-import { RoadmapCard, type Insights } from "@/app/_components/roadmap";
+import { MomentumCard, RoadmapCard, type Insights } from "@/app/_components/roadmap";
 
 const INK = "#1a1a2e";
 const MUTED = "#6b7280";
@@ -40,7 +40,10 @@ export default function CoachClient() {
       ) : insights === "error" ? (
         <p style={S.msg}>We couldn&apos;t load your insights just now — refresh to try again.</p>
       ) : insights.reliable ? (
-        <RoadmapCard insights={insights} tier={tier} />
+        <>
+          {insights.momentum && <MomentumCard momentum={insights.momentum} fieldLabel={insights.fieldLabel} />}
+          <RoadmapCard insights={insights} tier={tier} />
+        </>
       ) : (
         <section style={S.thinCard}>
           {insights.fieldLabel ? (
@@ -55,7 +58,6 @@ export default function CoachClient() {
       <section style={S.soonCard}>
         <div style={S.soonHead}>Coming to your coach</div>
         {[
-          ["Field momentum", "how fast your field is adding postings, and how long they stay open"],
           ["Insight alerts", "a note when your market moves — a gap crossing a threshold, a skill trending up"],
           ["Shareable career-fit report", "your mirror and roadmap as a page you can send"],
         ].map(([t, d]) => (
