@@ -6,20 +6,23 @@
  * this after painting the fast Stage-1 results, so honest scores + why-lines
  * fill in without blocking the first render.
  */
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { getMatches, eligibleLiveCount } from "@/lib/matching/match";
 
 export const maxDuration = 60;
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   const { userId } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "no-profile" }, { status: 401 });
   const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true, country: true } });
   if (!profile) return NextResponse.json({ error: "no-profile" }, { status: 401 });
 
-  const matches = await getMatches(profile.id, { rerankN: 12, rerank: true });
+  // ?kind=PROJECT mirrors GET /api/matches — enriches the Projects view.
+  const kind = req.nextUrl.searchParams.get("kind") === "PROJECT" ? ("PROJECT" as const) : undefined;
+
+  const matches = await getMatches(profile.id, { rerankN: 12, rerank: true, kind });
   const totalLive = await eligibleLiveCount(profile.country); // eligible set, not whole corpus
   return NextResponse.json({
     matches,

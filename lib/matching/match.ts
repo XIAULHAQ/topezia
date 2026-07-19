@@ -74,6 +74,11 @@ export interface MatchOptions {
   retrieveN?: number; // candidates kept after hard filters (default 30)
   rerankN?: number; // how many of those get an LLM score (default 12)
   rerank?: boolean; // false = Stage-1 only (fast, provisional scores, no LLM)
+  // Restrict retrieval to one kind. The feed's "Projects" pill needs this:
+  // projects compete against thousands of jobs on raw similarity, so filtering
+  // the general top-12 client-side usually yields zero — retrieval itself has
+  // to be scoped to guarantee the user's nearest projects are considered.
+  kind?: "PROJECT";
 }
 
 export async function getMatches(profileId: string, opts: MatchOptions = {}): Promise<JobMatch[]> {
@@ -137,6 +142,9 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       OR (j.country IS NULL AND j."remoteScope" IS NULL)
     )`;
 
+  // Literal from the typed option, never user input — safe to inline.
+  const kindSql = opts.kind === "PROJECT" ? `AND j.kind = 'PROJECT'` : "";
+
   const selectCols = `j.id, j."titleRaw", j."titleNormalized", j."companyName", j.kind::text AS kind, j.source::text AS source,
       j."sourceUrl", j."remoteType", j."employmentType", j."salaryMin", j."salaryMax",
       j."salaryPeriod", j."locationState", j.country, j."remoteScope", j."lastVerifiedAt", j."descriptionRaw",
@@ -148,6 +156,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
      JOIN "Vertical" v ON v.id = j."verticalId"
      CROSS JOIN "Profile" p
      WHERE p.id = $1 AND p.embedding IS NOT NULL AND j.status = 'LIVE' AND j.embedding IS NOT NULL
+       ${kindSql}
        AND ${eligSql}
      ORDER BY j.embedding <=> p.embedding
      LIMIT 100`,
@@ -167,6 +176,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
        JOIN "Vertical" v ON v.id = j."verticalId"
        CROSS JOIN "Profile" p
        WHERE p.id = $1 AND p.embedding IS NOT NULL AND j.status = 'LIVE' AND j.embedding IS NOT NULL
+         ${kindSql}
          AND v.slug = $4 AND ${eligSql}
        ORDER BY j.embedding <=> p.embedding
        LIMIT 40`,
@@ -182,6 +192,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
        FROM "Job" j
        JOIN "Vertical" v ON v.id = j."verticalId"
        WHERE j.status = 'LIVE'
+       ${kindSql}
        ORDER BY j."lastVerifiedAt" DESC
        LIMIT 100`
     );

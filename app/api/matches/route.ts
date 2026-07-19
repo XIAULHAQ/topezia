@@ -6,7 +6,7 @@
  * No LLM call here, so it returns in ~2s. The feed then calls POST
  * /api/matches/rerank to enrich the pending ones (progressive loading).
  */
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { getMatches, eligibleLiveCount, type JobMatch } from "@/lib/matching/match";
@@ -47,12 +47,16 @@ function respond(matches: JobMatch[], totalLive: number, authed: boolean, alert:
   });
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const { profileId, authed } = await resolveIdentity();
   if (!profileId) return NextResponse.json({ error: "no-profile" }, { status: 401 });
 
+  // ?kind=PROJECT — the feed's Projects pill: retrieval scoped to projects so
+  // the user's nearest projects surface even though jobs dominate raw similarity.
+  const kind = req.nextUrl.searchParams.get("kind") === "PROJECT" ? ("PROJECT" as const) : undefined;
+
   const profile = await prisma.profile.findUnique({ where: { id: profileId }, select: { country: true } });
-  const matches = await getMatches(profileId, { rerankN: 12, rerank: false });
+  const matches = await getMatches(profileId, { rerankN: 12, rerank: false, kind });
   const totalLive = await eligibleLiveCount(profile?.country ?? null); // jobs open to them, not the whole corpus
   const alert = await feedAlert(profileId);
   return respond(matches, totalLive, authed, alert);
