@@ -304,7 +304,7 @@ export default function ProfileView() {
           {/* REAL: improve your match — from insights gaps */}
           {ins?.reliable && ins.skillGaps.length > 0 && (
             <Card>
-              <div style={{ display: "flex", alignItems: "baseline", marginBottom: 14 }}><h2 style={S.railH}>Improve your match</h2><a href="/profile/edit" style={S.railLink}>Full roadmap</a></div>
+              <div style={{ display: "flex", alignItems: "baseline", marginBottom: 14 }}><h2 style={S.railH}>Improve your match</h2><a href="/coach" style={S.railLink}>Full roadmap</a></div>
               <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
                 {ins.skillGaps.slice(0, 3).map((g) => (
                   <div key={g.skill} style={{ display: "flex", alignItems: "center", gap: 12, border: `1px solid ${C.line}`, borderRadius: 12, padding: "11px 13px" }}>

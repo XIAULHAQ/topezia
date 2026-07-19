@@ -5,10 +5,10 @@
  * bar (collapse toggle, search, avatar). Wraps the feed, profile and settings.
  *
  * Honesty: only destinations that actually work are links (Job Feed, My
- * Profile, Settings, Log out). Everything else in the designed nav — Overview,
- * Search Jobs, Saved Jobs, Applications, Resume Builder, Skill Assessment,
- * Career Coach — is shown but marked "Soon" and is non-navigable, so the nav
- * conveys the roadmap without pretending those pages exist.
+ * Profile, Career Coach, Settings, Log out). Everything else in the designed
+ * nav — Overview, Search Jobs, Applications, Resume Builder, Skill Assessment —
+ * is shown but marked "Soon" and is non-navigable, so the nav conveys the
+ * roadmap without pretending those pages exist.
  */
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -27,7 +27,7 @@ const NAV: NavItem[] = [
   { icon: "user", label: "My Profile", href: "/profile" },
   { icon: "doc", label: "Resume Builder", soon: true },
   { icon: "gauge", label: "Skill Assessment", soon: true },
-  { icon: "spark", label: "Career Coach", soon: true },
+  { icon: "spark", label: "Career Coach", href: "/coach" },
 ];
 
 const S_menuItem: CSSProperties = {

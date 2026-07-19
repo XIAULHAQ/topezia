@@ -10,6 +10,7 @@
  */
 import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import AppShell from "@/app/_components/AppShell";
 import AlertCapture from "@/app/jobs/_components/AlertCapture";
 import { C, GRAD, FONT, Icon, MatchRing, Card, SoonTag } from "@/app/_components/ui";
@@ -352,7 +353,7 @@ export default function FeedPage() {
             <p style={S.railP}>matched against {stats?.totalLive ?? 0} verified jobs open to you</p>
           </Card>
 
-          {/* Dark AI coach tip — real gap data, learning path Soon */}
+          {/* Dark AI coach tip — real gap data, linking to the Career Coach */}
           <section style={S.coach}>
             <div style={S.coachGlow} />
             <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -365,7 +366,7 @@ export default function FeedPage() {
                 ? <>Learning <strong style={{ color: "#fff" }}>{insights.skillGaps[0].skill}</strong> would line you up with the <strong style={{ color: "#4ADE80" }}>{insights.skillGaps[0].pct}%</strong> of roles in your field that ask for it.</>
                 : <>Keep your skills current — as your profile sharpens, so do your matches.</>}
             </p>
-            <div style={S.coachBtn}>Start learning path <SoonTag style={{ background: "rgba(255,255,255,.15)", color: "#fff", borderColor: "transparent" }} /></div>
+            <Link href="/coach" style={{ ...S.coachBtn, cursor: "pointer", color: "#fff", textDecoration: "none" }}>Open your career coach →</Link>
           </section>
 
           {/* Coming soon: saved searches */}
