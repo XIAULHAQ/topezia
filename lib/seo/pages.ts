@@ -258,6 +258,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
         : `${total} verified ${total === 1 ? "opening" : "openings"} in ${name}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your résumé once and Topezia scores each one against your actual experience — honestly, including the weak fits.`,
       canonicalPath: `/jobs/${clean}`,
       slug: clean,
+      country: placeCountry ?? undefined, // lets the route pick the designed country layout
       jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
       total,
       siblings: [],
