@@ -1,7 +1,7 @@
 /**
  * Profile assembly — spec §3.4.
  *
- * Takes a parsed résumé + the three preference answers from Screen A and
+ * Takes a parsed resume + the three preference answers from Screen A and
  * writes the canonical Profile: resolved headline role, taxonomy-resolved
  * skills (with per-skill confidence for the confirm chips), and the profile
  * embedding the matcher retrieves against (§5 stage 1).
@@ -54,8 +54,8 @@ export async function createOrUpdateProfile(params: {
   parsed: ParsedResume;
   preferences: ProfilePreferences;
   /** How this profile was built. Drives entryPath + the skills' source badge:
-   *  a questionnaire answer is USER_ADDED (the person asserted it), a résumé
-   *  parse is RESUME (we read it off the page). Defaults to the résumé path. */
+   *  a questionnaire answer is USER_ADDED (the person asserted it), a resume
+   *  parse is RESUME (we read it off the page). Defaults to the resume path. */
   entryPath?: EntryPath;
   /** Profile photo (data URI) extracted from the CV. Only set on create or when
    *  a fresh upload provides one — a re-parse without a photo won't wipe an
@@ -95,7 +95,7 @@ export async function createOrUpdateProfile(params: {
   const matchVersion = randomUUID();
 
   // Where they are, as a country — this is what scopes their feed. Derived from
-  // the résumé's own location line, so most people never answer a question for
+  // the resume's own location line, so most people never answer a question for
   // it. null just means we don't know, and the matcher then filters nothing.
   const country = extractCountry(parsed.currentLocation);
 
@@ -226,7 +226,7 @@ export interface ProfileFieldEdit {
   salaryPeriod?: SalaryPeriod | null;
   workAuthorization?: WorkAuthorization;
   skills?: { name: string; proficiency: import("@prisma/client").SkillProficiency | null; source?: SkillSource; tier?: SkillTier }[];
-  // Résumé-derived history the profile view/edit surfaces. Stored as-is; these
+  // Resume-derived history the profile view/edit surfaces. Stored as-is; these
   // don't affect matching (the embedding is built from headline + skills), so
   // editing them never triggers a re-embed.
   workHistory?: { title?: string; company?: string; years?: string }[];
@@ -239,7 +239,7 @@ export interface ProfileFieldEdit {
  * Edit a profile's structured fields directly — the profile page's save path.
  *
  * Distinct from createOrUpdateProfile, which rebuilds everything from a fresh
- * résumé parse. This applies a partial edit to an existing profile: only the
+ * resume parse. This applies a partial edit to an existing profile: only the
  * keys present in `edit` change. Any edit that touches the matcher's inputs
  * (headline, skills) re-embeds; every edit bumps matchVersion so cached scores
  * are invalidated (§5). Skills edited by hand are marked source=MANUAL and

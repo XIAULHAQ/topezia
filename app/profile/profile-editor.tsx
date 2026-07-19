@@ -56,7 +56,7 @@ const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g,
 // Provenance is the point: show where each thing came from, honestly.
 function Badge({ kind }: { kind: "told" | "inferred" | "guess" | "added" }) {
   const map = {
-    told: { t: "from your résumé", bg: "#e7f6ee", fg: "#0f6e56" },
+    told: { t: "from your resume", bg: "#e7f6ee", fg: "#0f6e56" },
     inferred: { t: "we inferred", bg: "#eef0ff", fg: INDIGO },
     guess: { t: "confirm?", bg: "#fdf0d5", fg: "#8a5a00" },
     added: { t: "you added", bg: "#e7f6ee", fg: "#0f6e56" },
@@ -213,7 +213,7 @@ export default function ProfileEditor() {
   }
 
   /**
-   * Re-upload a résumé to overwrite the parsed side of the profile (skills,
+   * Re-upload a resume to overwrite the parsed side of the profile (skills,
    * experience, education, certifications, headline, photo) while KEEPING the
    * job preferences and salary the person set by hand — we pass the current
    * preferences straight back so createOrUpdateProfile's upsert doesn't wipe them.
@@ -245,7 +245,7 @@ export default function ProfileEditor() {
           },
         }),
       });
-      if (!res.ok) throw new Error("Couldn't save the new résumé");
+      if (!res.ok) throw new Error("Couldn't save the new resume");
       window.location.reload(); // reload the editor with the fresh parse
     } catch (e) {
       setReupErr(e instanceof Error ? e.message : "Something went wrong");
@@ -330,15 +330,15 @@ export default function ProfileEditor() {
 
         <div style={S.editHead}>
           <h2 style={S.h2}>Edit your profile</h2>
-          <p style={{ ...S.sub, margin: 0 }}>The badges show where we got each thing — your résumé, our inference, or your own hand. Saving re-scores your matches.</p>
+          <p style={{ ...S.sub, margin: 0 }}>The badges show where we got each thing — your resume, our inference, or your own hand. Saving re-scores your matches.</p>
         </div>
 
         <section style={S.card}>
-          <div style={S.cardLabel}>Replace your résumé</div>
+          <div style={S.cardLabel}>Replace your resume</div>
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <label style={reup === "working" ? S.reupBtnBusy : S.reupBtn}>
               <input type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" style={{ display: "none" }} disabled={reup === "working"} onChange={(e) => { const f = e.target.files?.[0]; if (f) reupload(f); }} />
-              {reup === "working" ? "Reading your new résumé…" : "Upload a new résumé"}
+              {reup === "working" ? "Reading your new resume…" : "Upload a new resume"}
             </label>
             <div style={{ ...S.hint, flex: 1, minWidth: 220, marginTop: 0 }}>Refreshes your skills, experience, education and photo from the new file. Your job preferences and salary stay as they are.</div>
           </div>
@@ -396,7 +396,7 @@ export default function ProfileEditor() {
                 </optgroup>
               ))}
               {p.headline && !roleGroups.some((g) => g.roles.includes(p.headline!)) && (
-                <option value={p.headline}>{p.headline} (from your résumé)</option>
+                <option value={p.headline}>{p.headline} (from your resume)</option>
               )}
             </select>
             <select style={S.select} value={p.seniority ?? "NOT_APPLICABLE"} onChange={(e) => set("seniority", e.target.value)}>

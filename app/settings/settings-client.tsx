@@ -130,11 +130,11 @@ export default function SettingsClient() {
             <button style={S.btn} disabled={busy !== null} onClick={exportData}>{busy === "export" ? "Preparing…" : "Export my data"}</button>
             {acct.hasResumeText && (
               <button style={S.btn} disabled={busy !== null} onClick={() => post("delete-resume-text")}>
-                {busy === "delete-resume-text" ? "Deleting…" : "Delete stored résumé text"}
+                {busy === "delete-resume-text" ? "Deleting…" : "Delete stored resume text"}
               </button>
             )}
           </div>
-          {!acct.hasResumeText && <div style={S.meta}>No résumé text stored.</div>}
+          {!acct.hasResumeText && <div style={S.meta}>No resume text stored.</div>}
         </section>
 
         <section style={S.dangerCard}>

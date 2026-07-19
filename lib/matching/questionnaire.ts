@@ -1,7 +1,7 @@
 /**
  * Trucking questionnaire → Profile (spec §3.4, "alternate entry path").
  *
- * The résumé path runs an LLM to guess structure; a driver's profile is fully
+ * The resume path runs an LLM to guess structure; a driver's profile is fully
  * determined by 8 answers, so this maps them DETERMINISTICALLY into the exact
  * same ParsedResume + preferences shape createOrUpdateProfile already writes —
  * no model call (no Anthropic spend), just the Voyage embedding downstream. The
@@ -21,7 +21,7 @@ export type PayPeriod = "YEAR" | "HOUR" | "PER_MILE";
 /** The 8 answers, spec §3.4. */
 export interface TruckingAnswers {
   fullName?: string | null;
-  location?: string | null; // "Dallas, TX" — scopes the feed by country, like a résumé's header
+  location?: string | null; // "Dallas, TX" — scopes the feed by country, like a resume's header
   cdlClass: CdlClass;
   endorsements: Endorsement[];
   yearsDriving: number;

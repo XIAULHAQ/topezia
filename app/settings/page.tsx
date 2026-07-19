@@ -1,7 +1,7 @@
 /**
  * /settings — data control (spec §3.4 privacy; the legally-required half).
  *
- * See what we hold, export it, clear the stored résumé text, manage alerts,
+ * See what we hold, export it, clear the stored resume text, manage alerts,
  * delete the account. Deliberately unglamorous.
  */
 import { redirect } from "next/navigation";

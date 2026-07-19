@@ -118,7 +118,7 @@ export async function resolveSkill(raw: string): Promise<string | null> {
 /**
  * Batched skill resolution — maps each (trimmed) raw name to a canonical Skill
  * id, creating new skills as needed. Uses a fixed handful of queries instead of
- * ~2-3 per skill, which is what made résumé parse / ingestion slow against a
+ * ~2-3 per skill, which is what made resume parse / ingestion slow against a
  * high-latency DB. Returns a Map so callers that need per-skill data (e.g.
  * profile confidence) can look ids up by name.
  */

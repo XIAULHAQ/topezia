@@ -1,5 +1,5 @@
 /**
- * Pull plain text out of an uploaded résumé (spec §3.4).
+ * Pull plain text out of an uploaded resume (spec §3.4).
  *
  * Supports PDF, DOCX and plain text. PDF matters most: it's what people
  * actually have, AND it's the practical "connect LinkedIn" path — LinkedIn
@@ -7,7 +7,7 @@
  * name/email/photo), but a user can export their own profile via
  * More → Save to PDF and upload that.
  *
- * Files are parsed in memory and never stored. A résumé is sensitive personal
+ * Files are parsed in memory and never stored. A resume is sensitive personal
  * data; we only need the text, so keeping the file would be liability with no
  * upside (Profile.resumeFileUrl stays null until there's a reason).
  */
@@ -96,7 +96,7 @@ export async function extractResumeText(file: {
       );
     }
     throw new ResumeExtractError(
-      "We couldn't find readable text in that file — try a different export, or paste your résumé instead."
+      "We couldn't find readable text in that file — try a different export, or paste your resume instead."
     );
   }
 

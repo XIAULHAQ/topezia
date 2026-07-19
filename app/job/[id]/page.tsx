@@ -175,7 +175,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
         <div style={S.matchCta}>
           <div>
             <div style={S.matchTitle}>Is this actually worth your time?</div>
-            <div style={S.matchSub}>Upload your résumé once — get an honest match score, and the skill gaps, for this and every other job.</div>
+            <div style={S.matchSub}>Upload your resume once — get an honest match score, and the skill gaps, for this and every other job.</div>
           </div>
           <Link href="/onboard" style={S.matchBtn}>Show my matches →</Link>
         </div>

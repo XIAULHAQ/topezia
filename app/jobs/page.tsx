@@ -24,7 +24,7 @@ const MUTED = "#6b7280";
 export async function generateMetadata(): Promise<Metadata> {
   const hub = await getBrowseHub();
   const title = "Browse jobs by field, role, and country | Topezia";
-  const description = `${hub.totalLive} verified jobs from company career pages across ${hub.countries.length + 1} countries — matched honestly against your résumé.`;
+  const description = `${hub.totalLive} verified jobs from company career pages across ${hub.countries.length + 1} countries — matched honestly against your resume.`;
   return { title, description, alternates: { canonical: "/jobs" }, openGraph: { title, description, url: "/jobs", type: "website" } };
 }
 
@@ -55,7 +55,7 @@ export default async function JobsHubPage() {
         <p style={S.intro}>
           {hub.totalLive.toLocaleString()} verified openings, aggregated straight from company
           career pages and re-checked for freshness. Pick a field, role, or place — or{" "}
-          <Link href="/onboard" style={S.inlineLink}>upload your résumé</Link> to see which actually fit you.
+          <Link href="/onboard" style={S.inlineLink}>upload your resume</Link> to see which actually fit you.
         </p>
 
         <Section title="By field" links={hub.verticals} />

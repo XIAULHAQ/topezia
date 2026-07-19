@@ -111,7 +111,7 @@ export async function GET() {
   });
 }
 
-/** PATCH — save a partial edit to the structured profile (no résumé re-parse). */
+/** PATCH — save a partial edit to the structured profile (no resume re-parse). */
 export async function PATCH(req: NextRequest) {
   const { userId } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "No profile to edit." }, { status: 401 });

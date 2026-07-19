@@ -238,7 +238,7 @@ export default function FeedPage() {
                 <p style={{ margin: "12px 0 0", fontSize: 13, color: "#B9C0D4", lineHeight: 1.6, maxWidth: 520 }}>
                   {insights?.fieldLabel
                     ? <>Your market is still thin — only {insights.targetJobs} {insights.fieldLabel.replace(/ roles( \(broad\))?$/, "")} {insights.targetJobs === 1 ? "role is" : "roles are"} open to your region, too few for reliable stats yet. </>
-                    : "We're scoring every live job against your résumé — real numbers, including the low ones. "}
+                    : "We're scoring every live job against your resume — real numbers, including the low ones. "}
                   <a href="/profile" style={{ ...S.heroLink, display: "inline", marginTop: 0 }}>More on your profile →</a>
                 </p>
               )}

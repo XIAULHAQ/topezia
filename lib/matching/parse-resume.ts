@@ -1,7 +1,7 @@
 /**
- * Résumé parsing — spec §3.4, §6.1 (parse-confirmation screen).
+ * Resume parsing — spec §3.4, §6.1 (parse-confirmation screen).
  *
- * Turns raw résumé text into the structured Profile shape the confirm screen
+ * Turns raw resume text into the structured Profile shape the confirm screen
  * edits and the matcher reads. Haiku-class model, temperature 0, JSON output —
  * same cost discipline as ingestion (§4.2). Per-skill confidence drives the
  * solid-vs-dashed "confirm?" chips on Screen A.
@@ -15,10 +15,10 @@ const VALID_PROFICIENCY: SkillProficiency[] = ["FAMILIAR", "PROFICIENT", "ADVANC
 
 export interface ParsedSkill {
   name: string;
-  /** 0-1: did the résumé actually SAY this? Drives the "confirm?" chip. */
+  /** 0-1: did the resume actually SAY this? Drives the "confirm?" chip. */
   confidence: number;
   /** How good are they? Inferred from years, seniority and depth of use.
-   *  Deliberately separate from confidence — a résumé can state a skill
+   *  Deliberately separate from confidence — a resume can state a skill
    *  unambiguously (confidence 1.0) that the person has barely touched. */
   proficiency: SkillProficiency | null;
   /** CORE = what their roles were hired to do (professional identity);
@@ -40,14 +40,14 @@ export interface ParsedResume {
   certifications: string[];
 }
 
-const PARSE_PROMPT = `You parse a job seeker's résumé into structured JSON. Return ONLY valid JSON, no prose, matching exactly:
+const PARSE_PROMPT = `You parse a job seeker's resume into structured JSON. Return ONLY valid JSON, no prose, matching exactly:
 
 {
   "fullName": string | null,
   "headlineRole": string,            // their primary job function in 2-4 words, lowercase, e.g. "backend engineer", "physical therapist", "account executive"
   "seniority": "INTERN" | "JUNIOR" | "MID" | "SENIOR" | "LEAD" | "EXEC" | "NOT_APPLICABLE",
   "yearsExperience": number | null,  // total years of relevant professional experience
-  "currentLocation": string | null,  // where THEY are (e.g. "San Diego, CA"), from the résumé header. null if absent — never guess from employer locations
+  "currentLocation": string | null,  // where THEY are (e.g. "San Diego, CA"), from the resume header. null if absent — never guess from employer locations
   "industries": string[],            // 1-4 sectors they've actually worked in, lowercase (e.g. "healthcare", "b2b saas", "logistics")
   "skills": [ { "name": string, "confidence": number, "proficiency": "FAMILIAR" | "PROFICIENT" | "ADVANCED" | "EXPERT", "tier": "CORE" | "SECONDARY" } ],
                                      // 5-15 concrete skills. name must be ATOMIC and CANONICAL:
@@ -56,10 +56,10 @@ const PARSE_PROMPT = `You parse a job seeker's résumé into structured JSON. Re
                                      //   - use the shortest standard industry term: "SEO" (never "SEO optimization" / "search engine optimization"),
                                      //     "Digital Marketing" (never "digital marketing strategies"), "Google Ads" (never "Google Adwords").
                                      //     Job postings use these canonical names — matching depends on them being identical.
-                                     // confidence = did the résumé SAY it: 1.0 explicitly listed/used, 0.5-0.7 only implied by their roles.
+                                     // confidence = did the resume SAY it: 1.0 explicitly listed/used, 0.5-0.7 only implied by their roles.
                                      // proficiency = how GOOD they are, inferred from years using it, the seniority of roles where it appears, and depth of described work.
                                      //   FAMILIAR = mentioned in passing; PROFICIENT = used regularly; ADVANCED = deep sustained use; EXPERT = leads/teaches it.
-                                     // These are independent: a résumé can clearly list a skill (confidence 1.0) the person has barely used (FAMILIAR).
+                                     // These are independent: a resume can clearly list a skill (confidence 1.0) the person has barely used (FAMILIAR).
                                      // tier = is this skill WHAT THEY ARE, or something they also know?
                                      //   CORE = central to the jobs they were actually hired for — judge from their job TITLES, the work described
                                      //          in their most recent/senior roles, and their headline. These define their professional identity.
@@ -73,7 +73,7 @@ const PARSE_PROMPT = `You parse a job seeker's résumé into structured JSON. Re
   "certifications": string[]
 }
 
-Base everything strictly on the résumé text. Do not invent skills or roles the résumé does not support.`;
+Base everything strictly on the resume text. Do not invent skills or roles the resume does not support.`;
 
 /** One call to the parse model; returns the raw JSON object the model produced. */
 async function callParseModel(
@@ -98,7 +98,7 @@ async function callParseModel(
   });
 
   if (!res.ok) {
-    throw new Error(`Résumé parse failed: ${res.status} ${await res.text()}`);
+    throw new Error(`Resume parse failed: ${res.status} ${await res.text()}`);
   }
 
   const data = await res.json();
@@ -131,14 +131,14 @@ export async function parseScannedResume(
 ): Promise<{ parsed: ParsedResume; transcription: string; photoBox: ScannedPhotoBox | null }> {
   const system =
     PARSE_PROMPT +
-    `\n\nThis résumé is a SCANNED document — read the page images. Add two extra top-level fields to the JSON:\n` +
-    `  "transcription": string   // the résumé's full plain text, faithfully transcribed from the scan\n` +
+    `\n\nThis resume is a SCANNED document — read the page images. Add two extra top-level fields to the JSON:\n` +
+    `  "transcription": string   // the resume's full plain text, faithfully transcribed from the scan\n` +
     `  "photoBox": { "page": number, "x": number, "y": number, "w": number, "h": number } | null\n` +
-    `                            // if the résumé shows a photo/headshot of the person: page is 1-based,\n` +
+    `                            // if the resume shows a photo/headshot of the person: page is 1-based,\n` +
     `                            // x,y is the box's TOP-LEFT corner and w,h its size, ALL as fractions (0-1)\n` +
     `                            // of the page width/height. Draw the box tightly around just the photo.\n` +
     `                            // null when there is no photo of the person (logos/icons don't count).\n` +
-    `If the pages are illegible or clearly not a résumé, return {"transcription": ""}.`;
+    `If the pages are illegible or clearly not a resume, return {"transcription": ""}.`;
 
   const raw = await callParseModel(
     system,
@@ -147,7 +147,7 @@ export async function parseScannedResume(
         type: "document",
         source: { type: "base64", media_type: "application/pdf", data: pdfBuffer.toString("base64") },
       },
-      { type: "text", text: "Parse this scanned résumé into the JSON schema." },
+      { type: "text", text: "Parse this scanned resume into the JSON schema." },
     ],
     4000 // transcription + parse for a few pages
   );

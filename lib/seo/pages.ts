@@ -149,7 +149,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       return {
         kind: "role-country",
         heading: `${vertical.name} jobs in ${cName}`,
-        intro: `${total} verified ${vertical.name.toLowerCase()} ${total === 1 ? "opening" : "openings"} in ${cName}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your résumé once and Topezia scores each one against your actual experience — honestly, including the weak fits.`,
+        intro: `${total} verified ${vertical.name.toLowerCase()} ${total === 1 ? "opening" : "openings"} in ${cName}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your resume once and Topezia scores each one against your actual experience — honestly, including the weak fits.`,
         canonicalPath: countryHref(vertical.slug, iso),
         slug: vertical.slug,
         country: iso,
@@ -169,7 +169,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       return {
         kind: "role-country",
         heading: `${role.name} jobs in ${cName}`,
-        intro: `${total} verified ${role.name.toLowerCase()} ${total === 1 ? "opening" : "openings"} in ${cName}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your résumé once and Topezia scores each one against your actual experience — honestly, including the weak fits.`,
+        intro: `${total} verified ${role.name.toLowerCase()} ${total === 1 ? "opening" : "openings"} in ${cName}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your resume once and Topezia scores each one against your actual experience — honestly, including the weak fits.`,
         canonicalPath: countryHref(role.slug, iso),
         slug: role.slug,
         country: iso,
@@ -184,7 +184,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
     return {
       kind: "role-state",
       heading: `${role.name} jobs in ${stateName(st)}`,
-      intro: `${total} verified ${role.name.toLowerCase()} ${total === 1 ? "opening" : "openings"} in ${stateName(st)}, aggregated from company career pages and checked for freshness. Upload your résumé once and Topezia scores each one against your actual experience — honestly, including the weak fits.`,
+      intro: `${total} verified ${role.name.toLowerCase()} ${total === 1 ? "opening" : "openings"} in ${stateName(st)}, aggregated from company career pages and checked for freshness. Upload your resume once and Topezia scores each one against your actual experience — honestly, including the weak fits.`,
       canonicalPath: `/jobs/${role.slug}/${st.toLowerCase()}`,
       slug: role.slug,
       state: st.toLowerCase(),
@@ -223,7 +223,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
     return {
       kind: "role",
       heading: `${role.name} jobs`,
-      intro: `${total} verified ${role.name.toLowerCase()} ${total === 1 ? "opening" : "openings"}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your résumé once and see an honest match score — and the skill gaps — for every one.`,
+      intro: `${total} verified ${role.name.toLowerCase()} ${total === 1 ? "opening" : "openings"}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your resume once and see an honest match score — and the skill gaps — for every one.`,
       canonicalPath: `/jobs/${role.slug}`,
       slug: role.slug,
       jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
@@ -254,8 +254,8 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       kind: "place",
       heading: placeCountry ? `Jobs in ${name} & open to applicants there` : `Jobs in ${name}`,
       intro: placeCountry
-        ? `${total} verified ${total === 1 ? "opening" : "openings"} open to applicants in ${name} — roles located there plus remote jobs hireable from anywhere. Aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your résumé once and Topezia scores each one against your actual experience — honestly, including the weak fits.`
-        : `${total} verified ${total === 1 ? "opening" : "openings"} in ${name}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your résumé once and Topezia scores each one against your actual experience — honestly, including the weak fits.`,
+        ? `${total} verified ${total === 1 ? "opening" : "openings"} open to applicants in ${name} — roles located there plus remote jobs hireable from anywhere. Aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your resume once and Topezia scores each one against your actual experience — honestly, including the weak fits.`
+        : `${total} verified ${total === 1 ? "opening" : "openings"} in ${name}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your resume once and Topezia scores each one against your actual experience — honestly, including the weak fits.`,
       canonicalPath: `/jobs/${clean}`,
       slug: clean,
       country: placeCountry ?? undefined, // lets the route pick the designed country layout

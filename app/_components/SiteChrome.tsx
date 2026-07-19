@@ -35,7 +35,7 @@ const NAV_LINKS = [
   { label: "Find jobs", href: "/jobs" },
   { label: "Projects", href: "/projects" },
   // /coach is auth-gated: anonymous visitors get bounced to /login, which
-  // carries the "join by uploading your résumé" path to /onboard.
+  // carries the "join by uploading your resume" path to /onboard.
   { label: "AI Career Coach", href: "/coach" },
   { label: "For employers", href: "/waitlist" },
 ];

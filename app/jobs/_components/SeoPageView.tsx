@@ -99,7 +99,7 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
         <h1 style={S.h1}>{page.heading}</h1>
         <p style={S.intro}>{page.intro}</p>
 
-        {/* Email-alert capture above the fold (§7), plus the résumé path. */}
+        {/* Email-alert capture above the fold (§7), plus the resume path. */}
         {/* The country heading carries an "& open to applicants there" clause
             that reads badly inside "Get new {label} by email" — use the plain
             place name for the alert label instead. */}
@@ -107,7 +107,7 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
         <div style={S.cta}>
           <div>
             <div style={S.ctaTitle}>Which of these actually fit you?</div>
-            <div style={S.ctaSub}>Upload your résumé once — get an honest score and the skill gaps for every job below.</div>
+            <div style={S.ctaSub}>Upload your resume once — get an honest score and the skill gaps for every job below.</div>
           </div>
           <Link href="/onboard" style={S.ctaBtn}>Show my matches →</Link>
         </div>

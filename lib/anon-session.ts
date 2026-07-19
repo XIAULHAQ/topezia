@@ -1,7 +1,7 @@
 /**
  * Anonymous session id — a stopgap until job-seeker auth (Supabase Auth) is
  * built. A random uid is stored in an httpOnly cookie and used as
- * Profile.userId, so a visitor can parse a résumé and get matches without
+ * Profile.userId, so a visitor can parse a resume and get matches without
  * signing up. When real auth lands, migrate these profiles by userId.
  */
 import { cookies } from "next/headers";

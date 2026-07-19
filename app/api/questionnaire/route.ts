@@ -1,8 +1,8 @@
 /**
  * POST /api/questionnaire — spec §3.4 (alternate entry path, trucking)
  *
- * The no-résumé path for drivers. Takes the 8 answers, maps them to the same
- * Profile shape the résumé flow produces (deterministically — no LLM), commits
+ * The no-resume path for drivers. Takes the 8 answers, maps them to the same
+ * Profile shape the resume flow produces (deterministically — no LLM), commits
  * it via createOrUpdateProfile with entryPath=QUESTIONNAIRE, and drops the same
  * anonymous-session cookie so /feed finds the profile. Returns { profileId }.
  */

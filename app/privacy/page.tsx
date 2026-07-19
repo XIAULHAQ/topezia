@@ -21,19 +21,19 @@ export default function PrivacyPage() {
       <H2>1. Information we collect</H2>
       <P>We only collect what we need to match you to jobs and run the Service:</P>
       <UL>
-        <LI><strong>Résumé content you provide.</strong> The text of your résumé (or the answers to our questionnaire): your name, work history, education, skills, certifications, location, and — if your file contains one — a profile photo. We parse your file in memory and <strong>do not store the original file</strong>; we keep the extracted text, the structured fields, and a small photo thumbnail.</LI>
+        <LI><strong>Resume content you provide.</strong> The text of your resume (or the answers to our questionnaire): your name, work history, education, skills, certifications, location, and — if your file contains one — a profile photo. We parse your file in memory and <strong>do not store the original file</strong>; we keep the extracted text, the structured fields, and a small photo thumbnail.</LI>
         <LI><strong>Preferences.</strong> Job type, remote/location preferences, and salary expectations you enter.</LI>
         <LI><strong>Account data.</strong> If you create an account, your email address (authentication is handled by our provider; we never see your password).</LI>
         <LI><strong>Usage data.</strong> Jobs you view, save, or dismiss, and email-alert subscriptions — used to improve your matches.</LI>
         <LI><strong>Technical data.</strong> IP address, device/browser information, and cookies necessary to run the site (see our <a href="/cookies" style={{ color: "#8B5CF6" }}>Cookie Policy</a>).</LI>
       </UL>
       <P>
-        Some of this may be considered <strong>sensitive/special-category data</strong> depending on what your résumé contains (for example, information revealing your origin or health). Please avoid including sensitive details you don&apos;t want processed; where you do provide them, you consent to our processing them to provide the Service.
+        Some of this may be considered <strong>sensitive/special-category data</strong> depending on what your resume contains (for example, information revealing your origin or health). Please avoid including sensitive details you don&apos;t want processed; where you do provide them, you consent to our processing them to provide the Service.
       </P>
 
       <H2>2. How we use your data, and our legal bases</H2>
       <UL>
-        <LI><strong>To build your profile and match you to jobs</strong> (parse your résumé, compute honest match scores and skill-gap insights) — to <em>perform our contract</em> with you and, before an account exists, on the basis of your <em>consent</em>.</LI>
+        <LI><strong>To build your profile and match you to jobs</strong> (parse your resume, compute honest match scores and skill-gap insights) — to <em>perform our contract</em> with you and, before an account exists, on the basis of your <em>consent</em>.</LI>
         <LI><strong>To send job-alert emails</strong> you opt into — on the basis of your <em>consent</em>, which you can withdraw at any time via the unsubscribe link.</LI>
         <LI><strong>To operate, secure and improve the Service</strong> — on the basis of our <em>legitimate interests</em> in running a functional, safe product.</LI>
         <LI><strong>To comply with legal obligations.</strong></LI>
@@ -46,11 +46,11 @@ export default function PrivacyPage() {
       </P>
 
       <H2>4. Who we share data with (subprocessors)</H2>
-      <P>We share data only with vendors that help us run the Service, under contracts that require them to protect it. We never send your résumé or profile to employers. Our key subprocessors are:</P>
+      <P>We share data only with vendors that help us run the Service, under contracts that require them to protect it. We never send your resume or profile to employers. Our key subprocessors are:</P>
       <UL>
         <LI><strong>Vercel</strong> — website hosting.</LI>
         <LI><strong>Supabase</strong> — database and authentication.</LI>
-        <LI><strong>Anthropic</strong> — AI model used to parse résumés and generate match explanations. Inputs are processed to return a result and are not used to train their models under our terms.</LI>
+        <LI><strong>Anthropic</strong> — AI model used to parse resumes and generate match explanations. Inputs are processed to return a result and are not used to train their models under our terms.</LI>
         <LI><strong>Voyage AI</strong> — generates the numerical &quot;embeddings&quot; used for matching.</LI>
         <LI><strong>Resend</strong> — sends transactional and job-alert emails.</LI>
       </UL>
@@ -68,7 +68,7 @@ export default function PrivacyPage() {
       <P>We use industry-standard measures (encryption in transit, access controls, a reputable managed database). No system is perfectly secure, but we work to protect your data and will notify you and regulators of a breach where the law requires.</P>
 
       <H2>8. Your rights</H2>
-      <P><strong>Everyone</strong> can, from the <a href="/settings" style={{ color: "#8B5CF6" }}>Settings</a> page, export their data, clear their stored résumé text, and delete their account and profile.</P>
+      <P><strong>Everyone</strong> can, from the <a href="/settings" style={{ color: "#8B5CF6" }}>Settings</a> page, export their data, clear their stored resume text, and delete their account and profile.</P>
       <P>If you are in the <strong>EEA or UK (GDPR / UK GDPR)</strong>, you also have the right to access, rectify, erase, restrict or object to processing, to data portability, and to withdraw consent — without affecting prior processing. You have the right to lodge a complaint with your local supervisory authority.</P>
       <P>If you are a <strong>California resident (CCPA/CPRA)</strong> — or in another US state with a comparable law — you have the right to know what we collect, to access and delete it, to correct it, and to opt out of any &quot;sale&quot; or &quot;sharing&quot; (we do neither). We will not discriminate against you for exercising these rights.</P>
       <P>To exercise any right not covered by Settings, email <strong>hello@topezia.com</strong>. We will verify your request and respond within the timeframe the law requires (generally 30 days under GDPR, 45 days under CCPA).</P>

@@ -21,7 +21,7 @@ export default function TermsPage() {
       <P>You must be at least 16 years old (or the minimum age in your country) and able to form a binding contract. If you use the Service on behalf of an organization, you represent that you&apos;re authorized to accept these Terms for it.</P>
 
       <H2>2. What Topezia does</H2>
-      <P>Topezia aggregates publicly posted jobs, reads your résumé, and shows you AI-generated match scores, explanations and skill-gap insights. <strong>Match scores are informational estimates, not guarantees.</strong> We do not employ you, do not guarantee interviews, offers or outcomes, and are not a party to your relationship with any employer. Applications happen on the employer&apos;s own site — we link you out to the original posting.</P>
+      <P>Topezia aggregates publicly posted jobs, reads your resume, and shows you AI-generated match scores, explanations and skill-gap insights. <strong>Match scores are informational estimates, not guarantees.</strong> We do not employ you, do not guarantee interviews, offers or outcomes, and are not a party to your relationship with any employer. Applications happen on the employer&apos;s own site — we link you out to the original posting.</P>
 
       <H2>3. Your account</H2>
       <UL>
@@ -31,7 +31,7 @@ export default function TermsPage() {
       </UL>
 
       <H2>4. Your content</H2>
-      <P>You keep all rights to the résumé and information you provide (&quot;Your Content&quot;). You grant us a worldwide, non-exclusive licence to host, process and display Your Content solely to operate the Service for you (for example, to parse it, match you, and — if you choose — publish your public profile). You confirm you have the right to provide Your Content and that it doesn&apos;t infringe anyone&apos;s rights or contain unlawful material.</P>
+      <P>You keep all rights to the resume and information you provide (&quot;Your Content&quot;). You grant us a worldwide, non-exclusive licence to host, process and display Your Content solely to operate the Service for you (for example, to parse it, match you, and — if you choose — publish your public profile). You confirm you have the right to provide Your Content and that it doesn&apos;t infringe anyone&apos;s rights or contain unlawful material.</P>
 
       <H2>5. Public profiles</H2>
       <P>If you make your profile public, you are responsible for its contents and understand it may be publicly visible and indexed by search engines. You can make it private or delete it at any time from your account.</P>

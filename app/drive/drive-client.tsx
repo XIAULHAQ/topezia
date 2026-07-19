@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Trucking questionnaire (spec §3.4) — the no-résumé entry path for drivers.
+ * Trucking questionnaire (spec §3.4) — the no-resume entry path for drivers.
  * 8 answers → same Profile shape → same /feed. Single screen, big tap targets
  * (drivers fill this on a phone), mirrors /onboard's look.
  */
@@ -106,10 +106,10 @@ export default function DriveClient() {
     <main style={S.page}>
       <div style={S.wrap}>
         <div style={S.brand}>topezia</div>
-        <h1 style={S.h1}>Drive for a living? Skip the résumé.</h1>
+        <h1 style={S.h1}>Drive for a living? Skip the resume.</h1>
         <p style={S.sub}>
           Eight quick questions — we&apos;ll match you to real routes and tell you why each one fits.
-          No résumé, no account needed to start.
+          No resume, no account needed to start.
         </p>
 
         {/* 1. CDL class */}
@@ -233,7 +233,7 @@ export default function DriveClient() {
           {loading ? "Finding your routes…" : "Show my matches →"}
         </button>
         <p style={S.footnote}>
-          Have a résumé instead? <a href="/onboard" style={S.link}>Upload it here.</a> Edit any of this later from your feed.
+          Have a resume instead? <a href="/onboard" style={S.link}>Upload it here.</a> Edit any of this later from your feed.
         </p>
       </div>
     </main>

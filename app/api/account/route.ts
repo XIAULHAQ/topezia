@@ -2,7 +2,7 @@
  * GET/POST/DELETE /api/account — data control for the settings page.
  *
  * The unglamorous, legally-required half: see everything we hold, export it,
- * delete the stored résumé text, unsubscribe alerts, or delete the account
+ * delete the stored resume text, unsubscribe alerts, or delete the account
  * outright. All scoped to the current identity; alerts match the signed-in
  * user's email (anonymous visitors have no email to match, so no alerts show).
  */
@@ -64,7 +64,7 @@ export async function GET() {
   });
 }
 
-/** Targeted, reversible-ish actions: clear résumé text, or unsubscribe an alert. */
+/** Targeted, reversible-ish actions: clear resume text, or unsubscribe an alert. */
 export async function POST(req: NextRequest) {
   const { userId, authed } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "No account." }, { status: 401 });

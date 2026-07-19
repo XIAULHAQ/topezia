@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Onboarding, screen A — upload/paste your résumé (spec §6.1), redesigned.
+ * Onboarding, screen A — upload/paste your resume (spec §6.1), redesigned.
  *
  * Flow unchanged: parse the CV, persist the full parse (skills, experience,
  * education, certifications, photo), then send you to create an account / log
@@ -46,11 +46,11 @@ type Parsed = {
 };
 
 const PARSE_TIPS = [
-  "Most résumés get ~7 seconds from a human recruiter. We read all of it.",
+  "Most resumes get ~7 seconds from a human recruiter. We read all of it.",
   "We score honestly — including the low scores. A 45 tells you more than a fake 90.",
   "Skills you list once and skills you've led on look identical on paper. We tell them apart.",
   "You'll see the gaps too — what a job wants that you don't have yet.",
-  "We never send your résumé to employers. It stays yours.",
+  "We never send your resume to employers. It stays yours.",
 ];
 const PARSE_STEPS = ["Reading the text", "Pulling out skills and history", "Working out seniority and fit", "Almost there"];
 
@@ -62,7 +62,7 @@ export default function OnboardClient() {
   const [dragging, setDragging] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [phaseLabel, setPhaseLabel] = useState("Reading your résumé");
+  const [phaseLabel, setPhaseLabel] = useState("Reading your resume");
   const [error, setError] = useState<string | null>(null);
   const [tip, setTip] = useState(0);
   const [phase, setPhase] = useState(0);
@@ -158,7 +158,7 @@ export default function OnboardClient() {
           <div style={S.parsing}>
             <div style={S.parseRow}>
               <span style={S.check}>✓</span>
-              <span style={{ fontWeight: 700, fontSize: 15, wordBreak: "break-all" }}>{fileName ?? "Your résumé"}</span>
+              <span style={{ fontWeight: 700, fontSize: 15, wordBreak: "break-all" }}>{fileName ?? "Your resume"}</span>
               <span style={{ color: "#059669", fontSize: 14, fontWeight: 600 }}>{fileName ? "uploaded" : "received"}</span>
             </div>
             <div style={S.bar}><div style={S.barFill} /></div>

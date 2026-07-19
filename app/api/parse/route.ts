@@ -1,7 +1,7 @@
 /**
  * POST /api/parse — spec §6.1
  *
- * Accepts either a résumé FILE (multipart: pdf/docx/txt) or pasted text (JSON).
+ * Accepts either a resume FILE (multipart: pdf/docx/txt) or pasted text (JSON).
  * Returns the structured parse. Stateless: it does NOT write a Profile, and it
  * does NOT store the uploaded file — /api/profile commits the (edited) result.
  */
@@ -42,7 +42,7 @@ async function resumeInputFrom(req: NextRequest): Promise<ResumeInput> {
 
   const body = (await req.json()) as { resumeText?: string };
   const text = (body.resumeText ?? "").trim();
-  if (text.length < 40) throw new ResumeExtractError("Please paste your full résumé text.");
+  if (text.length < 40) throw new ResumeExtractError("Please paste your full resume text.");
   return { text, photo: null };
 }
 
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     // Extraction problems are the user's to fix (wrong file, too big),
     // so they get a real message rather than a generic 500.
-    const message = err instanceof ResumeExtractError ? err.message : "Couldn't read that — try pasting your résumé text.";
+    const message = err instanceof ResumeExtractError ? err.message : "Couldn't read that — try pasting your resume text.";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       const { parsed, transcription, photoBox } = await parseScannedResume(input.scannedPdf);
       if (transcription.length < 100) {
         return NextResponse.json(
-          { error: "We couldn't read that scan — the pages may be blurry or incomplete. Try a clearer copy, or paste your résumé text instead." },
+          { error: "We couldn't read that scan — the pages may be blurry or incomplete. Try a clearer copy, or paste your resume text instead." },
           { status: 400 }
         );
       }
@@ -82,6 +82,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ parsed, resumeText: input.text, photo: input.photo });
   } catch (err) {
     console.error("parse failed:", err);
-    return NextResponse.json({ error: "Couldn't parse that résumé — try again." }, { status: 502 });
+    return NextResponse.json({ error: "Couldn't parse that resume — try again." }, { status: 502 });
   }
 }

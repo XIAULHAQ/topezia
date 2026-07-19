@@ -2,7 +2,7 @@
  * Onboard route guard.
  *
  * If you already have a profile, this screen is a dead end — it asks for a
- * résumé you've already given us. Links into /onboard come from places that
+ * resume you've already given us. Links into /onboard come from places that
  * can't know whether you're new (the alert confirmation email, for one), so
  * the guard lives here rather than at every link. `?edit=1` forces the form
  * for a genuine re-upload.

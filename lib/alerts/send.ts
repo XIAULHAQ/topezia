@@ -97,7 +97,7 @@ export function renderAlertEmail(
     unsubUrl,
     html: shell(
       `<h1 style="font-size:20px;margin:0 0 6px;color:#1a1a2e;">${jobs.length} new ${escapeHtml(label.toLowerCase())}</h1>
-       <p style="color:#6b7280;font-size:14px;margin:0 0 8px;line-height:1.5;">Fresh since we last wrote. Want to know which actually fit you? <a href="${base}/onboard" style="color:#4f46e5;font-weight:700;">Upload your résumé</a> for honest scores and skill gaps.</p>
+       <p style="color:#6b7280;font-size:14px;margin:0 0 8px;line-height:1.5;">Fresh since we last wrote. Want to know which actually fit you? <a href="${base}/onboard" style="color:#4f46e5;font-weight:700;">Upload your resume</a> for honest scores and skill gaps.</p>
        <table style="width:100%;border-collapse:collapse;">${rows}</table>`,
       `You asked for ${escapeHtml(label.toLowerCase())} alerts.<br/><a href="${unsubUrl}" style="color:#6b7280;">Unsubscribe</a> — one click, no questions.`
     ),

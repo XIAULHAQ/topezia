@@ -10,7 +10,7 @@
 Hi,
 
 I'm Brandon, founder of Topezia (topezia.com) — an AI job-matching platform. We
-read a person's résumé once, then score every live opportunity against their
+read a person's resume once, then score every live opportunity against their
 actual skills and show them honestly why something is or isn't a fit. We never
 sit between the applicant and the publisher: every listing clicks out to the
 original source to apply.

@@ -14,7 +14,7 @@
  *   - ProfileSkill keeps the strongest tier/proficiency semantics by simply
  *     keeping the existing canonical row when one exists
  *   - SkillAlias re-pointed and the variant's name added as a new alias, so
- *     the next résumé using that wording resolves straight to the canonical id
+ *     the next resume using that wording resolves straight to the canonical id
  *   - the emptied variant Skill row is deleted
  *
  * Run: npx tsx scripts/canonicalize-skills.ts [--dry-run] [--limit-batches=N]

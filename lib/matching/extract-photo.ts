@@ -10,8 +10,8 @@
  * Then we pick the one shaped like a headshot (portrait/square, not an icon,
  * not a full-page scan) and return it as a small data URI, or null.
  *
- * This never throws: a missing/odd photo must not break résumé parsing. Most
- * US/tech résumés have no photo at all, and that's fine — we return null.
+ * This never throws: a missing/odd photo must not break resume parsing. Most
+ * US/tech resumes have no photo at all, and that's fine — we return null.
  */
 import zlib from "zlib";
 
@@ -25,7 +25,7 @@ function extensionOf(filename: string): string {
   return i === -1 ? "" : filename.slice(i).toLowerCase();
 }
 
-/** A résumé headshot: not a tiny icon, not a full-page scan, portrait-ish. */
+/** A resume headshot: not a tiny icon, not a full-page scan, portrait-ish. */
 function looksLikeHeadshot(w: number, h: number): boolean {
   if (w < 80 || h < 80) return false; // icons, bullets, logos
   if (w > 1400 || h > 1400) return false; // full-page scans / banners

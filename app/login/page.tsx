@@ -119,10 +119,10 @@ export default function LoginPage() {
           </button>
         </p>
 
-        {/* The front door for newcomers: joining IS uploading your résumé. */}
+        {/* The front door for newcomers: joining IS uploading your resume. */}
         <div style={S.orRow}><span style={S.orLine} /><span style={S.orText}>Don&apos;t have an account?</span><span style={S.orLine} /></div>
         <Link href="/onboard" style={S.joinBig}>
-          <span style={{ display: "block", fontSize: 16, fontWeight: 800 }}>Join now — upload your résumé</span>
+          <span style={{ display: "block", fontSize: 16, fontWeight: 800 }}>Join now — upload your resume</span>
           <span style={{ display: "block", fontSize: 12.5, fontWeight: 500, opacity: 0.9, marginTop: 4 }}>Our AI builds your profile and career score in 2 minutes. Free.</span>
         </Link>
       </form>

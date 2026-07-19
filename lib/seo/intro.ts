@@ -37,7 +37,7 @@ Rules:
 - 2-3 sentences. Plain, specific, human. No marketing fluff, no "unlock", no "dive into", no exclamation marks.
 - Use ONLY the facts given. Never invent numbers, salaries, companies or claims.
 - You may reference the real job count and the kinds of employers/roles listed.
-- Topezia's actual promises, which you may draw on: jobs are aggregated from company career pages and re-verified so listings aren't dead; upload a résumé once and get an honest match score INCLUDING low ones, with visible skill gaps; we send people to the original posting and never trap the application.
+- Topezia's actual promises, which you may draw on: jobs are aggregated from company career pages and re-verified so listings aren't dead; upload a resume once and get an honest match score INCLUDING low ones, with visible skill gaps; we send people to the original posting and never trap the application.
 - Write for someone searching for this exact kind of job. Address them as "you".
 - Return ONLY the paragraph text. No quotes, no preamble, no markdown.`;
 
