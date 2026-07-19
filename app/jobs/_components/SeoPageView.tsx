@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import type { SeoPage, SeoJob } from "@/lib/seo/pages";
-import { countrySlugFor } from "@/lib/seo/pages";
+import { countrySlugFor, countryName } from "@/lib/seo/pages";
 import { decodeHtmlEntities } from "@/lib/sanitize";
 import AlertCapture from "./AlertCapture";
 import SiteNav from "@/app/_components/SiteNav";
@@ -99,7 +99,10 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
         <p style={S.intro}>{page.intro}</p>
 
         {/* Email-alert capture above the fold (§7), plus the résumé path. */}
-        <AlertCapture slug={page.slug} place={page.state ?? (page.country ? countrySlugFor(page.country) : undefined)} label={page.heading} />
+        {/* The country heading carries an "& open to applicants there" clause
+            that reads badly inside "Get new {label} by email" — use the plain
+            place name for the alert label instead. */}
+        <AlertCapture slug={page.slug} place={page.state ?? (page.country ? countrySlugFor(page.country) : undefined)} label={page.country ? `jobs open to ${countryName(page.country)}` : page.heading} />
         <div style={S.cta}>
           <div>
             <div style={S.ctaTitle}>Which of these actually fit you?</div>

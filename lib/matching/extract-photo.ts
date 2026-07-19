@@ -265,8 +265,9 @@ export async function cropScannedPhoto(
     const cw = ex - sx;
     // The model's box sometimes runs long and swallows the section below the
     // photo. A headshot region is never much taller than wide — cap the aspect
-    // and trim from the BOTTOM (the face sits at the top of the region).
-    if (ey - sy > cw * 1.35) ey = sy + Math.round(cw * 1.35);
+    // near-square and trim from the BOTTOM (the face sits at the top of the
+    // region), so circular avatars center on the face instead of the torso.
+    if (ey - sy > cw * 1.15) ey = sy + Math.round(cw * 1.15);
     const ch = ey - sy;
     if (cw < 40 || ch < 40) return null; // too small to be a real headshot crop
 

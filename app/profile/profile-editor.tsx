@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { initials } from "@/app/_components/ui";
 import { RoadmapTeaser, type Insights } from "@/app/_components/roadmap";
 
@@ -67,6 +68,7 @@ const skillBadge = (s: Skill): "told" | "guess" | "added" =>
   s.source === "USER_ADDED" ? "added" : s.confidence < 0.8 ? "guess" : "told";
 
 export default function ProfileEditor() {
+  const router = useRouter();
   const [p, setP] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -184,11 +186,30 @@ export default function ProfileEditor() {
       });
       if (!res.ok) throw new Error("save");
       setSaved(true);
+      router.push("/profile"); // land back on the profile to see the result
     } catch {
       setError("Couldn't save — try again.");
     } finally {
       setSaving(false);
     }
+  }
+
+  /** Read an image the user picked, downscale it client-side, store as data URI. */
+  function uploadPhoto(file: File) {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const max = 480;
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      set("photoUrl", canvas.toDataURL("image/jpeg", 0.85));
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => { setError("Couldn't read that image — try a JPG or PNG."); URL.revokeObjectURL(url); };
+    img.src = url;
   }
 
   /**
@@ -331,11 +352,11 @@ export default function ProfileEditor() {
         </section>
 
         <section style={S.card}>
-          <div style={S.cardLabel}>Profile photo <Badge kind="told" /></div>
+          <div style={S.cardLabel}>Profile photo</div>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             {p.photoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={p.photoUrl} alt="Profile" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", border: "1px solid #ececf2" }} />
+              <img src={p.photoUrl} alt="Profile" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", objectPosition: "center top", border: "1px solid #ececf2" }} />
             ) : (
               <div style={{ width: 72, height: 72, borderRadius: "50%", background: "#eef0ff", color: INDIGO, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 24 }}>
                 {initials(p.fullName)}
@@ -343,11 +364,18 @@ export default function ProfileEditor() {
             )}
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.5 }}>
-                {p.photoUrl ? "Pulled from your CV. Uploading a new one is coming soon." : "No photo found in your CV. Uploading one is coming soon."}
+                {p.photoUrl ? "From your CV or your last upload. Replace it any time." : "No photo yet — upload one, or it'll be pulled from your next CV upload."}
               </div>
-              {p.photoUrl && (
-                <button style={{ ...S.addRow, background: "#fff", border: "1px solid #d4d4d8", color: INK, marginTop: 10 }} onClick={() => set("photoUrl", null)}>Remove photo</button>
-              )}
+              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <label style={{ ...S.addRow, marginTop: 0, cursor: "pointer", display: "inline-block" }}>
+                  <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadPhoto(f); e.target.value = ""; }} />
+                  {p.photoUrl ? "Replace photo" : "Upload photo"}
+                </label>
+                {p.photoUrl && (
+                  <button style={{ ...S.addRow, background: "#fff", border: "1px solid #d4d4d8", color: INK, marginTop: 0 }} onClick={() => set("photoUrl", null)}>Remove</button>
+                )}
+              </div>
+              <div style={{ ...S.hint, marginTop: 8 }}>Hit Save below to apply.</div>
             </div>
           </div>
         </section>
@@ -548,7 +576,7 @@ const S: Record<string, CSSProperties> = {
   // Highlighted stats hero — matches the feed's dark "Good morning" hero.
   hero: { background: NAVY, borderRadius: 18, padding: "22px 24px", color: "#fff", position: "relative", overflow: "hidden", marginBottom: 16 },
   heroGlow: { position: "absolute", top: -100, right: -40, width: 320, height: 320, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.32), transparent 68%)", pointerEvents: "none" },
-  heroAvatar: { width: 56, height: 56, borderRadius: "50%", objectFit: "cover", border: "2px solid rgba(255,255,255,.25)", flex: "none" },
+  heroAvatar: { width: 56, height: 56, borderRadius: "50%", objectFit: "cover", objectPosition: "center top", border: "2px solid rgba(255,255,255,.25)", flex: "none" },
   heroAvatarFallback: { width: 56, height: 56, borderRadius: "50%", background: "linear-gradient(135deg,#6366F1,#8B5CF6)", color: "#fff", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 20, flex: "none" },
   heroGreeting: { margin: 0, fontFamily: "'Sora', sans-serif", fontSize: 22, fontWeight: 800, letterSpacing: "-0.4px" },
   heroEyebrow: { fontSize: 11, color: "#B9C0D4", marginTop: 4, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700 },
@@ -594,7 +622,9 @@ const S: Record<string, CSSProperties> = {
   pillOn: { padding: "8px 16px", borderRadius: 20, border: `1px solid ${INDIGO}`, background: INDIGO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
   pillOff: { padding: "8px 16px", borderRadius: 20, border: "1px solid #d4d4d8", background: "#fff", color: INK, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
   err: { color: "#b42318", fontSize: 14, margin: "0 0 12px" },
-  saveBar: { display: "flex", alignItems: "center", gap: 14, position: "sticky", bottom: 0, padding: "16px 0" },
-  saveBtn: { padding: "13px 28px", background: INDIGO, color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" },
+  // A full-width white stripe so the save action is always findable — the
+  // button floating transparently over content was easy to lose.
+  saveBar: { display: "flex", alignItems: "center", gap: 14, position: "sticky", bottom: 0, padding: "14px 20px", background: "#fff", borderTop: "1px solid #ececf2", boxShadow: "0 -8px 20px rgba(15,23,42,.07)", width: "100%", boxSizing: "border-box", borderRadius: "12px 12px 0 0", zIndex: 20 },
+  saveBtn: { flex: "1 1 auto", maxWidth: 340, padding: "13px 28px", background: INDIGO, color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" },
   savedNote: { color: "#0f6e56", fontSize: 14, fontWeight: 600 },
 };

@@ -98,7 +98,7 @@ export default function ProfileView() {
           <div style={{ flex: "none", padding: 4, borderRadius: "50%", background: GRAD }}>
             {p.photoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={p.photoUrl} alt={name} style={{ width: 112, height: 112, borderRadius: "50%", objectFit: "cover", display: "block", background: C.navy }} />
+              <img src={p.photoUrl} alt={name} style={{ width: 112, height: 112, borderRadius: "50%", objectFit: "cover", objectPosition: "center top", display: "block", background: C.navy }} />
             ) : (
               <div style={{ width: 112, height: 112, borderRadius: "50%", background: C.navy, display: "grid", placeItems: "center", fontSize: 34, fontWeight: 800, color: "#fff" }}>{avatarInitials}</div>
             )}

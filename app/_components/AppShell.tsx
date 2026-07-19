@@ -43,6 +43,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [isMobile, setIsMobile] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false); // account dropdown (top-right)
+  // With prefetch disabled, a nav click waits a full server round-trip with no
+  // feedback — people click 3-4 times thinking it didn't register. This flag
+  // paints a progress bar the INSTANT any nav link is clicked.
+  const [navigating, setNavigating] = useState(false);
   const [name, setName] = useState<string | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
 
@@ -61,8 +65,23 @@ export default function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
-  // Close the drawer + account menu on navigation.
-  useEffect(() => { setMobileOpen(false); setMenuOpen(false); }, [pathname]);
+  // Close the drawer + account menu and clear the progress bar on navigation.
+  useEffect(() => { setMobileOpen(false); setMenuOpen(false); setNavigating(false); }, [pathname]);
+
+  // A link back to the CURRENT page never changes pathname, so clear the bar
+  // ourselves after a beat rather than letting it spin forever.
+  useEffect(() => {
+    if (!navigating) return;
+    const t = setTimeout(() => setNavigating(false), 8000);
+    return () => clearTimeout(t);
+  }, [navigating]);
+
+  /** Instant feedback for every nav click: close menus, light the bar. */
+  function navClicked() {
+    setMenuOpen(false);
+    setMobileOpen(false);
+    setNavigating(true);
+  }
 
   async function logout() {
     try {
@@ -84,9 +103,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: C.bg, fontFamily: FONT, color: C.ink, overflowX: "clip" }}>
+      {navigating && (
+        <>
+          <style>{"@keyframes tz-nav{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}"}</style>
+          <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: 3, zIndex: 100, overflow: "hidden", background: "rgba(99,102,241,.15)" }}>
+            <div style={{ width: "40%", height: "100%", background: GRAD, animation: "tz-nav 1s ease-in-out infinite" }} />
+          </div>
+        </>
+      )}
       {isMobile && mobileOpen && <div onClick={() => setMobileOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.4)", zIndex: 55 }} />}
       <aside style={asideStyle}>
-        <Link href="/feed" prefetch={false} style={{ display: "flex", alignItems: "center", gap: 9, padding: "4px 10px 18px", justifyContent: just, textDecoration: "none", color: C.ink }}>
+        <Link href="/feed" prefetch={false} onClick={navClicked} style={{ display: "flex", alignItems: "center", gap: 9, padding: "4px 10px 18px", justifyContent: just, textDecoration: "none", color: C.ink }}>
           <BrandMark />
           <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-0.5px", display: disp }}>topezia</span>
         </Link>
@@ -109,7 +136,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             };
             if (nv.href) {
               return (
-                <Link key={nv.label} href={nv.href} prefetch={false} title={nv.label} style={{ ...base, background: active ? GRAD : "transparent", color: active ? "#fff" : "#475569", fontWeight: active ? 600 : 500 }}>
+                <Link key={nv.label} href={nv.href} prefetch={false} onClick={navClicked} title={nv.label} style={{ ...base, background: active ? GRAD : "transparent", color: active ? "#fff" : "#475569", fontWeight: active ? 600 : 500 }}>
                   {inner}
                 </Link>
               );
@@ -149,7 +176,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <button onClick={() => setMenuOpen((o) => !o)} style={{ display: "flex", alignItems: "center", gap: 9, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 999, padding: "4px 14px 4px 4px", cursor: "pointer", color: C.ink, fontFamily: "inherit" }}>
               {photo ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={photo} alt={name ?? "You"} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", display: "block" }} />
+                <img src={photo} alt={name ?? "You"} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", objectPosition: "center top", display: "block" }} />
               ) : (
                 <div style={{ width: 32, height: 32, borderRadius: "50%", background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700 }}>{initials(name)}</div>
               )}
@@ -161,8 +188,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
                 <div style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", zIndex: 41, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, boxShadow: "0 12px 32px rgba(15,23,42,.14)", padding: 6, minWidth: 190 }}>
                   {name && <div style={{ padding: "8px 12px 6px", fontSize: 12, color: C.mut, borderBottom: `1px solid ${C.line}`, marginBottom: 4 }}>Signed in as<div style={{ color: C.ink, fontWeight: 700, fontSize: 13 }}>{name}</div></div>}
-                  <Link href="/profile/edit" prefetch={false} style={S_menuItem}><Icon name="edit" size={16} />Edit profile</Link>
-                  <Link href="/settings" prefetch={false} style={S_menuItem}><Icon name="settings" size={16} />Settings</Link>
+                  <Link href="/profile/edit" prefetch={false} onClick={navClicked} style={S_menuItem}><Icon name="edit" size={16} />Edit profile</Link>
+                  <Link href="/settings" prefetch={false} onClick={navClicked} style={S_menuItem}><Icon name="settings" size={16} />Settings</Link>
                   <div style={{ height: 1, background: C.line, margin: "4px 0" }} />
                   <button onClick={() => { setMenuOpen(false); logout(); }} style={{ ...S_menuItem, width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", color: "#b42318" }}><Icon name="logout" size={16} />Log out</button>
                 </div>

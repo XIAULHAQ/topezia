@@ -142,7 +142,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
 
     // /jobs/{vertical-slug}/{country}
     if (!STATE_NAMES[st] && iso && vertical) {
-      const where = { status: "LIVE" as const, verticalId: vertical.id, country: iso };
+      const where = { status: "LIVE" as const, kind: "JOB" as const, verticalId: vertical.id, country: iso };
       const total = await prisma.job.count({ where });
       if (total < MIN_JOBS_FOR_PAGE) return null;
       const cName = countryName(iso);
@@ -162,7 +162,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
 
     // /jobs/{role-slug}/{country}
     if (!STATE_NAMES[st] && iso) {
-      const where = { status: "LIVE" as const, roleId: role.id, country: iso };
+      const where = { status: "LIVE" as const, kind: "JOB" as const, roleId: role.id, country: iso };
       const total = await prisma.job.count({ where });
       if (total < MIN_JOBS_FOR_PAGE) return null;
       const cName = countryName(iso);
@@ -178,7 +178,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
         siblings: await siblingsForRole(role.id, role.slug, undefined, iso),
       };
     }
-    const where = { status: "LIVE" as const, roleId: role.id, locationState: st };
+    const where = { status: "LIVE" as const, kind: "JOB" as const, roleId: role.id, locationState: st };
     const total = await prisma.job.count({ where });
     if (total < MIN_JOBS_FOR_PAGE) return null;
     return {
@@ -199,7 +199,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
     const roleSlug = clean.slice(REMOTE_PREFIX.length);
     const role = await prisma.role.findUnique({ where: { slug: roleSlug }, select: { id: true, name: true, slug: true } });
     if (!role) return null;
-    const where = { status: "LIVE" as const, roleId: role.id, remoteType: { in: REMOTE_TYPES } };
+    const where = { status: "LIVE" as const, kind: "JOB" as const, roleId: role.id, remoteType: { in: REMOTE_TYPES } };
     const total = await prisma.job.count({ where });
     if (total < MIN_JOBS_FOR_PAGE) return null;
     return {
@@ -217,7 +217,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
   // /jobs/{role-slug}
   const role = await prisma.role.findUnique({ where: { slug: clean }, select: { id: true, name: true, slug: true } });
   if (role) {
-    const where = { status: "LIVE" as const, roleId: role.id };
+    const where = { status: "LIVE" as const, kind: "JOB" as const, roleId: role.id };
     const total = await prisma.job.count({ where });
     if (total < MIN_JOBS_FOR_PAGE) return null;
     return {
@@ -235,19 +235,27 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
   // /jobs/{place} — all live jobs in one state or country, across every
   // vertical. Full-name slugs only, so it can't collide with a role/vertical
   // slug or with the 2-letter state codes used deeper in the lattice.
+  //
+  // Country pages are ELIGIBILITY-based, mirroring the feed: jobs located in
+  // the country PLUS globally-remote jobs hireable from anywhere. That's what
+  // a seeker in Pakistan or the Gulf actually wants, and it's the only honest
+  // way to serve markets where located supply is still thin (PK has 0 located
+  // jobs but 200+ open to applicants there).
   const placeCountry = ISO_BY_SLUG[clean];
   const placeState = STATE_BY_SLUG[clean];
   if (placeCountry || placeState) {
     const where = placeCountry
-      ? { status: "LIVE" as const, country: placeCountry }
-      : { status: "LIVE" as const, locationState: placeState! };
+      ? { status: "LIVE" as const, kind: "JOB" as const, OR: [{ country: placeCountry }, { remoteScope: "GLOBAL" }] }
+      : { status: "LIVE" as const, kind: "JOB" as const, locationState: placeState! };
     const total = await prisma.job.count({ where });
     if (total < MIN_JOBS_FOR_PAGE) return null;
     const name = placeCountry ? countryName(placeCountry) : stateName(placeState!);
     return {
       kind: "place",
-      heading: `Jobs in ${name}`,
-      intro: `${total} verified ${total === 1 ? "opening" : "openings"} in ${name}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your résumé once and Topezia scores each one against your actual experience — honestly, including the weak fits.`,
+      heading: placeCountry ? `Jobs in ${name} & open to applicants there` : `Jobs in ${name}`,
+      intro: placeCountry
+        ? `${total} verified ${total === 1 ? "opening" : "openings"} open to applicants in ${name} — roles located there plus remote jobs hireable from anywhere. Aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your résumé once and Topezia scores each one against your actual experience — honestly, including the weak fits.`
+        : `${total} verified ${total === 1 ? "opening" : "openings"} in ${name}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your résumé once and Topezia scores each one against your actual experience — honestly, including the weak fits.`,
       canonicalPath: `/jobs/${clean}`,
       slug: clean,
       jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
@@ -259,7 +267,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
   // /jobs/{vertical-slug}
   const vertical = await prisma.vertical.findUnique({ where: { slug: clean }, select: { id: true, name: true, slug: true } });
   if (vertical && vertical.slug !== "unsorted") {
-    const where = { status: "LIVE" as const, verticalId: vertical.id };
+    const where = { status: "LIVE" as const, kind: "JOB" as const, verticalId: vertical.id };
     const total = await prisma.job.count({ where });
     if (total < MIN_JOBS_FOR_PAGE) return null;
     return {
@@ -452,15 +460,17 @@ const EMPTY_HUB: BrowseHub = { totalLive: 0, verticals: [], roles: [], states: [
 
 export async function getBrowseHub(): Promise<BrowseHub> {
   let verticals, roles, totalLive, vCounts, rCounts, states, countries;
+  let globalRemote = 0;
   try {
-    [verticals, roles, totalLive, vCounts, rCounts, states, countries] = await Promise.all([
+    [verticals, roles, totalLive, vCounts, rCounts, states, countries, globalRemote] = await Promise.all([
       prisma.vertical.findMany({ select: { id: true, name: true, slug: true } }),
       prisma.role.findMany({ select: { id: true, name: true, slug: true } }),
-      prisma.job.count({ where: { status: "LIVE" } }),
-      prisma.job.groupBy({ by: ["verticalId"], where: { status: "LIVE" }, _count: { id: true } }),
-      prisma.job.groupBy({ by: ["roleId"], where: { status: "LIVE", roleId: { not: null } }, _count: { id: true } }),
-      prisma.job.groupBy({ by: ["locationState"], where: { status: "LIVE", locationState: { not: null } }, _count: { id: true } }),
-      prisma.job.groupBy({ by: ["country"], where: { status: "LIVE", country: { not: null } }, _count: { id: true } }),
+      prisma.job.count({ where: { status: "LIVE", kind: "JOB" } }),
+      prisma.job.groupBy({ by: ["verticalId"], where: { status: "LIVE", kind: "JOB" }, _count: { id: true } }),
+      prisma.job.groupBy({ by: ["roleId"], where: { status: "LIVE", kind: "JOB", roleId: { not: null } }, _count: { id: true } }),
+      prisma.job.groupBy({ by: ["locationState"], where: { status: "LIVE", kind: "JOB", locationState: { not: null } }, _count: { id: true } }),
+      prisma.job.groupBy({ by: ["country"], where: { status: "LIVE", kind: "JOB", country: { not: null } }, _count: { id: true } }),
+      prisma.job.count({ where: { status: "LIVE", kind: "JOB", remoteScope: "GLOBAL" } }),
     ]);
   } catch (err) {
     // A DB blip must never crash the build or 500 the hub — degrade to empty.
@@ -492,9 +502,19 @@ export async function getBrowseHub(): Promise<BrowseHub> {
     .map((c) => ({ href: `/jobs/${stateSlug(c.locationState!)}`, label: stateName(c.locationState!), count: c._count.id }))
     .sort(desc);
 
-  const cLinks = countries
-    .filter((c) => c.country && c.country !== "US" && COUNTRY_NAMES[c.country] && keep(c._count.id))
-    .map((c) => ({ href: `/jobs/${countrySlug(c.country!)}`, label: countryName(c.country!), count: c._count.id }))
+  // Country links mirror the country PAGES: located jobs + globally-remote
+  // jobs open to applicants there. Pakistan + the Gulf are always featured —
+  // markets we deliberately serve before local supply exists (global-remote
+  // jobs are fully eligible there).
+  const FEATURED_COUNTRIES = ["PK", "SA", "AE", "QA", "KW", "BH", "OM"];
+  const locatedByCountry = new Map(countries.filter((c) => c.country).map((c) => [c.country!, c._count.id]));
+  const countryIsos = new Set([
+    ...[...locatedByCountry.keys()].filter((c) => c !== "US" && COUNTRY_NAMES[c]),
+    ...FEATURED_COUNTRIES,
+  ]);
+  const cLinks = [...countryIsos]
+    .map((iso) => ({ href: `/jobs/${countrySlug(iso)}`, label: countryName(iso), count: (locatedByCountry.get(iso) ?? 0) + globalRemote }))
+    .filter((l) => keep(l.count))
     .sort(desc);
 
   return { totalLive, verticals: vLinks, roles: rLinks, states: sLinks, countries: cLinks };
