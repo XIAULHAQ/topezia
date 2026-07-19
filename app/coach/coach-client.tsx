@@ -1,17 +1,16 @@
 "use client";
 
 /**
- * Career Coach — the full roadmap page. Everything shown is counted from the
- * live postings in the user's field; the thin-market and no-field states say
- * so honestly instead of padding the page.
+ * Career Coach — the full roadmap page, per the coach redesign: dark hero
+ * band, roadmap card grid, field momentum, and a dark "coming to your coach"
+ * strip. Everything shown is counted from the live postings in the user's
+ * field; the thin-market and no-field states say so honestly instead of
+ * padding the page.
  */
 import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
-import { SoonTag } from "@/app/_components/ui";
+import { C, FONT, GRAD, Icon } from "@/app/_components/ui";
 import { MomentumCard, RoadmapCard, type Insights } from "@/app/_components/roadmap";
-
-const INK = "#1a1a2e";
-const MUTED = "#6b7280";
 
 export default function CoachClient() {
   const [insights, setInsights] = useState<Insights | null | "error">(null);
@@ -24,16 +23,24 @@ export default function CoachClient() {
       .catch(() => setInsights("error"));
   }, []);
 
+  const ok = insights !== null && insights !== "error";
   return (
     <div style={S.page}>
-      <div style={S.head}>
-        <h1 style={S.h1}>Career Coach</h1>
-        <p style={S.sub}>
-          {insights && insights !== "error" && insights.reliable
-            ? <>Your roadmap, diffed against the {insights.targetJobs} live {insights.fieldLabel ?? "postings"} open to you. Counted, never invented.</>
-            : <>Your roadmap, diffed against the live postings in your field. Counted, never invented.</>}
-        </p>
-      </div>
+      {/* Dark hero band */}
+      <section style={S.hero}>
+        <div style={S.heroGlow} />
+        <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <span style={S.heroIcon}><Icon name="spark" size={20} color="#fff" /></span>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <h1 style={S.h1}>Career Coach</h1>
+            <div style={S.heroSub}>
+              {ok && insights.reliable
+                ? <>Your roadmap, diffed against the <strong style={{ color: "#fff" }}>{insights.targetJobs} live {insights.fieldLabel ?? "postings"}</strong> open to you. Counted, never invented.</>
+                : <>Your roadmap, diffed against the live postings in your field. Counted, never invented.</>}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {insights === null ? (
         <p style={S.msg}>Scoring you against every live posting in your field…</p>
@@ -41,8 +48,8 @@ export default function CoachClient() {
         <p style={S.msg}>We couldn&apos;t load your insights just now — refresh to try again.</p>
       ) : insights.reliable ? (
         <>
-          {insights.momentum && <MomentumCard momentum={insights.momentum} fieldLabel={insights.fieldLabel} />}
           <RoadmapCard insights={insights} tier={tier} />
+          {insights.momentum && <MomentumCard momentum={insights.momentum} fieldLabel={insights.fieldLabel} />}
         </>
       ) : (
         <section style={S.thinCard}>
@@ -56,35 +63,44 @@ export default function CoachClient() {
 
       {/* What's coming — named honestly, not pretended. */}
       <section style={S.soonCard}>
-        <div style={S.soonHead}>Coming to your coach</div>
-        {[
-          ["Insight alerts", "a note when your market moves — a gap crossing a threshold, a skill trending up"],
-          ["Shareable career-fit report", "your mirror and roadmap as a page you can send"],
-        ].map(([t, d]) => (
-          <div key={t} style={S.soonRow}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={S.soonTitle}>{t}</div>
+        <div style={S.soonGlow} />
+        <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <Icon name="spark" size={20} color="#fff" />
+          <h2 style={S.soonHead}>Coming to your coach</h2>
+        </div>
+        <div style={{ position: "relative", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 14 }}>
+          {[
+            ["Insight alerts", "a note when your market moves — a gap crossing a threshold, a skill trending up"],
+            ["Shareable career-fit report", "your mirror and roadmap as a page you can send"],
+          ].map(([t, d]) => (
+            <div key={t} style={S.soonTile}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 800, flex: 1 }}>{t}</div>
+                <span style={S.soonPill}>Soon</span>
+              </div>
               <div style={S.soonMeta}>{d}</div>
             </div>
-            <SoonTag />
-          </div>
-        ))}
+          ))}
+        </div>
       </section>
     </div>
   );
 }
 
 const S: Record<string, CSSProperties> = {
-  page: { maxWidth: 860, margin: "0 auto", padding: "26px 20px 60px" },
-  head: { marginBottom: 18 },
-  h1: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 24, margin: "0 0 6px", color: INK },
-  sub: { fontSize: 13.5, color: MUTED, lineHeight: 1.55, margin: 0, maxWidth: 620 },
-  msg: { fontSize: 13.5, color: MUTED, lineHeight: 1.6 },
-  thinCard: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 20, marginBottom: 22, fontSize: 13.5, color: MUTED, lineHeight: 1.6 },
-  link: { color: "#4f46e5", fontWeight: 600, textDecoration: "none" },
-  soonCard: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 20 },
-  soonHead: { fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: MUTED, marginBottom: 6 },
-  soonRow: { display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderTop: "1px solid #f2f2f5", marginTop: 8 },
-  soonTitle: { fontSize: 14, fontWeight: 600, color: INK },
-  soonMeta: { fontSize: 12, color: MUTED, marginTop: 3, lineHeight: 1.45 },
+  page: { maxWidth: 1060, margin: "0 auto", padding: "20px 20px 40px", fontFamily: FONT, color: C.ink },
+  hero: { background: C.navy, borderRadius: 18, padding: "26px 30px", color: "#fff", position: "relative", overflow: "hidden", marginBottom: 22 },
+  heroGlow: { position: "absolute", top: -100, right: -40, width: 320, height: 320, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.36), transparent 68%)" },
+  heroIcon: { width: 44, height: 44, borderRadius: 12, background: GRAD, display: "grid", placeItems: "center", flex: "none", position: "relative" },
+  h1: { margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: -0.5 },
+  heroSub: { fontSize: 12.5, color: "#94A3C0", marginTop: 5, lineHeight: 1.55 },
+  msg: { fontSize: 13.5, color: C.mut, lineHeight: 1.6 },
+  thinCard: { background: "#fff", border: `1px solid ${C.line}`, borderRadius: 16, padding: 20, fontSize: 13.5, color: C.mut, lineHeight: 1.6 },
+  link: { color: C.c1, fontWeight: 600, textDecoration: "none" },
+  soonCard: { background: `linear-gradient(160deg, ${C.navy}, ${C.navy2})`, borderRadius: 16, padding: "24px 26px", marginTop: 22, color: "#fff", position: "relative", overflow: "hidden" },
+  soonGlow: { position: "absolute", top: -60, right: -60, width: 220, height: 220, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.35), transparent 70%)" },
+  soonHead: { margin: 0, fontSize: 16, fontWeight: 800, letterSpacing: -0.3 },
+  soonTile: { background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.11)", borderRadius: 12, padding: "16px 18px" },
+  soonPill: { background: "rgba(99,102,241,.25)", border: "1px solid rgba(139,92,246,.4)", color: "#C4B5FD", fontSize: 9.5, fontWeight: 700, borderRadius: 999, padding: "3px 9px", flex: "none", whiteSpace: "nowrap" },
+  soonMeta: { fontSize: 12, color: "#B9C0D4", marginTop: 5, lineHeight: 1.55 },
 };

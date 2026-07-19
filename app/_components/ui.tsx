@@ -36,6 +36,9 @@ export function initials(name: string | null | undefined): string {
 /** SVG path sets for the icon set (stroke, 24x24 viewBox). */
 const PATHS: Record<string, string[]> = {
   home: ["M3 10 12 3l9 7v11H3V10z", "M9 21v-7h6v7"],
+  map: ["M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2z", "M9 4v14", "M15 6v14"],
+  link: ["M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1.5 1.5", "M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1.5-1.5"],
+  pulse: ["M3 12h4l2-6 4 12 2-6h6"],
   feed: ["M4 4h16v16H4z", "M8 9h8", "M8 13h8", "M8 17h5"],
   search: ["M21 21l-4.35-4.35", "M11 5a6 6 0 1 1 0 12 6 6 0 0 1 0-12z"],
   bookmark: ["M6 3h12v18l-6-4-6 4z"],
