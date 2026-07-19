@@ -14,7 +14,7 @@ import { C, GRAD, Icon, Card, SoonTag, initials } from "@/app/_components/ui";
 
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
 
-type Skill = { name: string; proficiency: string | null; source: string };
+type Skill = { name: string; proficiency: string | null; source: string; tier?: "CORE" | "SECONDARY" };
 interface Profile {
   fullName: string | null; headline: string | null; seniority: string | null; photoUrl: string | null;
   yearsExperience: number | null; currentLocation: string | null; country: string | null;
@@ -62,7 +62,13 @@ export default function ProfileView() {
   const avatarInitials = initials(p.fullName);
   const field = ins?.fieldLabel ? label(ins.fieldLabel.replace(/ roles.*/, "")) : p.industries[0] ? label(p.industries[0]) : "Your field";
   const isRemote = p.remoteTypes.some((r) => r.startsWith("REMOTE"));
-  const topSkills = [...p.skills].sort((a, b) => profPct(b.proficiency) - profPct(a.proficiency)).slice(0, 6);
+  // Core skills first — "Top skills" should show what the person IS.
+  const topSkills = [...p.skills]
+    .sort((a, b) => {
+      const at = a.tier === "SECONDARY" ? 1 : 0, bt = b.tier === "SECONDARY" ? 1 : 0;
+      return at !== bt ? at - bt : profPct(b.proficiency) - profPct(a.proficiency);
+    })
+    .slice(0, 6);
 
   // Real, computed completion — counts what's actually filled in.
   const filled = [!!p.headline, p.skills.length > 0, !!p.currentLocation, p.workHistory.length > 0, p.education.length > 0, p.industries.length > 0];
@@ -246,15 +252,27 @@ export default function ProfileView() {
 
           {showSkillsTab && (
             <Card>
-              <SectionHead icon="gauge" title="Skills & proficiency" />
+              <SectionHead icon="gauge" title="Core skills" />
               <div className="pv-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 28px" }}>
-                {p.skills.map((s) => (
+                {p.skills.filter((s) => s.tier !== "SECONDARY").map((s) => (
                   <div key={s.name}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600, marginBottom: 7 }}><span>{s.name}</span><span style={{ color: C.c1 }}>{s.proficiency ? label(s.proficiency) : "—"}</span></div>
                     <Bar pct={profPct(s.proficiency)} />
                   </div>
                 ))}
               </div>
+              {p.skills.some((s) => s.tier === "SECONDARY") && (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: C.mut, margin: "22px 0 12px" }}>Also knows</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {p.skills.filter((s) => s.tier === "SECONDARY").map((s) => (
+                      <span key={s.name} style={{ background: "#F1F5F9", border: `1px solid ${C.line}`, color: C.slate, fontSize: 12.5, fontWeight: 600, borderRadius: 999, padding: "6px 14px" }}>
+                        {s.name}{s.proficiency ? ` · ${label(s.proficiency).toLowerCase()}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
             </Card>
           )}
 

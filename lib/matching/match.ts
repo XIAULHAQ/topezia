@@ -109,17 +109,19 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       workAuthorization: true,
       headlineRoleId: true,
       matchVersion: true,
-      skills: { select: { proficiency: true, skill: { select: { name: true } } } },
+      skills: { select: { proficiency: true, tier: true, skill: { select: { name: true } } } },
     },
   });
   if (!profile) return [];
   const version = profile.matchVersion ?? "unversioned";
 
   // Annotate with proficiency where we have it, so the reranker can tell an
-  // expert apart from someone who listed a tool once.
-  const profileSkillNames = profile.skills.map((s) =>
-    s.proficiency ? `${s.skill.name} (${s.proficiency.toLowerCase()})` : s.skill.name
-  );
+  // expert apart from someone who listed a tool once. Core and secondary go as
+  // separate lists — fit is judged on core; secondary is "also knows".
+  const skillLabel = (s: (typeof profile.skills)[number]) =>
+    s.proficiency ? `${s.skill.name} (${s.proficiency.toLowerCase()})` : s.skill.name;
+  const coreSkillNames = profile.skills.filter((s) => s.tier !== "SECONDARY").map(skillLabel);
+  const secondarySkillNames = profile.skills.filter((s) => s.tier === "SECONDARY").map(skillLabel);
   // Profile.headlineRoleId is a bare fk (no relation defined in schema), so
   // resolve the role name in a separate lookup.
   const headlineRole = profile.headlineRoleId
@@ -274,7 +276,8 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
         headline: headlineRoleName,
         seniority: profile.seniority ?? "NOT_APPLICABLE",
         yearsExperience: profile.yearsExperience,
-        skills: profileSkillNames,
+        coreSkills: coreSkillNames,
+        secondarySkills: secondarySkillNames,
         currentLocation: profile.currentLocation,
         industries: profile.industries,
         salaryTarget: profile.salaryTarget,
@@ -425,6 +428,7 @@ Scoring (be honest — the distribution must be EARNED, do not cluster everythin
 - <50: weak fit; still score it truthfully.
 Weigh: skill overlap (required skills matter most), seniority fit, sensible next career step, and preference alignment.
 - Skills may be annotated with proficiency (familiar/proficient/advanced/expert). A job wanting deep use of a skill the candidate is only FAMILIAR with is a gap, even though they technically list it.
+- Skills are split into CORE (their professional identity — what their roles were hired to do) and secondary ("also knows" — real but adjacent capabilities). Fit is judged primarily on CORE skills and role trajectory. A job that mainly needs only their secondary skills is a sideways move, not their line of work — score it honestly lower (usually 50-70 even with full skill overlap) and say in whyLine that it leans on their secondary skills rather than their core role.
 - Industry overlap is a mild plus, never a requirement — people change industries.
 - If a salary target is given it is an aspiration, not a floor: a job below it is not disqualified, but say so plainly in whyLine if the posted range clearly falls short.
 - If the candidate needs visa sponsorship, mention it in whyLine ONLY when the posting itself speaks to sponsorship or work authorization. Never assume from the company or country, and never lower a score over sponsorship the posting is silent about.
@@ -442,7 +446,8 @@ async function rerankBatch(
     headline: string | null;
     seniority: string;
     yearsExperience: number | null;
-    skills: string[];
+    coreSkills: string[];
+    secondarySkills: string[];
     currentLocation: string | null;
     industries: string[];
     salaryTarget: number | null;
@@ -464,7 +469,8 @@ async function rerankBatch(
 - headline role: ${profile.headline ?? "unknown"}
 - seniority: ${profile.seniority}
 - years experience: ${profile.yearsExperience ?? "unknown"}
-- skills: ${profile.skills.join(", ") || "none listed"}
+- CORE skills (their line of work): ${profile.coreSkills.join(", ") || "none listed"}
+- secondary skills (also knows, not their main line): ${profile.secondarySkills.join(", ") || "none"}
 - industries worked in: ${profile.industries.join(", ") || "unknown"}
 - based in: ${profile.currentLocation ?? "unknown"}
 - salary target: ${profile.salaryTarget != null ? `${profile.salaryTarget} per ${(profile.salaryPeriod ?? "year").toLowerCase()} (aspiration, not a filter)` : "not given"}

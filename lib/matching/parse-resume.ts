@@ -21,6 +21,10 @@ export interface ParsedSkill {
    *  Deliberately separate from confidence — a résumé can state a skill
    *  unambiguously (confidence 1.0) that the person has barely touched. */
   proficiency: SkillProficiency | null;
+  /** CORE = what their roles were hired to do (professional identity);
+   *  SECONDARY = a real adjacent capability ("I also build websites").
+   *  Matching and stats lead with CORE. */
+  tier: "CORE" | "SECONDARY";
 }
 
 export interface ParsedResume {
@@ -45,12 +49,20 @@ const PARSE_PROMPT = `You parse a job seeker's résumé into structured JSON. Re
   "yearsExperience": number | null,  // total years of relevant professional experience
   "currentLocation": string | null,  // where THEY are (e.g. "San Diego, CA"), from the résumé header. null if absent — never guess from employer locations
   "industries": string[],            // 1-4 sectors they've actually worked in, lowercase (e.g. "healthcare", "b2b saas", "logistics")
-  "skills": [ { "name": string, "confidence": number, "proficiency": "FAMILIAR" | "PROFICIENT" | "ADVANCED" | "EXPERT" } ],
+  "skills": [ { "name": string, "confidence": number, "proficiency": "FAMILIAR" | "PROFICIENT" | "ADVANCED" | "EXPERT", "tier": "CORE" | "SECONDARY" } ],
                                      // 5-15 concrete skills.
                                      // confidence = did the résumé SAY it: 1.0 explicitly listed/used, 0.5-0.7 only implied by their roles.
                                      // proficiency = how GOOD they are, inferred from years using it, the seniority of roles where it appears, and depth of described work.
                                      //   FAMILIAR = mentioned in passing; PROFICIENT = used regularly; ADVANCED = deep sustained use; EXPERT = leads/teaches it.
                                      // These are independent: a résumé can clearly list a skill (confidence 1.0) the person has barely used (FAMILIAR).
+                                     // tier = is this skill WHAT THEY ARE, or something they also know?
+                                     //   CORE = central to the jobs they were actually hired for — judge from their job TITLES, the work described
+                                     //          in their most recent/senior roles, and their headline. These define their professional identity.
+                                     //   SECONDARY = a genuine capability that is adjacent or supporting — tools/crafts they use or mention but were
+                                     //          not the reason they were hired. Example: a Director of Digital Marketing who also builds websites,
+                                     //          e-commerce stores and designs graphics -> SEO/PPC/marketing strategy are CORE; web development,
+                                     //          e-commerce and graphic design are SECONDARY. When in doubt, ask: would their last two job titles
+                                     //          exist without this skill? If yes, it's SECONDARY.
   "workHistory": [ { "title": string, "company": string, "years": string } ],  // most recent first, up to 5
   "education": [ { "degree": string, "institution": string, "year": string } ],
   "certifications": string[]
@@ -173,6 +185,7 @@ function normalizeParsed(parsed: Partial<ParsedResume>): ParsedResume {
         proficiency: VALID_PROFICIENCY.includes(s.proficiency as SkillProficiency)
           ? (s.proficiency as SkillProficiency)
           : null, // never trust an unrecognized level into the DB enum
+        tier: s.tier === "SECONDARY" ? ("SECONDARY" as const) : ("CORE" as const), // unknown -> CORE (safe default)
       })),
     workHistory: (parsed.workHistory ?? []).filter((w) => w && w.title),
     education: (parsed.education ?? []).filter((e) => e && e.degree),

@@ -94,7 +94,7 @@ export function buildTruckingProfile(a: TruckingAnswers): {
   const prof = proficiencyFor(a.yearsDriving);
   const skills: ParsedResume["skills"] = [];
   const push = (name: string, proficiency: SkillProficiency = prof) =>
-    skills.push({ name, confidence: 1, proficiency });
+    skills.push({ name, confidence: 1, proficiency, tier: "CORE" }); // questionnaire skills ARE the person's line of work
 
   push("Commercial Driving", prof);
   if (a.cdlClass !== "NONE") push(`CDL Class ${a.cdlClass}`, prof);

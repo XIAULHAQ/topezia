@@ -16,7 +16,8 @@ function greeting(): string {
 }
 
 type Prov = "RESUME" | "CONFIRMED" | "USER_ADDED";
-interface Skill { name: string; proficiency: string | null; confidence: number; source: Prov }
+type Tier = "CORE" | "SECONDARY";
+interface Skill { name: string; proficiency: string | null; confidence: number; source: Prov; tier: Tier }
 interface Profile {
   fullName: string | null;
   photoUrl: string | null;
@@ -175,7 +176,7 @@ export default function ProfileEditor() {
           salaryPeriod: p.salaryPeriod ?? "YEAR",
           workAuthorization: p.workAuthorization,
           photoUrl: p.photoUrl,
-          skills: p.skills.map((s) => ({ name: s.name, proficiency: s.proficiency, source: s.source })),
+          skills: p.skills.map((s) => ({ name: s.name, proficiency: s.proficiency, source: s.source, tier: s.tier })),
           workHistory: p.workHistory.filter((w) => w.title || w.company),
           education: p.education.filter((e) => e.degree || e.institution),
           certifications: p.certifications,
@@ -235,6 +236,26 @@ export default function ProfileEditor() {
   if (!p) return <div style={S.wrap}><p style={{ color: MUTED }}>Loading your profile…</p></div>;
 
   const firstName = p.fullName?.trim().split(/\s+/)[0] || "there";
+
+  const upSkill = (name: string, patch: Partial<Skill>) => set("skills", p.skills.map((x) => (x.name === name ? { ...x, ...patch } : x)));
+  const skillRow = (s: Skill) => (
+    <div key={s.name} style={S.skillRow}>
+      <div style={{ flex: 1, fontSize: 14 }}>{s.name}</div>
+      <select style={S.skillSel} value={s.proficiency ?? ""} onChange={(e) => upSkill(s.name, { proficiency: e.target.value || null })}>
+        <option value="">level?</option>
+        {PROFICIENCIES.map((pr) => <option key={pr} value={pr}>{label(pr)}</option>)}
+      </select>
+      <button
+        style={S.tierBtn}
+        title={s.tier === "SECONDARY" ? "Move to core — this IS my line of work" : "Move to 'also knows' — I can do this, but it's not my main line"}
+        onClick={() => upSkill(s.name, { tier: s.tier === "SECONDARY" ? "CORE" : "SECONDARY" })}
+      >
+        {s.tier === "SECONDARY" ? "→ core" : "→ also"}
+      </button>
+      <Badge kind={skillBadge(s)} />
+      <button aria-label={`Remove ${s.name}`} style={S.x} onClick={() => set("skills", p.skills.filter((x) => x.name !== s.name))}>×</button>
+    </div>
+  );
 
   return (
     <div style={S.wrap}>
@@ -373,25 +394,29 @@ export default function ProfileEditor() {
         </section>
 
         <section style={S.card}>
-          <div style={S.cardLabel}>Skills — tap to set how strong, × to remove</div>
-          <div style={S.skills}>
-            {p.skills.map((s, i) => (
-              <div key={s.name} style={S.skillRow}>
-                <div style={{ flex: 1, fontSize: 14 }}>{s.name}</div>
-                <select style={S.skillSel} value={s.proficiency ?? ""} onChange={(e) => set("skills", p.skills.map((x, j) => j === i ? { ...x, proficiency: e.target.value || null } : x))}>
-                  <option value="">level?</option>
-                  {PROFICIENCIES.map((pr) => <option key={pr} value={pr}>{label(pr)}</option>)}
-                </select>
-                <Badge kind={skillBadge(s)} />
-                <button aria-label={`Remove ${s.name}`} style={S.x} onClick={() => set("skills", p.skills.filter((_, j) => j !== i))}>×</button>
-              </div>
-            ))}
+          <div style={S.cardLabel}>Core skills — your line of work</div>
+          <div style={{ ...S.hint, marginTop: 0, marginBottom: 12 }}>
+            What your roles were actually hired to do. Your matches, stats and roadmap lead with these.
           </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-            <input style={S.input} placeholder="Add a skill…" value={newSkill} onChange={(e) => setNewSkill(e.target.value)}
+          <div style={S.skills}>
+            {p.skills.filter((s) => s.tier !== "SECONDARY").map((s) => skillRow(s))}
+            {p.skills.every((s) => s.tier === "SECONDARY") && <div style={S.hint}>No core skills yet — move some up from below, or add one.</div>}
+          </div>
+
+          <div style={{ ...S.cardLabel, marginTop: 22 }}>Also knows — secondary skills</div>
+          <div style={{ ...S.hint, marginTop: 0, marginBottom: 12 }}>
+            Real capabilities that aren&apos;t your main line (&quot;I also build websites&quot;). They still count in your favor — they just don&apos;t define your feed.
+          </div>
+          <div style={S.skills}>
+            {p.skills.filter((s) => s.tier === "SECONDARY").map((s) => skillRow(s))}
+            {p.skills.every((s) => s.tier !== "SECONDARY") && <div style={S.hint}>Nothing here — use &quot;→ also&quot; on a core skill to move it down.</div>}
+          </div>
+
+          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <input style={S.input} placeholder="Add a skill (added as core — move it after if it's an 'also')…" value={newSkill} onChange={(e) => setNewSkill(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && newSkill.trim()) {
-                  set("skills", [...p.skills, { name: newSkill.trim(), proficiency: null, confidence: 1, source: "USER_ADDED" }]);
+                  set("skills", [...p.skills, { name: newSkill.trim(), proficiency: null, confidence: 1, source: "USER_ADDED", tier: "CORE" }]);
                   setNewSkill("");
                 }
               }} />
@@ -557,6 +582,7 @@ const S: Record<string, CSSProperties> = {
   skills: { display: "flex", flexDirection: "column", gap: 8 },
   skillRow: { display: "flex", alignItems: "center", gap: 10 },
   skillSel: { padding: "6px 8px", borderRadius: 8, border: "1px solid #d4d4d8", fontSize: 13, background: "#fff", fontFamily: "inherit" },
+  tierBtn: { padding: "6px 10px", borderRadius: 8, border: "1px solid #DDD6FE", background: "#F5F3FF", color: "#7C3AED", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
   x: { border: "none", background: "none", color: MUTED, fontSize: 20, cursor: "pointer", lineHeight: 1, padding: "0 4px" },
   chips: { display: "flex", flexWrap: "wrap", gap: 8 },
   histRow: { padding: "12px 0", borderTop: "1px solid #f2f2f5" },

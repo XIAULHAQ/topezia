@@ -74,7 +74,7 @@ export async function GET() {
       salaryFloor: true, salaryTarget: true, salaryPeriod: true, workAuthorization: true,
       tier: true, headlineRoleId: true, fullName: true, photoUrl: true, publicSlug: true,
       workHistory: true, education: true, certifications: true, entryPath: true,
-      skills: { select: { proficiency: true, confidence: true, source: true, skill: { select: { name: true } } } },
+      skills: { select: { proficiency: true, confidence: true, source: true, tier: true, skill: { select: { name: true } } } },
     },
   });
   if (!p) return NextResponse.json({ error: "No profile." }, { status: 404 });
@@ -106,7 +106,7 @@ export async function GET() {
       salaryFloor: p.salaryFloor, salaryTarget: p.salaryTarget, salaryPeriod: p.salaryPeriod,
       workAuthorization: p.workAuthorization, tier: p.tier, entryPath: p.entryPath, publicSlug: p.publicSlug,
       workHistory: p.workHistory ?? [], education: p.education ?? [], certifications: p.certifications,
-      skills: p.skills.map((s) => ({ name: s.skill.name, proficiency: s.proficiency, confidence: s.confidence, source: s.source })),
+      skills: p.skills.map((s) => ({ name: s.skill.name, proficiency: s.proficiency, confidence: s.confidence, source: s.source, tier: s.tier })),
     },
   });
 }

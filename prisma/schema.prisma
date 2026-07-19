@@ -395,6 +395,14 @@ enum EntryPath {
   QUESTIONNAIRE
 }
 
+// CORE = what the person's roles were hired to do (their professional
+// identity); SECONDARY = real adjacent capabilities ("I also build websites").
+// Matching, embeddings and stats lead with CORE.
+enum SkillTier {
+  CORE
+  SECONDARY
+}
+
 model ProfileSkill {
   profileId  String
   profile    Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
@@ -406,6 +414,7 @@ model ProfileSkill {
   confidence Float   @default(1.0) // 0–1
   proficiency SkillProficiency? // inferred from years/seniority/depth of use
   source     SkillSource @default(RESUME)
+  tier       SkillTier @default(CORE)
 
   @@id([profileId, skillId])
 }

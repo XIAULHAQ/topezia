@@ -66,7 +66,7 @@ export interface PubProfile {
   currentLocation: string | null;
   isRemote: boolean;
   industries: string[];
-  skills: { name: string; proficiency: string | null }[];
+  skills: { name: string; proficiency: string | null; tier: string }[];
   workHistory: { title?: string; company?: string; years?: string }[];
   education: { degree?: string; institution?: string; year?: string }[];
   certifications: string[];
@@ -83,7 +83,7 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
       publicSlug: true, fullName: true, photoUrl: true, headlineRoleId: true, yearsExperience: true,
       currentLocation: true, industries: true, employmentTypes: true, remoteTypes: true, locations: true,
       workHistory: true, education: true, certifications: true,
-      skills: { select: { proficiency: true, skill: { select: { name: true } } } },
+      skills: { select: { proficiency: true, tier: true, skill: { select: { name: true } } } },
     },
   });
   if (!p || !p.publicSlug) return null;
@@ -98,7 +98,7 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     currentLocation: p.currentLocation,
     isRemote: p.remoteTypes.some((r) => r.startsWith("REMOTE")),
     industries: p.industries,
-    skills: p.skills.map((s) => ({ name: s.skill.name, proficiency: s.proficiency })),
+    skills: p.skills.map((s) => ({ name: s.skill.name, proficiency: s.proficiency, tier: s.tier })),
     workHistory: (p.workHistory as PubProfile["workHistory"]) ?? [],
     education: (p.education as PubProfile["education"]) ?? [],
     certifications: p.certifications,
@@ -126,7 +126,13 @@ export function profileMetadata(p: PubProfile, tab: PublicTab): Metadata {
 
 export default function PublicProfile({ p, tab }: { p: PubProfile; tab: PublicTab }) {
   const name = p.fullName ?? "Topezia member";
-  const topSkills = [...p.skills].sort((a, b) => (PROF_PCT[b.proficiency ?? ""] ?? 65) - (PROF_PCT[a.proficiency ?? ""] ?? 65)).slice(0, 6);
+  // Core first — "Top skills" is the person's identity, not their side tools.
+  const topSkills = [...p.skills]
+    .sort((a, b) => {
+      const at = a.tier === "SECONDARY" ? 1 : 0, bt = b.tier === "SECONDARY" ? 1 : 0;
+      return at !== bt ? at - bt : (PROF_PCT[b.proficiency ?? ""] ?? 65) - (PROF_PCT[a.proficiency ?? ""] ?? 65);
+    })
+    .slice(0, 6);
   const show = { about: tab === "overview", exp: tab === "overview" || tab === "experience", skills: tab === "skills", projects: tab === "overview" || tab === "projects", edu: tab === "overview" || tab === "education" };
   const url = `${SITE}/p/${p.slug}`;
 
@@ -220,16 +226,30 @@ export default function PublicProfile({ p, tab }: { p: PubProfile; tab: PublicTa
             )}
 
             {show.skills && (
-              <Card><Head icon="gauge" title="Skills" />
+              <Card><Head icon="gauge" title="Core skills" />
                 {p.skills.length ? (
-                  <div className="pp-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 28px" }}>
-                    {p.skills.map((s) => (
-                      <div key={s.name}>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600, marginBottom: 7 }}><span>{s.name}</span><span style={{ color: C.c1 }}>{s.proficiency ? label(s.proficiency) : "—"}</span></div>
-                        <div style={S.barTrack}><div style={{ ...S.barFill, width: `${PROF_PCT[s.proficiency ?? ""] ?? 65}%` }} /></div>
-                      </div>
-                    ))}
-                  </div>
+                  <>
+                    <div className="pp-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 28px" }}>
+                      {p.skills.filter((s) => s.tier !== "SECONDARY").map((s) => (
+                        <div key={s.name}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600, marginBottom: 7 }}><span>{s.name}</span><span style={{ color: C.c1 }}>{s.proficiency ? label(s.proficiency) : "—"}</span></div>
+                          <div style={S.barTrack}><div style={{ ...S.barFill, width: `${PROF_PCT[s.proficiency ?? ""] ?? 65}%` }} /></div>
+                        </div>
+                      ))}
+                    </div>
+                    {p.skills.some((s) => s.tier === "SECONDARY") && (
+                      <>
+                        <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: C.mut, margin: "22px 0 12px" }}>Also knows</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                          {p.skills.filter((s) => s.tier === "SECONDARY").map((s) => (
+                            <span key={s.name} style={{ background: "#F1F5F9", border: `1px solid ${C.line}`, color: C.slate, fontSize: 12.5, fontWeight: 600, borderRadius: 999, padding: "6px 14px" }}>
+                              {s.name}{s.proficiency ? ` · ${label(s.proficiency).toLowerCase()}` : ""}
+                            </span>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </>
                 ) : <Empty text="No skills listed yet." />}
               </Card>
             )}

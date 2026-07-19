@@ -10,7 +10,7 @@
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import type { EmploymentType, EntryPath, RemoteType, SalaryPeriod, SkillSource, WorkAuthorization } from "@prisma/client";
+import type { EmploymentType, EntryPath, RemoteType, SalaryPeriod, SkillSource, SkillTier, WorkAuthorization } from "@prisma/client";
 import { resolveRole, resolveSkillsMap } from "@/lib/ingestion/resolve-taxonomy";
 import { extractCountry } from "@/lib/ingestion/normalize-rules";
 import { embedText, writeProfileEmbedding } from "@/lib/ingestion/embed";
@@ -27,11 +27,20 @@ export interface ProfilePreferences {
   verticalsOptIn?: string[];
 }
 
-/** Text the profile embedding is derived from — spec §3.4 (headline + skills + condensed history). */
+/**
+ * Text the profile embedding is derived from — spec §3.4 (headline + skills +
+ * condensed history). Core skills lead; secondary ones trail behind an "also
+ * familiar with" clause, so the vector leans toward what the person IS (a
+ * marketing director) rather than everything they can do (also builds
+ * websites) — that's what keeps the feed on their actual field.
+ */
 export function buildProfileEmbeddingInput(parsed: ParsedResume): string {
+  const core = parsed.skills.filter((s) => s.tier !== "SECONDARY").map((s) => s.name);
+  const secondary = parsed.skills.filter((s) => s.tier === "SECONDARY").map((s) => s.name);
   return [
     parsed.headlineRole || "",
-    parsed.skills.map((s) => s.name).join(", "),
+    core.join(", "),
+    secondary.length ? `also familiar with: ${secondary.join(", ")}` : "",
     parsed.workHistory.map((w) => `${w.title} at ${w.company}`).join("; "),
   ]
     .filter(Boolean)
@@ -66,18 +75,19 @@ export async function createOrUpdateProfile(params: {
   // raw names collapse to one canonical skill.
   const idByName = await resolveSkillsMap(parsed.skills.map((s) => s.name));
   const RANK = { FAMILIAR: 1, PROFICIENT: 2, ADVANCED: 3, EXPERT: 4 } as const;
-  const bySkill = new Map<string, { confidence: number; proficiency: ParsedResume["skills"][number]["proficiency"] }>();
+  const bySkill = new Map<string, { confidence: number; proficiency: ParsedResume["skills"][number]["proficiency"]; tier: "CORE" | "SECONDARY" }>();
   for (const s of parsed.skills) {
     const id = idByName.get(s.name.trim());
     if (!id) continue;
     const prev = bySkill.get(id);
     // Two raw names can collapse to one canonical skill — keep the strongest
-    // evidence of each, independently.
+    // evidence of each, independently. CORE beats SECONDARY for the same skill.
     const proficiency =
       !prev?.proficiency ? s.proficiency
       : !s.proficiency ? prev.proficiency
       : RANK[s.proficiency] > RANK[prev.proficiency] ? s.proficiency : prev.proficiency;
-    bySkill.set(id, { confidence: Math.max(prev?.confidence ?? 0, s.confidence), proficiency });
+    const tier = prev?.tier === "CORE" || s.tier === "CORE" ? ("CORE" as const) : ("SECONDARY" as const);
+    bySkill.set(id, { confidence: Math.max(prev?.confidence ?? 0, s.confidence), proficiency, tier });
   }
 
   // New match version on every save → transparently invalidates cached
@@ -156,6 +166,7 @@ export async function createOrUpdateProfile(params: {
         confidence: v.confidence,
         proficiency: v.proficiency,
         source: skillSource,
+        tier: v.tier,
       })),
       skipDuplicates: true,
     });
@@ -214,7 +225,7 @@ export interface ProfileFieldEdit {
   salaryTarget?: number | null;
   salaryPeriod?: SalaryPeriod | null;
   workAuthorization?: WorkAuthorization;
-  skills?: { name: string; proficiency: import("@prisma/client").SkillProficiency | null; source?: SkillSource }[];
+  skills?: { name: string; proficiency: import("@prisma/client").SkillProficiency | null; source?: SkillSource; tier?: SkillTier }[];
   // Résumé-derived history the profile view/edit surfaces. Stored as-is; these
   // don't affect matching (the embedding is built from headline + skills), so
   // editing them never triggers a re-embed.
@@ -270,7 +281,7 @@ export async function updateProfileFields(
 
   await prisma.profile.update({ where: { id: existing.id }, data });
 
-  let skillNames: string[] | null = null;
+  let skillNames: { name: string; tier: SkillTier }[] | null = null;
   if (edit.skills !== undefined) {
     // Preserve provenance: a skill already on the profile keeps its source and
     // confidence (so the "you told us / we inferred" badge survives an edit);
@@ -278,11 +289,11 @@ export async function updateProfileFields(
     // skill is the strongest signal there is.
     const prior = await prisma.profileSkill.findMany({
       where: { profileId: existing.id },
-      select: { skillId: true, source: true, confidence: true },
+      select: { skillId: true, source: true, confidence: true, tier: true },
     });
     const priorById = new Map(prior.map((p) => [p.skillId, p]));
     const idByName = await resolveSkillsMap(edit.skills.map((s) => s.name));
-    const bySkill = new Map<string, { proficiency: import("@prisma/client").SkillProficiency | null; source: SkillSource; confidence: number }>();
+    const bySkill = new Map<string, { proficiency: import("@prisma/client").SkillProficiency | null; source: SkillSource; confidence: number; tier: SkillTier }>();
     for (const s of edit.skills) {
       const id = idByName.get(s.name.trim());
       if (!id || bySkill.has(id)) continue;
@@ -291,18 +302,22 @@ export async function updateProfileFields(
         proficiency: s.proficiency,
         source: was?.source ?? s.source ?? ("USER_ADDED" as SkillSource),
         confidence: was?.confidence ?? 1.0,
+        // The edit is authoritative when it names a tier (the editor's
+        // core/secondary toggle); otherwise keep what we knew; brand-new
+        // hand-added skills default to CORE — asserting a skill is identity.
+        tier: (s.tier ?? was?.tier ?? "CORE") as SkillTier,
       });
     }
     await prisma.profileSkill.deleteMany({ where: { profileId: existing.id } });
     if (bySkill.size > 0) {
       await prisma.profileSkill.createMany({
         data: [...bySkill.entries()].map(([skillId, v]) => ({
-          profileId: existing.id, skillId, confidence: v.confidence, proficiency: v.proficiency, source: v.source,
+          profileId: existing.id, skillId, confidence: v.confidence, proficiency: v.proficiency, source: v.source, tier: v.tier,
         })),
         skipDuplicates: true,
       });
     }
-    skillNames = edit.skills.map((s) => s.name);
+    skillNames = edit.skills.map((s) => ({ name: s.name, tier: (s.tier ?? "CORE") as "CORE" | "SECONDARY" }));
   }
 
   // Re-embed only when an input the embedding is built from changed.
@@ -314,13 +329,13 @@ export async function updateProfileFields(
         ? (await prisma.role.findUnique({ where: { id: existing.headlineRoleId }, select: { name: true } }))?.name ?? ""
         : "";
     if (skillNames === null) {
-      const cur = await prisma.profileSkill.findMany({ where: { profileId: existing.id }, select: { skill: { select: { name: true } } } });
-      skillNames = cur.map((c) => c.skill.name);
+      const cur = await prisma.profileSkill.findMany({ where: { profileId: existing.id }, select: { tier: true, skill: { select: { name: true } } } });
+      skillNames = cur.map((c) => ({ name: c.skill.name, tier: c.tier }));
     }
     const history = (existing.workHistory as { title: string; company: string }[] | null) ?? [];
     const input = buildProfileEmbeddingInput({
       headlineRole: roleName,
-      skills: skillNames.map((name) => ({ name, confidence: 1, proficiency: null })),
+      skills: skillNames.map((s) => ({ name: s.name, confidence: 1, proficiency: null, tier: s.tier })),
       workHistory: history,
     } as ParsedResume);
     const embedding = await embedText(input);
