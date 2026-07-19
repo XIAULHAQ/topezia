@@ -80,6 +80,19 @@ function Badge({ kind }: { kind: "told" | "inferred" | "guess" | "added" }) {
 const skillBadge = (s: Skill): "told" | "guess" | "added" =>
   s.source === "USER_ADDED" ? "added" : s.confidence < 0.8 ? "guess" : "told";
 
+// A to-scale demand meter. The number always rides beside the bar — the bar is
+// the shape, the label is the fact, so nothing reads by color alone.
+function Meter({ pct, color = "#8B5CF6" }: { pct: number; color?: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "1 1 220px", minWidth: 160 }}>
+      <div style={{ flex: 1, height: 6, borderRadius: 4, background: "#f1f1f6" }}>
+        <div style={{ width: pct === 0 ? 0 : `${Math.max(2, Math.min(100, pct))}%`, height: "100%", borderRadius: 4, background: color }} />
+      </div>
+      <span style={{ fontSize: 12.5, fontWeight: 700, color: INK, minWidth: 36, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{pct}%</span>
+    </div>
+  );
+}
+
 export default function ProfileEditor() {
   const [p, setP] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -300,61 +313,80 @@ export default function ProfileEditor() {
               <i className="ti" aria-hidden="true" />
               Biggest lever: <strong>{insights.skillGaps[0].skill}</strong> — named in {insights.skillGaps[0].pct}% of {insights.fieldLabel ?? "these roles"}.
             </div>
+            <div style={S.secSub}>Each bar is the share of the {insights.targetJobs} postings in your field that name it.</div>
             {insights.skillGaps.map((g, i) => {
               const premium = i >= insights.premiumFrom && tier !== "PREMIUM";
               return (
-                <div key={g.skill} style={S.step}>
-                  <div style={{ flex: 1 }}>
-                    <div style={S.stepTitle}>{g.youHave ? `Take ${g.skill} from ${g.youHave.toLowerCase()} to advanced` : `Add ${g.skill}`}</div>
-                    <div style={S.stepMeta}>named in {g.pct}% of your field · {g.youHave ? `you're ${g.youHave.toLowerCase()}` : "not on your profile"}</div>
+                <div key={g.skill} style={S.gapRow}>
+                  <div style={S.rowTop}>
+                    <div style={S.rowTitle}>{g.youHave ? `Take ${g.skill} from ${g.youHave.toLowerCase()} to advanced` : `Add ${g.skill}`}</div>
+                    {i === 0 ? <span style={S.freeTag}>biggest gap</span> : premium ? <span style={S.premTag}>premium</span> : null}
                   </div>
-                  {i === 0 ? <span style={S.freeTag}>biggest gap</span> : premium ? <span style={S.premTag}>premium</span> : null}
+                  <div style={S.meterRow}>
+                    <Meter pct={g.pct} />
+                    <span style={S.meterNote}>{g.youHave ? `you're ${g.youHave.toLowerCase()} today` : "not on your profile yet"}</span>
+                  </div>
                 </div>
               );
             })}
             {/* Learn-this-next: gaps ranked by the pull of skills you already have */}
             {insights.nextSkills.length > 0 && (
-              <>
-                <div style={{ ...S.cardLabel, marginTop: 18 }}>Learn this next · what rides along with skills you have</div>
+              <div style={S.sec}>
+                <div style={S.secHead}><span style={S.secDot} />Learn this next · what rides along with skills you have</div>
+                <div style={S.secSub}>Of the postings asking for a skill you already have, the share that also name the next one.</div>
                 {insights.nextSkills.map((n, i) => {
                   const premium = i >= 1 && tier !== "PREMIUM";
                   return (
-                    <div key={n.skill} style={S.step}>
-                      <div style={{ flex: 1 }}>
-                        <div style={S.stepTitle}>{n.skill} — pairs with your {n.withSkill}</div>
-                        <div style={S.stepMeta}>{n.pairPct}% of postings wanting {n.withSkill} — which you have — also name {n.skill} ({n.pairJobs} postings)</div>
+                    <div key={n.skill} style={S.gapRow}>
+                      <div style={S.rowTop}>
+                        <div style={{ ...S.rowTitle, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={S.chipHave}>you have · {n.withSkill}</span>
+                          <span aria-hidden="true" style={{ color: MUTED }}>→</span>
+                          <span style={S.chipNext}>{n.skill}</span>
+                        </div>
+                        {i === 0 ? <span style={S.freeTag}>strongest pull</span> : premium ? <span style={S.premTag}>premium</span> : null}
                       </div>
-                      {i === 0 ? <span style={S.freeTag}>strongest pull</span> : premium ? <span style={S.premTag}>premium</span> : null}
+                      <div style={S.meterRow}>
+                        <Meter pct={n.pairPct} />
+                        <span style={S.meterNote}>{n.pairJobs} postings name both</span>
+                      </div>
                     </div>
                   );
                 })}
-              </>
+              </div>
             )}
             {/* Ladder: the counted diff between your level's postings and the next level's */}
             {insights.ladder && (
-              <>
-                <div style={{ ...S.cardLabel, marginTop: 18 }}>The jump to {label(insights.ladder.to)} · what the next level&apos;s postings add</div>
+              <div style={S.sec}>
+                <div style={S.secHead}><span style={S.secDot} />The jump to {label(insights.ladder.to)} · what the next level&apos;s postings add</div>
+                <div style={S.secSub}>
+                  How often the {insights.ladder.nextLevelJobs} {label(insights.ladder.to).toLowerCase()} postings in your field name it, against the {insights.ladder.atLevelJobs} at your level.
+                </div>
                 {insights.ladder.steps.map((s, i) => {
                   const premium = i >= 1 && tier !== "PREMIUM";
                   return (
-                    <div key={s.skill} style={S.step}>
-                      <div style={{ flex: 1 }}>
-                        <div style={S.stepTitle}>{s.skill}</div>
-                        <div style={S.stepMeta}>named in {s.nextPct}% of {label(insights.ladder!.to).toLowerCase()} postings vs {s.yourPct}% at your level ({s.jobs} of {insights.ladder!.nextLevelJobs} postings)</div>
+                    <div key={s.skill} style={S.gapRow}>
+                      <div style={S.rowTop}>
+                        <div style={S.rowTitle}>{s.skill}</div>
+                        {i === 0 ? <span style={S.freeTag}>next-level diff</span> : premium ? <span style={S.premTag}>premium</span> : null}
                       </div>
-                      {i === 0 ? <span style={S.freeTag}>next-level diff</span> : premium ? <span style={S.premTag}>premium</span> : null}
+                      <div style={S.lvlRow}><span style={S.lvlLabel}>{label(insights.ladder!.to).toLowerCase()}</span><Meter pct={s.nextPct} /></div>
+                      <div style={S.lvlRow}><span style={S.lvlLabel}>you</span><Meter pct={s.yourPct} color="#c9cbd6" /></div>
                     </div>
                   );
                 })}
-              </>
+              </div>
             )}
             {insights.certs.length > 0 && (
-              <div style={S.step}>
-                <div style={{ flex: 1 }}>
-                  <div style={S.stepTitle}>{insights.certs[0].label}</div>
-                  <div style={S.stepMeta}>named in {insights.certs[0].jobs} of your field&apos;s postings</div>
+              <div style={S.sec}>
+                <div style={S.secHead}><span style={S.secDot} />Certifications your field names</div>
+                <div style={S.gapRow}>
+                  <div style={S.rowTop}>
+                    <div style={S.rowTitle}>{insights.certs[0].label}</div>
+                    {tier !== "PREMIUM" && <span style={S.premTag}>premium</span>}
+                  </div>
+                  <div style={S.rowMeta}>named in {insights.certs[0].jobs} of your field&apos;s postings</div>
                 </div>
-                {tier !== "PREMIUM" && <span style={S.premTag}>premium</span>}
               </div>
             )}
             <div style={S.foot}>Every step is counted from real postings, never invented. Free while we&apos;re new — the tag shows where premium will fall later.</div>
@@ -622,6 +654,22 @@ const S: Record<string, CSSProperties> = {
   freeTag: { fontSize: 11, color: MUTED, whiteSpace: "nowrap" },
   premTag: { fontSize: 11, padding: "2px 9px", borderRadius: 12, background: "#f0eaff", color: "#7a3cff", whiteSpace: "nowrap" },
   foot: { fontSize: 12, color: MUTED, borderTop: "1px solid #f2f2f5", marginTop: 6, paddingTop: 12, lineHeight: 1.45 },
+  // Roadmap sections — one violet accent for every demand meter, chips for the
+  // pairing lens, gray only as the labeled "your level" reference bar.
+  sec: { marginTop: 22 },
+  secHead: { display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: MUTED },
+  secDot: { width: 7, height: 7, borderRadius: "50%", background: "#8B5CF6", flexShrink: 0 },
+  secSub: { fontSize: 12, color: MUTED, lineHeight: 1.45, margin: "4px 0 2px" },
+  gapRow: { padding: "13px 0 12px", borderTop: "1px solid #f2f2f5", marginTop: 10 },
+  rowTop: { display: "flex", alignItems: "center", gap: 10 },
+  rowTitle: { fontSize: 14, fontWeight: 600, color: INK, flex: 1, minWidth: 0 },
+  rowMeta: { fontSize: 12, color: MUTED, marginTop: 4, lineHeight: 1.45 },
+  meterRow: { display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" },
+  meterNote: { fontSize: 12, color: MUTED, whiteSpace: "nowrap" },
+  chipHave: { fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 12, background: "#e7f6ee", color: "#0f6e56", whiteSpace: "nowrap" },
+  chipNext: { fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 12, background: "#eef0ff", color: "#3a34a8", whiteSpace: "nowrap" },
+  lvlRow: { display: "flex", alignItems: "center", gap: 10, marginTop: 7 },
+  lvlLabel: { fontSize: 11, fontWeight: 700, color: MUTED, width: 46, flexShrink: 0, letterSpacing: 0.3 },
   cardLabel: { fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: MUTED, marginBottom: 12 },
   row: { display: "flex", gap: 10 },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, margin: "14px 0 0" },
