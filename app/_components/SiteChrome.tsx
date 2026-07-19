@@ -34,7 +34,9 @@ export function Brand({ h = 26 }: { h?: number }) {
 const NAV_LINKS = [
   { label: "Find jobs", href: "/jobs" },
   { label: "Projects", href: "/projects" },
-  { label: "AI Career Coach", href: "/onboard" },
+  // /coach is auth-gated: anonymous visitors get bounced to /login, which
+  // carries the "join by uploading your résumé" path to /onboard.
+  { label: "AI Career Coach", href: "/coach" },
   { label: "For employers", href: "/waitlist" },
 ];
 

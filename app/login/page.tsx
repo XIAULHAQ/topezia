@@ -113,11 +113,18 @@ export default function LoginPage() {
         )}
 
         <p style={S.toggle}>
-          {mode === "signup" ? "Already have an account?" : "New here?"}{" "}
+          {mode === "signup" ? "Already have an account?" : "Have a password already?"}{" "}
           <button type="button" style={S.toggleBtn} onClick={() => { setMode(mode === "signup" ? "login" : "signup"); setError(null); setNotice(null); }}>
-            {mode === "signup" ? "Log in" : "Create one"}
+            {mode === "signup" ? "Log in" : "Create an account"}
           </button>
         </p>
+
+        {/* The front door for newcomers: joining IS uploading your résumé. */}
+        <div style={S.orRow}><span style={S.orLine} /><span style={S.orText}>Don&apos;t have an account?</span><span style={S.orLine} /></div>
+        <Link href="/onboard" style={S.joinBig}>
+          <span style={{ display: "block", fontSize: 16, fontWeight: 800 }}>Join now — upload your résumé</span>
+          <span style={{ display: "block", fontSize: 12.5, fontWeight: 500, opacity: 0.9, marginTop: 4 }}>Our AI builds your profile and career score in 2 minutes. Free.</span>
+        </Link>
       </form>
     </main>
   );
@@ -143,4 +150,8 @@ const S: Record<string, CSSProperties> = {
   toggleBtn: { background: "none", border: "none", color: INDIGO, fontWeight: 700, cursor: "pointer", fontSize: 14, fontFamily: "inherit" },
   consent: { textAlign: "center", color: MUTED, fontSize: 12, marginTop: 14, lineHeight: 1.5 },
   consentLink: { color: INDIGO, fontWeight: 600, textDecoration: "none" },
+  orRow: { display: "flex", alignItems: "center", gap: 12, margin: "22px 0 14px" },
+  orLine: { flex: 1, height: 1, background: "#e2e2ea" },
+  orText: { color: MUTED, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" },
+  joinBig: { display: "block", textAlign: "center", background: "linear-gradient(135deg,#8B5CF6,#3B82F6)", color: "#fff", borderRadius: 14, padding: "16px 20px", textDecoration: "none", boxShadow: "0 10px 26px rgba(99,102,241,.35)" },
 };
