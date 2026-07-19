@@ -131,7 +131,7 @@ export default function PublicProfile({ p, tab }: { p: PubProfile; tab: PublicTa
   const url = `${SITE}/p/${p.slug}`;
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: C.bg, fontFamily: FONT, color: C.ink, overflowX: "hidden" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: C.bg, fontFamily: FONT, color: C.ink, overflowX: "clip" }}>
       <style>{"@media (max-width:820px){.pp-grid{grid-template-columns:1fr!important}.pp-2col{grid-template-columns:1fr!important}.pp-hero{padding:24px 20px!important}}"}</style>
       {/* header */}
       <header style={{ background: "#fff", borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, zIndex: 20 }}>
