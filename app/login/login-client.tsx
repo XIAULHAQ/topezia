@@ -67,11 +67,12 @@ const CSS = `
 
 export default function LoginClient({ next, stats, viewer }: { next: string | null; stats: LoginStats | null; viewer: Viewer | null }) {
   const router = useRouter();
-  // Someone with a parsed profile but no account yet is here to CREATE one —
-  // that's the post-onboarding hand-off (/login?next=/profile/edit), so it must
-  // open in signup even though a `next` is present, or the flow dead-ends.
+  // /login means SIGN IN — that is what every "Sign in" link in the app points
+  // at, so it must land on the sign-in form. The one exception is the
+  // post-onboarding hand-off: a visitor with a parsed profile but no account
+  // came here to create one, so open signup for them or the flow dead-ends.
   const [mode, setMode] = useState<"login" | "signup">(
-    viewer && !viewer.hasAccount ? "signup" : next ? "login" : "signup"
+    viewer && !viewer.hasAccount ? "signup" : "login"
   );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
