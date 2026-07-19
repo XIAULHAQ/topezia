@@ -27,6 +27,9 @@ const SOURCE_PRIORITY: Record<JobSource, number> = {
   ADZUNA: 3,
   JOOBLE: 3,
   CPC_FEED: 4,
+  // Projects never collide with ATS jobs (different kind, no companyDomain),
+  // so priority only matters against other marketplace copies.
+  FREELANCER_COM: 3,
 };
 
 interface DedupCandidate {

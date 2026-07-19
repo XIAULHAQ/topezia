@@ -17,14 +17,14 @@ import { C, GRAD, FONT, Icon, MatchRing, Card, SoonTag } from "@/app/_components
 
 type Match = {
   jobId: string; title: string; company: string; verticalSlug: string; cardLayout: string;
-  source: string; sourceUrl: string; remoteType: string; employmentType: string;
+  kind: string; source: string; sourceUrl: string; remoteType: string; employmentType: string;
   country: string | null; remoteScope: string | null;
   salaryMin: number | null; salaryMax: number | null; salaryPeriod: string | null;
   locationState: string | null; lastVerifiedAt: string; similarity: number; score: number;
   matchedSkills: string[]; gapSkills: string[]; whyLine: string; pending: boolean;
 };
 
-const FILTERS = ["All matches", "Remote", "Hourly", "Saved"] as const;
+const FILTERS = ["All matches", "Remote", "Hourly", "Projects", "Saved"] as const;
 type Filter = (typeof FILTERS)[number];
 
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
@@ -55,7 +55,8 @@ function freshness(iso: string): string {
 }
 function fmtSalary(m: Match): string | null {
   if (m.salaryMin == null && m.salaryMax == null) return null;
-  const per = m.salaryPeriod === "HOUR" ? "/hr" : m.salaryPeriod === "PER_MILE" ? "/mi" : m.salaryPeriod === "DAY" ? "/day" : "/yr";
+  // PROJECT = a fixed budget for the whole engagement, not a rate.
+  const per = m.salaryPeriod === "HOUR" ? "/hr" : m.salaryPeriod === "PER_MILE" ? "/mi" : m.salaryPeriod === "DAY" ? "/day" : m.salaryPeriod === "PROJECT" ? " budget" : "/yr";
   const k = (n: number) => (m.salaryPeriod === "YEAR" && n >= 1000 ? `${Math.round(n / 1000)}k` : `${n.toLocaleString()}`);
   const lo = m.salaryMin, hi = m.salaryMax;
   if (lo != null && hi != null) return `$${k(lo)}–${k(hi)}${per}`;
@@ -177,6 +178,7 @@ export default function FeedPage() {
   const shown = matches.filter((m) => {
     if (filter === "Remote") return m.remoteType.startsWith("REMOTE");
     if (filter === "Hourly") return m.salaryPeriod === "HOUR" || m.employmentType === "HOURLY";
+    if (filter === "Projects") return m.kind === "PROJECT";
     if (filter === "Saved") return saved.has(m.jobId);
     return true;
   });
@@ -275,6 +277,7 @@ export default function FeedPage() {
                     <div style={{ flex: 1, minWidth: 220 }}>
                       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                         <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{m.title}</h2>
+                        {m.kind === "PROJECT" && <span style={S.projTag}>PROJECT</span>}
                         {isNew && <span style={S.newTag}>NEW</span>}
                       </div>
                       <div style={{ fontSize: 12.5, color: C.slate, fontWeight: 600, marginTop: 4 }}>{m.company}</div>
@@ -299,7 +302,7 @@ export default function FeedPage() {
                         <div onClick={() => toggleSave(m.jobId)} title={saved.has(m.jobId) ? "Saved — click to remove" : "Save this job"} style={{ ...S.iconBtn, cursor: "pointer", ...(saved.has(m.jobId) ? { background: "#EEF2FF", color: C.c1, borderColor: "#C7D2FE" } : {}) }}>
                           <Icon name="bookmark" size={15} />
                         </div>
-                        <a href={`/job/${m.jobId}?score=${m.score}&pos=${i + 1}`} style={S.applyBtn}>View job</a>
+                        <a href={`/job/${m.jobId}?score=${m.score}&pos=${i + 1}`} style={S.applyBtn}>{m.kind === "PROJECT" ? "View & bid" : "View job"}</a>
                       </div>
                     </div>
                   </div>
@@ -415,6 +418,7 @@ const S: Record<string, CSSProperties> = {
   topRibbon: { position: "absolute", top: 0, left: 0, background: GRAD, color: "#fff", fontSize: 10, fontWeight: 700, letterSpacing: ".5px", padding: "4px 12px", borderRadius: "0 0 10px 0" },
   logo: { width: 48, height: 48, borderRadius: 13, color: "#fff", display: "grid", placeItems: "center", fontSize: 17, fontWeight: 800, flex: "none" },
   newTag: { background: "#EEF2FF", color: "#4F46E5", fontSize: 10, fontWeight: 700, borderRadius: 999, padding: "2px 9px" },
+  projTag: { background: "#F5F3FF", color: "#7C3AED", border: "1px solid #DDD6FE", fontSize: 10, fontWeight: 700, borderRadius: 999, padding: "2px 9px" },
   metaItem: { display: "inline-flex", alignItems: "center", gap: 5 },
   tagHave: { background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", borderRadius: 7, padding: "3px 10px", fontSize: 10.5, fontWeight: 600 },
   tagGap: { background: "#FFFBEB", color: "#B45309", border: "1px solid #FDE68A", borderRadius: 7, padding: "3px 10px", fontSize: 10.5, fontWeight: 600 },

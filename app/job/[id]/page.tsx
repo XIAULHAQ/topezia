@@ -32,7 +32,7 @@ async function getJob(id: string) {
   return prisma.job.findUnique({
     where: { id },
     select: {
-      id: true, titleRaw: true, titleNormalized: true, companyName: true, descriptionRaw: true,
+      id: true, kind: true, titleRaw: true, titleNormalized: true, companyName: true, descriptionRaw: true,
       locationRaw: true, locationState: true, country: true, remoteType: true, employmentType: true, seniority: true,
       salaryMin: true, salaryMax: true, salaryPeriod: true, postedAt: true, lastVerifiedAt: true,
       status: true, source: true, sourceUrl: true, roleId: true, verticalId: true,
@@ -45,7 +45,7 @@ async function getJob(id: string) {
 
 function salaryText(j: { salaryMin: number | null; salaryMax: number | null; salaryPeriod: string | null }) {
   if (j.salaryMin == null || j.salaryMax == null) return null;
-  const unit = j.salaryPeriod === "HOUR" ? "/hr" : j.salaryPeriod === "YEAR" ? "/yr" : "";
+  const unit = j.salaryPeriod === "HOUR" ? "/hr" : j.salaryPeriod === "YEAR" ? "/yr" : j.salaryPeriod === "PROJECT" ? " budget" : "";
   const fmt = (n: number) => (n >= 1000 ? `$${Math.round(n / 1000)}k` : `$${n}`);
   return `${fmt(j.salaryMin)}–${fmt(j.salaryMax)}${unit}`;
 }
@@ -101,8 +101,13 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
   if (searchParams.score) q.set("score", searchParams.score);
   if (searchParams.pos) q.set("pos", searchParams.pos);
   const applyHref = `/go/${job.id}${q.toString() ? `?${q}` : ""}`;
+  const isProject = job.kind === "PROJECT";
+  const applyLabel = isProject ? "Bid on Freelancer.com →" : "Apply on company site →";
+  const sourceLabel = job.source === "FREELANCER_COM" ? "Freelancer.com" : label(job.source);
 
-  const jsonLd = {
+  // Google's JobPosting policy covers employment, not freelance bid work —
+  // emitting it for projects would risk the whole site's rich-result standing.
+  const jsonLd = isProject ? null : {
     "@context": "https://schema.org",
     "@type": "JobPosting",
     title: job.titleRaw,
@@ -127,7 +132,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
 
   return (
     <main style={S.page}>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      {jsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />}
 
       <SiteNav />
 
@@ -147,12 +152,12 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
           <strong style={{ color: INK }}>{job.companyName}</strong> · {job.locationRaw || job.locationState || label(job.remoteType)} · {label(job.employmentType)}
           {pay ? ` · ${pay}` : ""}
         </div>
-        <div style={S.fresh}>● {freshness(job.lastVerifiedAt)} · via {label(job.source)}</div>
+        <div style={S.fresh}>● {freshness(job.lastVerifiedAt)} · via {sourceLabel}</div>
 
         {!dead && (
           <div style={S.applyRow}>
-            <a style={S.applyBtn} href={applyHref} target="_blank" rel="noreferrer">Apply on company site →</a>
-            <span style={S.applyNote}>Applies at {job.companyName} — we never sit between you and the employer.</span>
+            <a style={S.applyBtn} href={applyHref} target="_blank" rel="noreferrer">{applyLabel}</a>
+            <span style={S.applyNote}>{isProject ? "Bidding happens on Freelancer.com — we never sit between you and the client." : `Applies at ${job.companyName} — we never sit between you and the employer.`}</span>
           </div>
         )}
 
@@ -176,7 +181,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
 
         {!dead && (
           <div style={S.footApply}>
-            <a style={S.applyBtn} href={applyHref} target="_blank" rel="noreferrer">Apply on company site →</a>
+            <a style={S.applyBtn} href={applyHref} target="_blank" rel="noreferrer">{applyLabel}</a>
           </div>
         )}
       </div>

@@ -96,6 +96,7 @@ enum JobSource {
   ADZUNA
   JOOBLE
   CPC_FEED
+  FREELANCER_COM
   JOBPOSTING_SCHEMA
 }
 
@@ -105,6 +106,14 @@ enum EmploymentType {
   CONTRACT
   HOURLY
   TEMP
+}
+
+// A posting is either a salaried job or a freelance project (click-out to the
+// marketplace to bid). Projects reuse the whole Job pipeline — matching,
+// insights, dedup — and `kind` is what the feed filters and badges on.
+enum JobKind {
+  JOB
+  PROJECT
 }
 
 enum SalaryPeriod {
@@ -145,6 +154,7 @@ enum JobStatus {
 
 model Job {
   id                 String   @id @default(uuid())
+  kind               JobKind  @default(JOB)
   source             JobSource
   sourceUrl          String   // canonical click-out destination
   sourceCompanySlug  String?  // e.g. greenhouse board token

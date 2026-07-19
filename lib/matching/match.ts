@@ -27,6 +27,7 @@ export interface JobMatch {
   company: string;
   verticalSlug: string;
   cardLayout: string;
+  kind: string; // "JOB" | "PROJECT" — projects render budget + "View & bid"
   source: string;
   sourceUrl: string;
   remoteType: RemoteType;
@@ -51,6 +52,7 @@ interface CandidateRow {
   titleRaw: string;
   titleNormalized: string | null;
   companyName: string;
+  kind: string;
   source: string;
   sourceUrl: string;
   remoteType: RemoteType;
@@ -135,7 +137,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       OR (j.country IS NULL AND j."remoteScope" IS NULL)
     )`;
 
-  const selectCols = `j.id, j."titleRaw", j."titleNormalized", j."companyName", j.source::text AS source,
+  const selectCols = `j.id, j."titleRaw", j."titleNormalized", j."companyName", j.kind::text AS kind, j.source::text AS source,
       j."sourceUrl", j."remoteType", j."employmentType", j."salaryMin", j."salaryMax",
       j."salaryPeriod", j."locationState", j.country, j."remoteScope", j."lastVerifiedAt", j."descriptionRaw",
       v.slug AS "verticalSlug", v."cardLayout"::text AS "cardLayout"`;
@@ -191,8 +193,13 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
   const empPrefs = new Set(profile.employmentTypes);
   const remotePrefs = new Set(profile.remoteTypes);
   const filtered = candidates.filter((j) => {
-    if (empPrefs.size && !empPrefs.has(j.employmentType)) return false;
-    if (remotePrefs.size && !remotePrefs.has(j.remoteType)) return false;
+    // Employment/remote prefs describe the JOB someone wants; a freelance
+    // project is orthogonal side-work (always CONTRACT, always remote), so
+    // "full-time, in-office" prefs must not hide every project.
+    if (j.kind !== "PROJECT") {
+      if (empPrefs.size && !empPrefs.has(j.employmentType)) return false;
+      if (remotePrefs.size && !remotePrefs.has(j.remoteType)) return false;
+    }
     if (!eligibleIn(j, profile.country)) return false;
     if (
       profile.salaryFloor != null &&
@@ -271,6 +278,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       company: j.companyName,
       verticalSlug: j.verticalSlug,
       cardLayout: j.cardLayout,
+      kind: j.kind,
       source: j.source,
       sourceUrl: j.sourceUrl,
       remoteType: j.remoteType,
