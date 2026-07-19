@@ -22,8 +22,42 @@
 
 import { prisma } from "@/lib/prisma";
 
-const MODEL = "claude-haiku-4-5-20251001";
-const BATCH = 300; // skill names per LLM call
+const MODEL = "claude-sonnet-5"; // Haiku over-merged badly (grouped "2D Animation" with "3D animation", "Accounts Payable" with "Accounts Receivable")
+const BATCH = 150; // skill names per LLM call (300 truncated the response)
+
+// ── Deterministic lexical guardrail ──────────────────────────────────────────
+// The LLM proposes; this verifies. A merge is only applied when the two names
+// are lexically close: one's content tokens are a subset of the other's
+// ("seo" ⊆ "seo & search optimization"), or they're near-identical once
+// squashed ("AdTech" ≈ "Ad Tech", "3D modeling" ≈ "3D Modelling"). This
+// mechanically blocks semantic hallucinations like 2D vs 3D or Payable vs
+// Receivable, while the LLM still blocks scope-different subsets like
+// "email marketing" ⊆ "marketing". Both must agree.
+function tokens(s: string): Set<string> {
+  return new Set(
+    s.toLowerCase().replace(/&/g, " ").split(/[^a-z0-9+#.]+/).filter(Boolean)
+      .map((t) => (t.length > 3 && t.endsWith("s") ? t.slice(0, -1) : t))
+  );
+}
+function squash(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+function editDistance(a: string, b: string): number {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return dp[a.length][b.length];
+}
+function lexicallyClose(a: string, b: string): boolean {
+  const ta = tokens(a), tb = tokens(b);
+  const [small, big] = ta.size <= tb.size ? [ta, tb] : [tb, ta];
+  if (small.size > 0 && [...small].every((t) => big.has(t))) return true;
+  const ca = squash(a), cb = squash(b);
+  if (!ca || !cb) return false;
+  return editDistance(ca, cb) <= Math.max(1, Math.floor(Math.max(ca.length, cb.length) / 8));
+}
 
 const SYSTEM = `You canonicalize a skill taxonomy for a job-matching platform. You get a numbered list of skill names.
 
@@ -50,20 +84,34 @@ async function llmGroups(names: string[]): Promise<string[][]> {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 4000,
-      temperature: 0,
+      max_tokens: 8000,
+      // no temperature: Sonnet 5 rejects the param ("deprecated for this model")
       system: SYSTEM,
       messages: [{ role: "user", content: names.map((n, i) => `${i + 1}. ${n}`).join("\n") }],
     }),
   });
   if (!res.ok) throw new Error(`canonicalize LLM failed: ${res.status} ${await res.text()}`);
   const data = await res.json();
+  if (data.stop_reason === "max_tokens") throw new Error("canonicalize LLM output truncated — lower BATCH");
   const text = data.content?.find((b: { type: string }) => b.type === "text")?.text || "[]";
   const arr = JSON.parse(text.replace(/```json|```/g, "").trim()) as string[][];
-  const known = new Set(names);
-  // Trust nothing: keep only exact input names, groups of 2+.
+  // Map the model's echoes back to exact DB names case-/whitespace-insensitively
+  // (an exact-string check silently dropped everything the model re-cased,
+  // which is how a run "found" zero groups). A key with several originals means
+  // pure case-variant duplicates — expand them all into the group.
+  const byKey = new Map<string, string[]>();
+  for (const n of names) {
+    const k = n.trim().toLowerCase();
+    const arr2 = byKey.get(k) ?? [];
+    arr2.push(n);
+    byKey.set(k, arr2);
+  }
   return arr
-    .map((g) => (Array.isArray(g) ? g.filter((n) => typeof n === "string" && known.has(n)) : []))
+    .map((g) =>
+      Array.isArray(g)
+        ? [...new Set(g.flatMap((n) => (typeof n === "string" ? byKey.get(n.trim().toLowerCase()) ?? [] : [])))]
+        : []
+    )
     .filter((g) => g.length >= 2);
 }
 
@@ -71,7 +119,14 @@ async function mergeGroup(group: { id: string; name: string; uses: number }[], d
   // Canonical = most used; tie-break shortest name (canonical terms are short).
   const sorted = [...group].sort((a, b) => b.uses - a.uses || a.name.length - b.name.length);
   const canon = sorted[0];
-  const variants = sorted.slice(1);
+  // Guardrail: only variants that are lexically close to the canonical get
+  // merged; the rest of the LLM's group is discarded (better to miss a merge
+  // than corrupt the taxonomy).
+  const variants = sorted.slice(1).filter((v) => {
+    const ok = lexicallyClose(canon.name, v.name);
+    if (!ok) console.log(`    (blocked: "${v.name}" not lexically close to "${canon.name}")`);
+    return ok;
+  });
   if (variants.length === 0) return 0;
   console.log(`  "${canon.name}"  <=  ${variants.map((v) => `"${v.name}"`).join(", ")}`);
   if (dryRun) return variants.length;
