@@ -30,12 +30,18 @@ const NAV: NavItem[] = [
   { icon: "spark", label: "Career Coach", soon: true },
 ];
 
+const S_menuItem: CSSProperties = {
+  display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 8,
+  fontSize: 13.5, fontWeight: 500, color: C.slate, textDecoration: "none", cursor: "pointer",
+};
+
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false); // account dropdown (top-right)
   const [name, setName] = useState<string | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
 
@@ -54,8 +60,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
-  // Close the mobile drawer on navigation so it never covers the new page.
-  useEffect(() => { setMobileOpen(false); }, [pathname]);
+  // Close the drawer + account menu on navigation.
+  useEffect(() => { setMobileOpen(false); setMenuOpen(false); }, [pathname]);
 
   async function logout() {
     try {
@@ -125,14 +131,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
         )}
 
         <div style={{ flex: 1 }} />
-        <div style={{ display: "flex", flexDirection: "column", gap: 3, borderTop: `1px solid ${C.line}`, paddingTop: 12, marginTop: 14 }}>
-          <Link href="/settings" title="Settings" style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 12px", borderRadius: 10, color: pathname === "/settings" ? C.ink : C.mut, fontSize: 13.5, textDecoration: "none", justifyContent: just, fontWeight: pathname === "/settings" ? 600 : 500 }}>
-            <Icon name="settings" /><span style={{ display: disp }}>Settings</span>
-          </Link>
-          <div onClick={logout} title="Log out" style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 12px", borderRadius: 10, color: C.mut, fontSize: 13.5, cursor: "pointer", justifyContent: just }}>
-            <Icon name="logout" /><span style={{ display: disp }}>Log out</span>
-          </div>
-        </div>
       </aside>
 
       <main style={{ flex: 1, minWidth: 0, padding: isMobile ? "14px 16px 40px" : "20px 28px 40px" }}>
@@ -146,16 +144,30 @@ export default function AppShell({ children }: { children: ReactNode }) {
             </div>
           )}
           <div style={{ flex: 1 }} />
-          <Link href="/profile" style={{ display: "flex", alignItems: "center", gap: 9, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 999, padding: "4px 14px 4px 4px", textDecoration: "none", color: C.ink }}>
-            {photo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={photo} alt={name ?? "You"} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", display: "block" }} />
-            ) : (
-              <div style={{ width: 32, height: 32, borderRadius: "50%", background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700 }}>{initials(name)}</div>
+          <div style={{ position: "relative" }}>
+            <button onClick={() => setMenuOpen((o) => !o)} style={{ display: "flex", alignItems: "center", gap: 9, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 999, padding: "4px 14px 4px 4px", cursor: "pointer", color: C.ink, fontFamily: "inherit" }}>
+              {photo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={photo} alt={name ?? "You"} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", display: "block" }} />
+              ) : (
+                <div style={{ width: 32, height: 32, borderRadius: "50%", background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700 }}>{initials(name)}</div>
+              )}
+              {name && <span style={{ fontSize: 13, fontWeight: 600 }}>{name}</span>}
+              <Icon name="chev" size={14} />
+            </button>
+            {menuOpen && (
+              <>
+                <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                <div style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", zIndex: 41, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, boxShadow: "0 12px 32px rgba(15,23,42,.14)", padding: 6, minWidth: 190 }}>
+                  {name && <div style={{ padding: "8px 12px 6px", fontSize: 12, color: C.mut, borderBottom: `1px solid ${C.line}`, marginBottom: 4 }}>Signed in as<div style={{ color: C.ink, fontWeight: 700, fontSize: 13 }}>{name}</div></div>}
+                  <Link href="/profile/edit" style={S_menuItem}><Icon name="edit" size={16} />Edit profile</Link>
+                  <Link href="/settings" style={S_menuItem}><Icon name="settings" size={16} />Settings</Link>
+                  <div style={{ height: 1, background: C.line, margin: "4px 0" }} />
+                  <button onClick={() => { setMenuOpen(false); logout(); }} style={{ ...S_menuItem, width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", color: "#b42318" }}><Icon name="logout" size={16} />Log out</button>
+                </div>
+              </>
             )}
-            {name && <span style={{ fontSize: 13, fontWeight: 600 }}>{name}</span>}
-            <Icon name="chev" size={14} />
-          </Link>
+          </div>
         </div>
         {children}
       </main>
