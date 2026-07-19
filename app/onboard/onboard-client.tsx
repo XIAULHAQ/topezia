@@ -54,6 +54,35 @@ const PARSE_TIPS = [
 ];
 const PARSE_STEPS = ["Reading the text", "Pulling out skills and history", "Working out seniority and fit", "Almost there"];
 
+/**
+ * Phone layout: the step rail goes first (it is progress decoration on a
+ * one-step screen), then the hero and paddings come down so nothing overflows
+ * a 360px viewport.
+ *
+ * Injected via dangerouslySetInnerHTML, not as a text child: React escapes
+ * apostrophes and angle brackets in text content on the SERVER only, so any
+ * such character inside a style child throws a hydration mismatch.
+ */
+const OB_CSS = `
+@keyframes slide{0%{margin-left:-40%}100%{margin-left:100%}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@media (max-width:760px){
+  .ob-steps{display:none!important}
+  .ob-h1{font-size:29px!important;letter-spacing:-0.8px!important}
+  .ob-sub{font-size:14px!important}
+  .ob-head{padding:0 16px!important}
+  .ob-main{padding:22px 16px 52px!important}
+  .ob-drop{padding:34px 18px!important}
+  .ob-tabs{flex-wrap:wrap}
+  .ob-parsing{padding:26px 18px!important}
+  .ob-trust{gap:14px!important;margin-top:32px!important}
+}
+@media (max-width:420px){
+  .ob-h1{font-size:25px!important}
+  .ob-tab{flex:1;justify-content:center}
+}
+`;
+
 export default function OnboardClient() {
   const router = useRouter();
   const [mode, setMode] = useState<"upload" | "paste">("upload");
@@ -128,16 +157,16 @@ export default function OnboardClient() {
 
   return (
     <div style={S.page}>
-      <style>{"@keyframes slide{0%{margin-left:-40%}100%{margin-left:100%}}@keyframes fade{from{opacity:0}to{opacity:1}}"}</style>
+      <style dangerouslySetInnerHTML={{ __html: OB_CSS }} />
 
       <header style={{ padding: "20px 0" }}>
-        <div style={S.headerInner}>
+        <div className="ob-head" style={S.headerInner}>
           <a href="/" style={{ display: "flex", alignItems: "center", gap: 9, color: C.ink, textDecoration: "none" }}>
             <svg width="34" height="25" viewBox="0 0 36 26"><defs><linearGradient id="obg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={C.c1} /><stop offset="1" stopColor={C.c2} /></linearGradient></defs><circle cx="10.5" cy="13" r="7.2" stroke="url(#obg)" strokeWidth="4.2" fill="none" /><circle cx="25.5" cy="13" r="7.2" stroke="url(#obg)" strokeWidth="4.2" fill="none" /></svg>
             <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.5px" }}>topezia</span>
           </a>
           <div style={{ flex: 1 }} />
-          <div style={S.steps}>
+          <div className="ob-steps" style={S.steps}>
             {STEPS.map(([label, active], i) => (
               <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 <span style={active ? S.stepNumOn : S.stepNumOff}>{i + 1}</span>
@@ -150,12 +179,12 @@ export default function OnboardClient() {
         </div>
       </header>
 
-      <main style={S.main}>
-        <h1 style={S.h1}>Upload your resume <span style={{ background: GRAD, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>once.</span></h1>
-        <p style={S.sub}>Drop in your resume — we&apos;ll read it, build your profile, then show you only the jobs actually worth your time, and tell you why.</p>
+      <main className="ob-main" style={S.main}>
+        <h1 className="ob-h1" style={S.h1}>Upload your resume <span style={{ background: GRAD, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>once.</span></h1>
+        <p className="ob-sub" style={S.sub}>Drop in your resume — we&apos;ll read it, build your profile, then show you only the jobs actually worth your time, and tell you why.</p>
 
         {loading ? (
-          <div style={S.parsing}>
+          <div className="ob-parsing" style={S.parsing}>
             <div style={S.parseRow}>
               <span style={S.check}>✓</span>
               <span style={{ fontWeight: 700, fontSize: 15, wordBreak: "break-all" }}>{fileName ?? "Your resume"}</span>
@@ -174,16 +203,16 @@ export default function OnboardClient() {
           </div>
         ) : (
           <>
-            <div style={{ display: "flex", gap: 8, marginTop: 28 }}>
-              <button onClick={() => { setMode("upload"); setArmed(true); }} style={mode === "upload" ? S.tabOn : S.tabOff}><Ic n="upload" s={14} />Upload a file</button>
-              <button onClick={() => setMode("paste")} style={mode === "paste" ? S.tabOn : S.tabOff}><Ic n="paste" s={14} />Paste the text</button>
+            <div className="ob-tabs" style={{ display: "flex", gap: 8, marginTop: 28 }}>
+              <button onClick={() => { setMode("upload"); setArmed(true); }} className="ob-tab" style={mode === "upload" ? S.tabOn : S.tabOff}><Ic n="upload" s={14} />Upload a file</button>
+              <button onClick={() => setMode("paste")} className="ob-tab" style={mode === "paste" ? S.tabOn : S.tabOff}><Ic n="paste" s={14} />Paste the text</button>
             </div>
 
             {mode === "upload" ? (
               // Greyed until the person clicks the box (or the "Upload a file" tab),
               // then it lights up as the active dropzone.
               <label
-                style={!armed ? S.dropGrey : dragging ? S.dropActive : S.drop}
+                className="ob-drop" style={!armed ? S.dropGrey : dragging ? S.dropActive : S.drop}
                 onClick={() => setArmed(true)}
                 onDragOver={(e) => { e.preventDefault(); setArmed(true); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
@@ -224,7 +253,7 @@ export default function OnboardClient() {
 
         {error && <p style={{ color: "#dc2626", fontSize: 14, marginTop: 16, textAlign: "center" }}>{error}</p>}
 
-        <div style={S.trust}>
+        <div className="ob-trust" style={S.trust}>
           <span style={S.trustItem}><Ic n="shield" s={15} color={C.mut} />Your data stays private</span>
           <span style={S.trustItem}><Ic n="zap" s={15} color={C.mut} />Profile ready in ~2 minutes</span>
           <span style={S.trustItem}><Ic n="gauge" s={15} color={C.mut} />Free AI career score included</span>

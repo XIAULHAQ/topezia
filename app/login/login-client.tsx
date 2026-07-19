@@ -42,6 +42,10 @@ function Ic({ n, s = 15 }: { n: string; s?: number }) {
 }
 
 export interface LoginStats { jobs: number; projects: number }
+/** Someone we already recognise on this device — greet them by name. */
+export interface Viewer { firstName: string; photoUrl: string | null; hasAccount: boolean }
+
+const initialsOf = (name: string) => name.slice(0, 2).toUpperCase();
 
 /** What they were trying to reach, for the badge + panel eyebrow. */
 const DESTINATIONS: { prefix: string; label: string; eyebrow: string }[] = [
@@ -61,9 +65,14 @@ const CSS = `
 @media (max-width:900px){ .lg-panel{display:none!important} .lg-left{padding:22px 20px!important} }
 `;
 
-export default function LoginClient({ next, stats }: { next: string | null; stats: LoginStats | null }) {
+export default function LoginClient({ next, stats, viewer }: { next: string | null; stats: LoginStats | null; viewer: Viewer | null }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"login" | "signup">(next ? "login" : "signup");
+  // Someone with a parsed profile but no account yet is here to CREATE one —
+  // that's the post-onboarding hand-off (/login?next=/profile/edit), so it must
+  // open in signup even though a `next` is present, or the flow dead-ends.
+  const [mode, setMode] = useState<"login" | "signup">(
+    viewer && !viewer.hasAccount ? "signup" : next ? "login" : "signup"
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -143,12 +152,28 @@ export default function LoginClient({ next, stats }: { next: string | null; stat
             {dest && (
               <div style={S.badge}><Ic n="spark" s={13} />Sign in to continue to {dest.label}</div>
             )}
-            <h1 style={{ margin: 0, fontSize: 29, fontWeight: 800, letterSpacing: "-0.9px" }}>
-              {mode === "signup" ? "Create your account" : "Welcome back"}
-            </h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              {viewer && (
+                viewer.photoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={viewer.photoUrl} alt="" style={S.avatar} />
+                ) : (
+                  <div style={{ ...S.avatar, background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 18, fontWeight: 800 }}>
+                    {initialsOf(viewer.firstName)}
+                  </div>
+                )
+              )}
+              <h1 style={{ margin: 0, fontSize: 29, fontWeight: 800, letterSpacing: "-0.9px" }}>
+                {viewer
+                  ? mode === "signup" ? `Almost there, ${viewer.firstName}` : `Welcome back, ${viewer.firstName}`
+                  : mode === "signup" ? "Create your account" : "Welcome back"}
+              </h1>
+            </div>
             <p style={{ margin: "10px 0 0", fontSize: 13.5, color: C.mut, lineHeight: 1.6 }}>
               {mode === "signup"
-                ? "Save your matches, score and roadmap so they follow you across devices."
+                ? viewer
+                  ? "Create an account to keep your profile, score and matches — on every device."
+                  : "Save your matches, score and roadmap so they follow you across devices."
                 : "Your roadmap, career score and matched roles are waiting."}
             </p>
 
@@ -192,12 +217,17 @@ export default function LoginClient({ next, stats }: { next: string | null; stat
               <Link href="/privacy" className="lg-link" style={S.consentLink}>Privacy Policy</Link>.
             </p>
 
-            <p style={S.toggle}>
-              {mode === "signup" ? "Already have an account?" : "Have a password already?"}{" "}
-              <button type="button" className="lg-link" style={S.toggleBtn} onClick={() => { setMode(mode === "signup" ? "login" : "signup"); setError(null); setNotice(null); }}>
-                {mode === "signup" ? "Log in" : "Create an account"}
-              </button>
-            </p>
+            {/* Only shown in signup mode. In login mode the pairing read as a
+                contradiction ("Have a password already? Create an account"),
+                and newcomers there are served by the join CTA below. */}
+            {mode === "signup" && (
+              <p style={S.toggle}>
+                Already have an account?{" "}
+                <button type="button" className="lg-link" style={S.toggleBtn} onClick={() => { setMode("login"); setError(null); setNotice(null); }}>
+                  Log in
+                </button>
+              </p>
+            )}
 
             {/* The front door for newcomers: joining IS uploading your resume. */}
             <div style={S.orRow}><span style={S.orLine} /><span style={S.orText}>New to Topezia?</span><span style={S.orLine} /></div>
@@ -219,6 +249,10 @@ export default function LoginClient({ next, stats }: { next: string | null; stat
 
       {/* ── Right: value panel (image slots in when we have one) ── */}
       <div className="lg-panel" style={S.panel}>
+        <div style={{ position: "absolute", inset: 0, opacity: 0.3, mixBlendMode: "luminosity", WebkitMaskImage: "linear-gradient(to bottom, transparent, rgba(0,0,0,1) 30%, rgba(0,0,0,1) 70%, transparent)", maskImage: "linear-gradient(to bottom, transparent, rgba(0,0,0,1) 30%, rgba(0,0,0,1) 70%, transparent)" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/login-panel.jpg" alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        </div>
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(150deg, rgba(15,23,42,.75), rgba(30,27,75,.6))" }} />
         <div style={{ position: "absolute", top: -140, right: -90, width: 440, height: 440, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.40), transparent 68%)" }} />
         <div style={{ position: "absolute", bottom: -160, left: -60, width: 360, height: 360, borderRadius: "50%", background: "radial-gradient(circle, rgba(59,130,246,.26), transparent 68%)" }} />
@@ -245,6 +279,7 @@ export default function LoginClient({ next, stats }: { next: string | null; stat
 
 const S: Record<string, CSSProperties> = {
   badge: { display: "inline-flex", alignItems: "center", gap: 8, background: "#EEF2FF", border: "1px solid #C7D2FE", color: "#4F46E5", fontSize: 11.5, fontWeight: 600, borderRadius: 999, padding: "6px 13px", marginBottom: 20 },
+  avatar: { width: 52, height: 52, borderRadius: "50%", objectFit: "cover", objectPosition: "center top", flex: "none", border: `2px solid ${C.line}` },
   label: { display: "block", fontSize: 12, fontWeight: 600, color: C.slate, marginBottom: 6 },
   inputWrap: { display: "flex", alignItems: "center", gap: 9, border: `1px solid ${C.line}`, borderRadius: 11, padding: "11px 14px", color: C.mut, background: "#fff", transition: "border-color .15s, box-shadow .15s" },
   input: { flex: 1, minWidth: 0, border: "none", outline: "none", fontSize: 13.5, fontFamily: "inherit", color: C.ink, background: "transparent" },

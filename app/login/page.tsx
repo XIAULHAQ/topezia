@@ -7,7 +7,8 @@
  */
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
-import LoginClient, { type LoginStats } from "./login-client";
+import { currentIdentity } from "@/lib/identity";
+import LoginClient, { type LoginStats, type Viewer } from "./login-client";
 
 export const metadata: Metadata = {
   title: "Sign in — Topezia",
@@ -43,7 +44,32 @@ async function getStats(): Promise<LoginStats | null> {
   }
 }
 
+/**
+ * Who is at the keyboard, if we already know them — their own cookie on their
+ * own device, so the greeting can use their name and CV photo instead of a
+ * generic "Welcome back".
+ *
+ * Two real cases: someone who parsed a resume anonymously and is now creating
+ * an account (we know them from the CV), and someone whose session lapsed but
+ * whose profile cookie survived.
+ */
+async function getViewer(): Promise<Viewer | null> {
+  try {
+    const { userId, authed } = await currentIdentity();
+    if (!userId) return null;
+    const p = await prisma.profile.findUnique({ where: { userId }, select: { fullName: true, photoUrl: true } });
+    const firstName = p?.fullName?.trim().split(/\s+/)[0] ?? null;
+    if (!firstName) return null;
+    // Photos are stored as data URIs; skip an unusually large one rather than
+    // inline hundreds of KB into a cold sign-in page (initials stand in).
+    const photoUrl = p?.photoUrl && p.photoUrl.length <= 400_000 ? p.photoUrl : null;
+    return { firstName, photoUrl, hasAccount: authed };
+  } catch {
+    return null;
+  }
+}
+
 export default async function LoginPage({ searchParams }: { searchParams: { next?: string | string[] } }) {
-  const [stats] = await Promise.all([getStats()]);
-  return <LoginClient next={safeNext(searchParams.next)} stats={stats} />;
+  const [stats, viewer] = await Promise.all([getStats(), getViewer()]);
+  return <LoginClient next={safeNext(searchParams.next)} stats={stats} viewer={viewer} />;
 }
