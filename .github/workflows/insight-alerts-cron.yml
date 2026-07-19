@@ -1,0 +1,48 @@
+# Insight alerts — "a note when your market moves."
+#
+# Weekly, Monday after the 14:00 ingest: snapshot every profile's insights,
+# diff against last week's capture, and email ONLY opted-in profiles whose
+# market actually moved. Quiet weeks send nothing. The snapshot floor
+# (MIN_GAP_HOURS in the runner) makes an accidental re-run a no-op, so this
+# can't double-send.
+name: Insight alerts
+
+on:
+  schedule:
+    - cron: "30 15 * * 1" # Mondays 15:30 UTC, after ingest + job alerts
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Compose but don't send"
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: insight-alerts
+  cancel-in-progress: false # never double-send
+
+jobs:
+  insight-alerts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Run insight alerts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_FROM_EMAIL: ${{ secrets.ALERT_FROM_EMAIL }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            npm run insight-alerts -- --dry-run
+          else
+            npm run insight-alerts
+          fi

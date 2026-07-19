@@ -350,6 +350,12 @@ model Profile {
   dismissals       JobDismissal[]
   matchScores      MatchScore[]
 
+  // Insight alerts (opt-in from /coach): weekly snapshot + diff of the user's
+  // market; an email goes out only when something actually moved.
+  insightAlerts     Boolean @default(false)
+  insightUnsubToken String  @unique @default(uuid()) // one-click unsubscribe, no login needed
+  insightSnapshots  InsightSnapshot[]
+
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
@@ -423,6 +429,19 @@ enum WorkAuthorization {
 // ─────────────────────────────────────────────
 // Signals — ranking fuel (§3.4, §5) and the /go/ redirect log (§6.3)
 // ─────────────────────────────────────────────
+
+// A compact weekly capture of a profile's insights, used to diff "what moved"
+// between runs — the raw material for insight alerts and the coach page's
+// "since last week" card. Payload shape: lib/alerts/insights.ts.
+model InsightSnapshot {
+  id         String   @id @default(uuid())
+  profileId  String
+  profile    Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  capturedAt DateTime @default(now())
+  payload    Json
+
+  @@index([profileId, capturedAt])
+}
 
 model JobClick {
   id         String   @id @default(uuid())

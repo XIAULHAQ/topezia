@@ -10,18 +10,45 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { C, FONT, GRAD, Icon } from "@/app/_components/ui";
-import { MomentumCard, RoadmapCard, type Insights } from "@/app/_components/roadmap";
+import { CoachSectionHead, MomentumCard, RoadmapCard, type Insights } from "@/app/_components/roadmap";
+import type { InsightChange } from "@/lib/alerts/insights";
 
 export default function CoachClient() {
   const [insights, setInsights] = useState<Insights | null | "error">(null);
   const [tier, setTier] = useState<string>("FREE");
+  const [changes, setChanges] = useState<InsightChange[] | null>(null);
+  const [changesSince, setChangesSince] = useState<string | null>(null);
+  const [alertsOn, setAlertsOn] = useState(false);
+  const [toggling, setToggling] = useState(false);
 
   useEffect(() => {
     fetch("/api/profile/insights")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d) => { setInsights(d.insights ?? "error"); setTier(d.tier ?? "FREE"); })
+      .then((d) => {
+        setInsights(d.insights ?? "error");
+        setTier(d.tier ?? "FREE");
+        setChanges(d.changes ?? null);
+        setChangesSince(d.changesSince ?? null);
+        setAlertsOn(Boolean(d.insightAlerts));
+      })
       .catch(() => setInsights("error"));
   }, []);
+
+  async function toggleAlerts() {
+    if (toggling) return;
+    setToggling(true);
+    const next = !alertsOn;
+    try {
+      const res = await fetch("/api/coach/alerts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ on: next }),
+      });
+      if (res.ok) setAlertsOn(next);
+    } finally {
+      setToggling(false);
+    }
+  }
 
   const ok = insights !== null && insights !== "error";
   return (
@@ -48,6 +75,22 @@ export default function CoachClient() {
         <p style={S.msg}>We couldn&apos;t load your insights just now — refresh to try again.</p>
       ) : insights.reliable ? (
         <>
+          {/* What moved since the last weekly capture — only when it did. */}
+          {changes && changes.length > 0 && (
+            <section style={S.movedCard}>
+              <CoachSectionHead
+                icon="trend"
+                title="What moved"
+                note={changesSince ? `since ${new Date(changesSince).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "since our last measure"}
+              />
+              {changes.map((c) => (
+                <div key={c.headline} style={S.movedRow}>
+                  <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.45 }}>{c.headline}</div>
+                  {c.detail && <div style={{ fontSize: 11.5, color: C.mut, marginTop: 3, lineHeight: 1.5 }}>{c.detail}</div>}
+                </div>
+              ))}
+            </section>
+          )}
           <RoadmapCard insights={insights} tier={tier} />
           {insights.momentum && <MomentumCard momentum={insights.momentum} fieldLabel={insights.fieldLabel} />}
         </>
@@ -61,26 +104,32 @@ export default function CoachClient() {
         </section>
       )}
 
-      {/* What's coming — named honestly, not pretended. */}
+      {/* Insight alerts (live, opt-in) + what's still coming — named honestly. */}
       <section style={S.soonCard}>
         <div style={S.soonGlow} />
         <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
           <Icon name="spark" size={20} color="#fff" />
-          <h2 style={S.soonHead}>Coming to your coach</h2>
+          <h2 style={S.soonHead}>More from your coach</h2>
         </div>
         <div style={{ position: "relative", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 14 }}>
-          {[
-            ["Insight alerts", "a note when your market moves — a gap crossing a threshold, a skill trending up"],
-            ["Shareable career-fit report", "your mirror and roadmap as a page you can send"],
-          ].map(([t, d]) => (
-            <div key={t} style={S.soonTile}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 800, flex: 1 }}>{t}</div>
-                <span style={S.soonPill}>Soon</span>
-              </div>
-              <div style={S.soonMeta}>{d}</div>
+          <div style={S.soonTile}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 800, flex: 1 }}>Insight alerts</div>
+              <button onClick={toggleAlerts} disabled={toggling} style={alertsOn ? S.togOn : S.togOff}>
+                {alertsOn ? "On" : "Off"}
+              </button>
             </div>
-          ))}
+            <div style={S.soonMeta}>
+              an email when your market moves — a gap climbing, your field growing. Weekly at most; quiet weeks send nothing. Goes to your login email, one-click unsubscribe.
+            </div>
+          </div>
+          <div style={S.soonTile}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 800, flex: 1 }}>Shareable career-fit report</div>
+              <span style={S.soonPill}>Soon</span>
+            </div>
+            <div style={S.soonMeta}>your mirror and roadmap as a page you can send</div>
+          </div>
         </div>
       </section>
     </div>
@@ -103,4 +152,8 @@ const S: Record<string, CSSProperties> = {
   soonTile: { background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.11)", borderRadius: 12, padding: "16px 18px" },
   soonPill: { background: "rgba(99,102,241,.25)", border: "1px solid rgba(139,92,246,.4)", color: "#C4B5FD", fontSize: 9.5, fontWeight: 700, borderRadius: 999, padding: "3px 9px", flex: "none", whiteSpace: "nowrap" },
   soonMeta: { fontSize: 12, color: "#B9C0D4", marginTop: 5, lineHeight: 1.55 },
+  movedCard: { background: "#fff", border: `1px solid ${C.line}`, borderRadius: 16, padding: "20px 24px 8px", marginBottom: 22 },
+  movedRow: { padding: "11px 0 12px", borderTop: "1px solid #F1F5F9" },
+  togOn: { background: GRAD, color: "#fff", border: "none", fontSize: 11, fontWeight: 700, borderRadius: 999, padding: "4px 14px", cursor: "pointer", flex: "none" },
+  togOff: { background: "rgba(255,255,255,.08)", color: "#B9C0D4", border: "1px solid rgba(255,255,255,.2)", fontSize: 11, fontWeight: 700, borderRadius: 999, padding: "4px 14px", cursor: "pointer", flex: "none" },
 };

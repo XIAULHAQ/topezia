@@ -53,7 +53,7 @@ export async function sendEmail(opts: {
   }
 }
 
-const shell = (inner: string, footer: string) => `<!doctype html><html><body style="margin:0;background:#f7f7fb;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
+const shell = (inner: string, footer: string) => `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f7f7fb;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
   <div style="max-width:560px;margin:0 auto;padding:32px 20px;">
     <div style="font-weight:800;font-size:22px;color:#4f46e5;margin-bottom:20px;">topezia</div>
     <div style="background:#fff;border:1px solid #ececf2;border-radius:16px;padding:24px;">${inner}</div>

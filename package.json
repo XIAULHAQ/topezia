@@ -16,6 +16,7 @@
     "ingest": "tsx scripts/run-ingestion.ts",
     "expiry-check": "tsx scripts/run-expiry-check.ts",
     "send-alerts": "tsx scripts/send-alerts.ts",
+    "insight-alerts": "tsx scripts/run-insight-alerts.ts",
     "gen-intros": "tsx scripts/generate-page-intros.ts"
   },
   "dependencies": {
