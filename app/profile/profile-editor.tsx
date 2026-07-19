@@ -7,6 +7,12 @@ import { initials } from "@/app/_components/ui";
 const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
 const MUTED = "#6b7280";
+const NAVY = "#0F172A";
+
+function greeting(): string {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+}
 
 type Prov = "RESUME" | "CONFIRMED" | "USER_ADDED";
 interface Skill { name: string; proficiency: string | null; confidence: number; source: Prov }
@@ -84,6 +90,23 @@ export default function ProfileEditor() {
   const [insights, setInsights] = useState<Insights | null>(null);
   const [tier, setTier] = useState<string>("FREE");
   const [roleGroups, setRoleGroups] = useState<{ field: string; roles: string[] }[]>([]);
+  // Role gate: people pick their field/role in a popup before they reach the
+  // stats, so "where you stand" is scoped to the right field from the start.
+  const [roleModal, setRoleModal] = useState(false);
+  const [mRole, setMRole] = useState("");
+  const [mSen, setMSen] = useState("MID");
+  const [savingRole, setSavingRole] = useState(false);
+  const [mErr, setMErr] = useState<string | null>(null);
+
+  async function loadInsights() {
+    try {
+      const res = await fetch("/api/profile/insights");
+      if (!res.ok) return;
+      const data = await res.json();
+      setInsights(data.insights);
+      setTier(data.tier ?? "FREE");
+    } catch { /* insights are optional */ }
+  }
 
   useEffect(() => {
     (async () => {
@@ -95,21 +118,41 @@ export default function ProfileEditor() {
         setRoleGroups(data.roleGroups || []);
         setIndustriesText((data.profile.industries || []).join(", "));
         setLocationsText((data.profile.locations || []).join(", "));
+        // No role yet → gate the screen with the role popup (only if we have a
+        // taxonomy to offer, so we never trap someone with an empty list).
+        if (!data.profile.headline && (data.roleGroups?.length ?? 0) > 0) {
+          setMSen(data.profile.seniority || "MID");
+          setRoleModal(true);
+        }
       } catch {
         setError("Couldn't load your profile.");
       }
     })();
     // Insights load separately — they're a nice-to-have, never block the editor.
-    (async () => {
-      try {
-        const res = await fetch("/api/profile/insights");
-        if (!res.ok) return;
-        const data = await res.json();
-        setInsights(data.insights);
-        setTier(data.tier ?? "FREE");
-      } catch { /* insights are optional */ }
-    })();
+    loadInsights();
   }, []);
+
+  /** Save the role chosen in the gate popup, then re-scope the stats to it. */
+  async function saveRole() {
+    if (!mRole) return;
+    setSavingRole(true); setMErr(null);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ headline: mRole, seniority: mSen }),
+      });
+      if (!res.ok) throw new Error("save");
+      setP((cur) => (cur ? { ...cur, headline: mRole, seniority: mSen } : cur));
+      setRoleModal(false);
+      setInsights(null);        // show the "scoring…" state while we re-scope
+      await loadInsights();
+    } catch {
+      setMErr("Couldn't save that — try again.");
+    } finally {
+      setSavingRole(false);
+    }
+  }
 
   const set = <K extends keyof Profile>(k: K, v: Profile[K]) => { setP((cur) => (cur ? { ...cur, [k]: v } : cur)); setSaved(false); };
   const toggle = (k: "employmentTypes", v: string) => set(k, (p![k].includes(v) ? p![k].filter((x) => x !== v) : [...p![k], v]));
@@ -197,14 +240,91 @@ export default function ProfileEditor() {
   if (error && !p) return <div style={S.wrap}><p style={{ color: MUTED }}>{error}</p></div>;
   if (!p) return <div style={S.wrap}><p style={{ color: MUTED }}>Loading your profile…</p></div>;
 
+  const firstName = p.fullName?.trim().split(/\s+/)[0] || "there";
+
   return (
     <div style={S.wrap}>
       <Link href="/profile" style={S.back}>← Back to profile</Link>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <h1 style={S.h1}>{p.fullName || "Your profile"}</h1>
-          {p.tier === "PREMIUM" && <span style={S.tier}>Premium</span>}
+
+        {/* Highlighted hero — the product's core value, photo + greeting + where you stand */}
+        <section style={S.hero}>
+          <div style={S.heroGlow} />
+          <div style={{ position: "relative" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              {p.photoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={p.photoUrl} alt={p.fullName ?? "You"} style={S.heroAvatar} />
+              ) : (
+                <div style={S.heroAvatarFallback}>{initials(p.fullName)}</div>
+              )}
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <h1 style={S.heroGreeting}>{greeting()}, {firstName} 👋</h1>
+                {insights?.reliable && (
+                  <div style={S.heroEyebrow}>Where you stand · you against {insights.targetJobs} {insights.fieldLabel ?? "roles"}</div>
+                )}
+              </div>
+              {p.tier === "PREMIUM" && <span style={S.tier}>Premium</span>}
+            </div>
+
+            {insights === null ? (
+              <p style={S.heroMsg}>Scoring you against every live posting in your field…</p>
+            ) : insights.reliable ? (
+              <div style={S.heroStats}>
+                <div style={S.heroStat}><div style={S.heroNum}>{insights.coveragePct ?? "—"}%</div><div style={S.heroSub}>of the skills your field asks for, you already have</div></div>
+                {insights.seniority && (
+                  <div style={S.heroStat}><div style={S.heroNum}>{insights.seniority.atOrAbove}</div><div style={S.heroSub}>roles at or above your level ({label(insights.seniority.level)}); {insights.seniority.below} below</div></div>
+                )}
+                {insights.skillGaps[0] && (
+                  <div style={S.heroStat}><div style={S.heroNum}>{insights.skillGaps[0].pct}%</div><div style={S.heroSub}>want {insights.skillGaps[0].skill}{insights.skillGaps[0].youHave ? ` — you're only ${insights.skillGaps[0].youHave.toLowerCase()}` : ", which you don't list"}</div></div>
+                )}
+              </div>
+            ) : (
+              <p style={S.heroMsg}>
+                {insights.fieldLabel
+                  ? <>Your market is still thin — only {insights.targetJobs} {insights.fieldLabel.replace(/ roles( \(broad\))?$/, "")} {insights.targetJobs === 1 ? "role is" : "roles are"} open to your region, too few for reliable stats yet. They sharpen as we add sources in your market.</>
+                  : "Pick your role below and we'll scope your stats to the right field."}
+              </p>
+            )}
+          </div>
+        </section>
+
+        {/* Roadmap — the second half of the pitch, kept right under the stats */}
+        {insights && insights.reliable && (
+          <section style={S.roadmapCard}>
+            <div style={S.cardLabel}>Your roadmap · what these jobs ask that you don&apos;t have yet</div>
+            <div style={S.diagnosis}>
+              <i className="ti" aria-hidden="true" />
+              Biggest lever: <strong>{insights.skillGaps[0].skill}</strong> — named in {insights.skillGaps[0].pct}% of {insights.fieldLabel ?? "these roles"}.
+            </div>
+            {insights.skillGaps.map((g, i) => {
+              const premium = i >= insights.premiumFrom && tier !== "PREMIUM";
+              return (
+                <div key={g.skill} style={S.step}>
+                  <div style={{ flex: 1 }}>
+                    <div style={S.stepTitle}>{g.youHave ? `Take ${g.skill} from ${g.youHave.toLowerCase()} to advanced` : `Add ${g.skill}`}</div>
+                    <div style={S.stepMeta}>named in {g.pct}% of your field · {g.youHave ? `you're ${g.youHave.toLowerCase()}` : "not on your profile"}</div>
+                  </div>
+                  {i === 0 ? <span style={S.freeTag}>biggest gap</span> : premium ? <span style={S.premTag}>premium</span> : null}
+                </div>
+              );
+            })}
+            {insights.certs.length > 0 && (
+              <div style={S.step}>
+                <div style={{ flex: 1 }}>
+                  <div style={S.stepTitle}>{insights.certs[0].label}</div>
+                  <div style={S.stepMeta}>named in {insights.certs[0].jobs} of your field&apos;s postings</div>
+                </div>
+                {tier !== "PREMIUM" && <span style={S.premTag}>premium</span>}
+              </div>
+            )}
+            <div style={S.foot}>Every step is counted from real postings, never invented. Free while we&apos;re new — the tag shows where premium will fall later.</div>
+          </section>
+        )}
+
+        <div style={S.editHead}>
+          <h2 style={S.h2}>Edit your profile</h2>
+          <p style={{ ...S.sub, margin: 0 }}>The badges show where we got each thing — your résumé, our inference, or your own hand. Saving re-scores your matches.</p>
         </div>
-        <p style={S.sub}>Edit anything. The badges show where we got it — your résumé, our inference, or your own hand. Saving re-scores your matches.</p>
 
         <section style={S.card}>
           <div style={S.cardLabel}>Replace your résumé</div>
@@ -239,76 +359,6 @@ export default function ProfileEditor() {
             </div>
           </div>
         </section>
-
-        {insights && !insights.reliable && insights.fieldLabel && (
-          <section style={S.card}>
-            <div style={S.cardLabel}>Where you stand</div>
-            <div style={S.inferNote}>
-              Only {insights.targetJobs} {insights.fieldLabel.replace(/ roles( \(broad\))?$/, "")} {insights.targetJobs === 1 ? "role is" : "roles are"} open to your region right now — too few for reliable stats or a roadmap. These sharpen as we add sources in your market.
-            </div>
-          </section>
-        )}
-
-        {insights && insights.reliable && (
-          <>
-            <section style={S.card}>
-              <div style={S.cardLabel}>Where you stand · you against {insights.targetJobs} {insights.fieldLabel ?? "jobs"}</div>
-              {insights.inferred && (
-                <div style={S.inferNote}>
-                  We guessed your field from your closest matches. Set your job title above to sharpen this.
-                </div>
-              )}
-              <div style={S.statGrid}>
-                <div style={S.stat}>
-                  <div style={S.statNum}>{insights.coveragePct ?? "—"}%</div>
-                  <div style={S.statLabel}>of the skills your field asks for, you already have</div>
-                </div>
-                {insights.seniority && (
-                  <div style={S.stat}>
-                    <div style={S.statNum}>{insights.seniority.atOrAbove}</div>
-                    <div style={S.statLabel}>roles at or above your level ({label(insights.seniority.level)}); {insights.seniority.below} below</div>
-                  </div>
-                )}
-                <div style={S.stat}>
-                  <div style={S.statNum}>{insights.skillGaps[0].pct}%</div>
-                  <div style={S.statLabel}>want {insights.skillGaps[0].skill}{insights.skillGaps[0].youHave ? ` — you're only ${insights.skillGaps[0].youHave.toLowerCase()}` : ", which you don't list"}</div>
-                </div>
-              </div>
-            </section>
-
-            <section style={S.card}>
-              <div style={S.cardLabel}>Your roadmap · what these jobs ask that you don&apos;t have yet</div>
-              <div style={S.diagnosis}>
-                <i className="ti" aria-hidden="true" />
-                Biggest lever: <strong>{insights.skillGaps[0].skill}</strong> — named in {insights.skillGaps[0].pct}% of {insights.fieldLabel ?? "these roles"}.
-              </div>
-              {insights.skillGaps.map((g, i) => {
-                const premium = i >= insights.premiumFrom && tier !== "PREMIUM";
-                return (
-                  <div key={g.skill} style={S.step}>
-                    <div style={{ flex: 1 }}>
-                      <div style={S.stepTitle}>
-                        {g.youHave ? `Take ${g.skill} from ${g.youHave.toLowerCase()} to advanced` : `Add ${g.skill}`}
-                      </div>
-                      <div style={S.stepMeta}>named in {g.pct}% of your field · {g.youHave ? `you're ${g.youHave.toLowerCase()}` : "not on your profile"}</div>
-                    </div>
-                    {i === 0 ? <span style={S.freeTag}>biggest gap</span> : premium ? <span style={S.premTag}>premium</span> : null}
-                  </div>
-                );
-              })}
-              {insights.certs.length > 0 && (
-                <div style={S.step}>
-                  <div style={{ flex: 1 }}>
-                    <div style={S.stepTitle}>{insights.certs[0].label}</div>
-                    <div style={S.stepMeta}>named in {insights.certs[0].jobs} of your field&apos;s postings</div>
-                  </div>
-                  {tier !== "PREMIUM" && <span style={S.premTag}>premium</span>}
-                </div>
-              )}
-              <div style={S.foot}>Every step is counted from real postings, never invented. Free while we&apos;re new — the tag shows where premium will fall later.</div>
-            </section>
-          </>
-        )}
 
         <section style={S.card}>
           <div style={S.cardLabel}>Your field and role</div>
@@ -452,6 +502,38 @@ export default function ProfileEditor() {
           <button style={S.saveBtn} onClick={save} disabled={saving}>{saving ? "Saving…" : saved ? "Saved ✓" : "Save changes"}</button>
           {saved && <span style={S.savedNote}>Re-scored your matches.</span>}
         </div>
+
+        {/* Role gate — shown before the stats when no role is set yet. */}
+        {roleModal && (
+          <div style={S.overlay}>
+            <div style={S.modal}>
+              <div style={S.modalBar} />
+              <div style={S.modalKicker}>First, one quick thing</div>
+              <h2 style={S.modalTitle}>What&apos;s your field and role?</h2>
+              <p style={S.modalSub}>We scope your stats, roadmap and job feed to this. Pick the closest — you can change it anytime.</p>
+
+              <div style={S.qLabel}>Your role</div>
+              <select style={{ ...S.wide, cursor: "pointer" }} value={mRole} onChange={(e) => setMRole(e.target.value)} autoFocus>
+                <option value="">Choose your role…</option>
+                {roleGroups.map((g) => (
+                  <optgroup key={g.field} label={g.field}>
+                    {g.roles.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+
+              <div style={S.qLabel}>Seniority</div>
+              <select style={{ ...S.wide, cursor: "pointer" }} value={mSen} onChange={(e) => setMSen(e.target.value)}>
+                {SENIORITIES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
+              </select>
+
+              {mErr && <p style={{ color: "#dc2626", fontSize: 13, margin: "12px 0 0" }}>{mErr}</p>}
+              <button style={{ ...S.saveBtn, width: "100%", marginTop: 20, opacity: mRole && !savingRole ? 1 : 0.55 }} disabled={!mRole || savingRole} onClick={saveRole}>
+                {savingRole ? "Setting up your stats…" : "Show me where I stand →"}
+              </button>
+            </div>
+          </div>
+        )}
     </div>
   );
 }
@@ -467,6 +549,27 @@ const S: Record<string, CSSProperties> = {
   tier: { fontSize: 12, fontWeight: 700, color: "#7a3cff", background: "#f0eaff", padding: "4px 12px", borderRadius: 20 },
   sub: { color: MUTED, fontSize: 15, lineHeight: 1.55, margin: "0 0 24px" },
   card: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 20, marginBottom: 16 },
+  // Highlighted stats hero — matches the feed's dark "Good morning" hero.
+  hero: { background: NAVY, borderRadius: 18, padding: "22px 24px", color: "#fff", position: "relative", overflow: "hidden", marginBottom: 16 },
+  heroGlow: { position: "absolute", top: -100, right: -40, width: 320, height: 320, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.32), transparent 68%)", pointerEvents: "none" },
+  heroAvatar: { width: 56, height: 56, borderRadius: "50%", objectFit: "cover", border: "2px solid rgba(255,255,255,.25)", flex: "none" },
+  heroAvatarFallback: { width: 56, height: 56, borderRadius: "50%", background: "linear-gradient(135deg,#6366F1,#8B5CF6)", color: "#fff", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 20, flex: "none" },
+  heroGreeting: { margin: 0, fontFamily: "'Sora', sans-serif", fontSize: 22, fontWeight: 800, letterSpacing: "-0.4px" },
+  heroEyebrow: { fontSize: 11, color: "#B9C0D4", marginTop: 4, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700 },
+  heroMsg: { margin: "14px 0 0", fontSize: 13, color: "#B9C0D4", lineHeight: 1.6, maxWidth: 560, position: "relative" },
+  heroStats: { display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 },
+  heroStat: { flex: "1 1 170px", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 12, padding: "14px 16px" },
+  heroNum: { fontFamily: "'Sora', sans-serif", fontSize: 26, fontWeight: 800, background: "linear-gradient(135deg,#A5B4FC,#C4B5FD)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" },
+  heroSub: { fontSize: 12, color: "#B9C0D4", marginTop: 5, lineHeight: 1.5 },
+  roadmapCard: { background: "#fff", border: "1px solid #ececf2", borderTop: "3px solid #8B5CF6", borderRadius: 16, padding: 20, marginBottom: 22 },
+  editHead: { margin: "26px 0 14px" },
+  h2: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 20, margin: "0 0 6px", color: INK },
+  overlay: { position: "fixed", inset: 0, background: "rgba(15,23,42,.6)", backdropFilter: "blur(3px)", display: "grid", placeItems: "center", zIndex: 100, padding: 20 },
+  modal: { background: "#fff", borderRadius: 18, padding: "28px 26px", maxWidth: 460, width: "100%", boxShadow: "0 24px 60px rgba(15,23,42,.3)", position: "relative", overflow: "hidden" },
+  modalBar: { position: "absolute", left: 0, right: 0, top: 0, height: 5, background: "linear-gradient(135deg,#6366F1,#8B5CF6)" },
+  modalKicker: { fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, color: "#8B5CF6", marginBottom: 8 },
+  modalTitle: { fontFamily: "'Sora', sans-serif", fontSize: 22, fontWeight: 800, margin: "0 0 8px", color: INK },
+  modalSub: { fontSize: 14, color: MUTED, lineHeight: 1.55, margin: "0 0 20px" },
   inferNote: { fontSize: 12, color: "#8a5a00", background: "#fdf0d5", borderRadius: 8, padding: "8px 10px", marginBottom: 12, lineHeight: 1.45 } as const,
   statGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 },
   stat: { background: "#f7f7fb", borderRadius: 10, padding: 14 },
