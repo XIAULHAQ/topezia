@@ -417,7 +417,7 @@ const S: Record<string, CSSProperties> = {
   iconBtn: { width: 34, height: 34, border: `1px solid ${C.line}`, borderRadius: 9, display: "grid", placeItems: "center", color: C.mut, cursor: "default" },
   applyBtn: { background: GRAD, color: "#fff", borderRadius: 9, padding: "8px 17px", fontSize: 12, fontWeight: 600, textDecoration: "none", display: "inline-flex", alignItems: "center" },
   cardFoot: { display: "flex", alignItems: "center", gap: 8, marginTop: 14, paddingTop: 12, borderTop: "1px solid #F1F5F9", fontSize: 11, color: C.mut },
-  rail: { flex: "1 1 280px", maxWidth: 320, marginLeft: "auto", display: "flex", flexDirection: "column", gap: 18, position: "sticky", top: 20 },
+  rail: { flex: "1 1 280px", maxWidth: 320, marginLeft: "auto", display: "flex", flexDirection: "column", gap: 18, position: "sticky", top: 20, maxHeight: "calc(100vh - 40px)", overflowY: "auto", overscrollBehavior: "contain" },
   railH: { margin: 0, fontSize: 15, fontWeight: 700, flex: 1 },
   railEdit: { fontSize: 12, fontWeight: 600, color: C.c1, textDecoration: "none" },
   railP: { color: C.mut, fontSize: 12.5, lineHeight: 1.55, margin: "0 0 4px" },

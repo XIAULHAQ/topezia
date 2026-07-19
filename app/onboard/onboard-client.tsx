@@ -140,6 +140,7 @@ export default function OnboardClient() {
               </span>
             ))}
           </div>
+          <a href="/login" style={S.signIn}>Sign in</a>
         </div>
       </header>
 
@@ -227,6 +228,7 @@ const S: Record<string, CSSProperties> = {
   page: { minHeight: "100vh", display: "flex", flexDirection: "column", background: "linear-gradient(180deg,#F8FAFF,#F1F5F9)", fontFamily: FONT, color: C.ink },
   headerInner: { maxWidth: 860, margin: "0 auto", padding: "0 24px", display: "flex", alignItems: "center", gap: 14, width: "100%" },
   steps: { display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.mut, flexWrap: "wrap" },
+  signIn: { flex: "none", marginLeft: 8, background: "#fff", border: `1px solid ${C.line}`, color: C.slate, borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" },
   stepNumOn: { width: 24, height: 24, borderRadius: "50%", background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700 },
   stepNumOff: { width: 24, height: 24, borderRadius: "50%", border: `1.5px solid ${C.line}`, color: C.mut, display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700 },
   main: { flex: 1, width: "100%", maxWidth: 860, margin: "0 auto", padding: "28px 24px 64px" },

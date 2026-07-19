@@ -78,14 +78,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const disp = expanded ? "inline" : "none";
   const just = expanded ? "flex-start" : "center";
   const asideStyle: CSSProperties = isMobile
-    ? { width: 268, background: "#fff", borderRight: `1px solid ${C.line}`, display: "flex", flexDirection: "column", padding: "20px 14px", position: "fixed", left: 0, top: 0, height: "100vh", overflowY: "auto", overflowX: "hidden", zIndex: 60, transform: mobileOpen ? "translateX(0)" : "translateX(-100%)", transition: "transform .25s ease", boxShadow: mobileOpen ? "0 0 40px rgba(15,23,42,.25)" : "none" }
-    : { width: open ? 236 : 78, flex: "none", background: "#fff", borderRight: `1px solid ${C.line}`, display: "flex", flexDirection: "column", padding: "20px 14px", position: "sticky", top: 0, height: "100vh", overflowY: "auto", overflowX: "hidden", transition: "width .25s ease" };
+    ? { width: 268, background: "#fff", borderRight: `1px solid ${C.line}`, display: "flex", flexDirection: "column", padding: "20px 14px", position: "fixed", left: 0, top: 0, height: "100vh", overflowY: "auto", overflowX: "hidden", overscrollBehavior: "contain", zIndex: 60, transform: mobileOpen ? "translateX(0)" : "translateX(-100%)", transition: "transform .25s ease", boxShadow: mobileOpen ? "0 0 40px rgba(15,23,42,.25)" : "none" }
+    : { width: open ? 236 : 78, flex: "none", background: "#fff", borderRight: `1px solid ${C.line}`, display: "flex", flexDirection: "column", padding: "20px 14px", position: "sticky", top: 0, height: "100vh", overflowY: "auto", overflowX: "hidden", overscrollBehavior: "contain", transition: "width .25s ease" };
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: C.bg, fontFamily: FONT, color: C.ink, overflowX: "hidden" }}>
       {isMobile && mobileOpen && <div onClick={() => setMobileOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.4)", zIndex: 55 }} />}
       <aside style={asideStyle}>
-        <Link href="/feed" style={{ display: "flex", alignItems: "center", gap: 9, padding: "4px 10px 18px", justifyContent: just, textDecoration: "none", color: C.ink }}>
+        <Link href="/feed" prefetch={false} style={{ display: "flex", alignItems: "center", gap: 9, padding: "4px 10px 18px", justifyContent: just, textDecoration: "none", color: C.ink }}>
           <BrandMark />
           <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-0.5px", display: disp }}>topezia</span>
         </Link>
@@ -108,7 +108,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             };
             if (nv.href) {
               return (
-                <Link key={nv.label} href={nv.href} title={nv.label} style={{ ...base, background: active ? GRAD : "transparent", color: active ? "#fff" : "#475569", fontWeight: active ? 600 : 500 }}>
+                <Link key={nv.label} href={nv.href} prefetch={false} title={nv.label} style={{ ...base, background: active ? GRAD : "transparent", color: active ? "#fff" : "#475569", fontWeight: active ? 600 : 500 }}>
                   {inner}
                 </Link>
               );
@@ -160,8 +160,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
                 <div style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", zIndex: 41, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, boxShadow: "0 12px 32px rgba(15,23,42,.14)", padding: 6, minWidth: 190 }}>
                   {name && <div style={{ padding: "8px 12px 6px", fontSize: 12, color: C.mut, borderBottom: `1px solid ${C.line}`, marginBottom: 4 }}>Signed in as<div style={{ color: C.ink, fontWeight: 700, fontSize: 13 }}>{name}</div></div>}
-                  <Link href="/profile/edit" style={S_menuItem}><Icon name="edit" size={16} />Edit profile</Link>
-                  <Link href="/settings" style={S_menuItem}><Icon name="settings" size={16} />Settings</Link>
+                  <Link href="/profile/edit" prefetch={false} style={S_menuItem}><Icon name="edit" size={16} />Edit profile</Link>
+                  <Link href="/settings" prefetch={false} style={S_menuItem}><Icon name="settings" size={16} />Settings</Link>
                   <div style={{ height: 1, background: C.line, margin: "4px 0" }} />
                   <button onClick={() => { setMenuOpen(false); logout(); }} style={{ ...S_menuItem, width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", color: "#b42318" }}><Icon name="logout" size={16} />Log out</button>
                 </div>
