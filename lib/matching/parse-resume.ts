@@ -50,7 +50,12 @@ const PARSE_PROMPT = `You parse a job seeker's résumé into structured JSON. Re
   "currentLocation": string | null,  // where THEY are (e.g. "San Diego, CA"), from the résumé header. null if absent — never guess from employer locations
   "industries": string[],            // 1-4 sectors they've actually worked in, lowercase (e.g. "healthcare", "b2b saas", "logistics")
   "skills": [ { "name": string, "confidence": number, "proficiency": "FAMILIAR" | "PROFICIENT" | "ADVANCED" | "EXPERT", "tier": "CORE" | "SECONDARY" } ],
-                                     // 5-15 concrete skills.
+                                     // 5-15 concrete skills. name must be ATOMIC and CANONICAL:
+                                     //   - one skill per entry — split compounds: "PPC & Google Adwords" -> two entries "PPC" and "Google Ads";
+                                     //     "wordpress & woocommerce" -> "WordPress" and "WooCommerce".
+                                     //   - use the shortest standard industry term: "SEO" (never "SEO optimization" / "search engine optimization"),
+                                     //     "Digital Marketing" (never "digital marketing strategies"), "Google Ads" (never "Google Adwords").
+                                     //     Job postings use these canonical names — matching depends on them being identical.
                                      // confidence = did the résumé SAY it: 1.0 explicitly listed/used, 0.5-0.7 only implied by their roles.
                                      // proficiency = how GOOD they are, inferred from years using it, the seniority of roles where it appears, and depth of described work.
                                      //   FAMILIAR = mentioned in passing; PROFICIENT = used regularly; ADVANCED = deep sustained use; EXPERT = leads/teaches it.

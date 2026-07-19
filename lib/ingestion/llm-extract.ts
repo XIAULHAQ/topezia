@@ -50,7 +50,10 @@ export function hashDescription(text: string): string {
 const EXTRACTION_PROMPT = `You extract structured hiring data from a job posting. Return ONLY valid JSON, no prose, matching exactly this shape:
 
 {
-  "skills": string[],       // 3-10 concrete skills/tools/technologies mentioned, canonical short names (e.g. "Python" not "experience with Python programming")
+  "skills": string[],       // 3-10 concrete skills/tools/technologies mentioned. ATOMIC canonical short names:
+                            // one skill per entry — split compounds ("PPC & Google Ads" -> "PPC", "Google Ads");
+                            // the shortest standard industry term ("SEO" not "SEO optimization" or "search engine optimization",
+                            // "Python" not "experience with Python programming", "Digital Marketing" not "digital marketing strategies")
   "seniority": "INTERN" | "JUNIOR" | "MID" | "SENIOR" | "LEAD" | "EXEC" | "NOT_APPLICABLE",
   "roleGuess": string,      // normalized job function in 2-4 words, lowercase, e.g. "backend engineer"
   "vertical": string,       // the single best-fit category for this job, EXACTLY one of:
