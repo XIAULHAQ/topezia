@@ -8,23 +8,24 @@
  * preferences, email alerts, strong-match count) with clearly-labelled
  * "Coming soon" panels for features we don't back with data yet.
  */
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import AppShell from "@/app/_components/AppShell";
 import AlertCapture from "@/app/jobs/_components/AlertCapture";
 import { C, GRAD, FONT, Icon, MatchRing, Card, SoonTag } from "@/app/_components/ui";
+import { curSym } from "@/lib/currency";
 
 type Match = {
   jobId: string; title: string; company: string; verticalSlug: string; cardLayout: string;
   kind: string; source: string; sourceUrl: string; remoteType: string; employmentType: string;
   country: string | null; remoteScope: string | null;
-  salaryMin: number | null; salaryMax: number | null; salaryPeriod: string | null;
+  salaryMin: number | null; salaryMax: number | null; salaryCurrency: string; salaryPeriod: string | null;
   locationState: string | null; lastVerifiedAt: string; similarity: number; score: number;
   matchedSkills: string[]; gapSkills: string[]; whyLine: string; pending: boolean;
 };
 
-const FILTERS = ["All matches", "Remote", "Hourly", "Projects", "Saved"] as const;
+const FILTERS = ["All matches", "Remote", "Hourly", "Saved"] as const;
 type Filter = (typeof FILTERS)[number];
 
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
@@ -55,12 +56,14 @@ function freshness(iso: string): string {
 }
 function fmtSalary(m: Match): string | null {
   if (m.salaryMin == null && m.salaryMax == null) return null;
-  // PROJECT = a fixed budget for the whole engagement, not a rate.
+  // PROJECT = a fixed budget for the whole engagement, not a rate. Money shows
+  // in the poster's real currency — never converted.
+  const sym = curSym(m.salaryCurrency);
   const per = m.salaryPeriod === "HOUR" ? "/hr" : m.salaryPeriod === "PER_MILE" ? "/mi" : m.salaryPeriod === "DAY" ? "/day" : m.salaryPeriod === "PROJECT" ? " budget" : "/yr";
   const k = (n: number) => (m.salaryPeriod === "YEAR" && n >= 1000 ? `${Math.round(n / 1000)}k` : `${n.toLocaleString()}`);
   const lo = m.salaryMin, hi = m.salaryMax;
-  if (lo != null && hi != null) return `$${k(lo)}–${k(hi)}${per}`;
-  return `$${k((lo ?? hi)!)}${per}`;
+  if (lo != null && hi != null) return `${sym}${k(lo)}–${k(hi)}${per}`;
+  return `${sym}${k((lo ?? hi)!)}${per}`;
 }
 function greeting(): string {
   const h = new Date().getHours();
@@ -98,12 +101,6 @@ export default function FeedPage() {
   const [insights, setInsights] = useState<FeedInsights | null>(null);
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [saved, setSaved] = useState<Set<string>>(new Set());
-  // Projects view is its own retrieval (kind=PROJECT), fetched lazily on first
-  // click of the pill: projects rarely crack the general top-12 against
-  // thousands of jobs, so filtering client-side showed nothing for most users.
-  const [projMatches, setProjMatches] = useState<Match[] | null>(null);
-  const [projLoading, setProjLoading] = useState(false);
-  const projFetchStarted = useRef(false);
 
   async function toggleSave(jobId: string) {
     const wasSaved = saved.has(jobId);
@@ -180,48 +177,13 @@ export default function FeedPage() {
     return () => { cancelled = true; };
   }, [router]);
 
-  // First click on "Projects" → fetch the project-scoped matches, then enrich.
-  // One-shot guarded by a ref, NOT state: a state guard deadlocks under React
-  // StrictMode's double-effect (the first run's cleanup cancels its own
-  // `finally`, leaving the loading flag stuck true and the guard blocking a
-  // retry). The ref survives the double-invoke; stale setStates are harmless
-  // because every run writes the same target state.
-  useEffect(() => {
-    if (filter !== "Projects" || projFetchStarted.current) return;
-    projFetchStarted.current = true;
-    (async () => {
-      setProjLoading(true);
-      try {
-        const res = await fetch("/api/matches?kind=PROJECT");
-        if (!res.ok) throw new Error(`server ${res.status}`);
-        const data = await res.json();
-        setProjMatches(data.matches || []);
-        if (data.pending) {
-          try {
-            const r2 = await fetch("/api/matches/rerank?kind=PROJECT", { method: "POST" });
-            if (r2.ok) setProjMatches((await r2.json()).matches || []);
-            else setProjMatches((prev) => (prev ?? []).map((m) => ({ ...m, pending: false })));
-          } catch {
-            setProjMatches((prev) => (prev ?? []).map((m) => ({ ...m, pending: false })));
-          }
-        }
-      } catch {
-        setProjMatches([]); // fail closed to the empty state, not a spinner forever
-      } finally {
-        setProjLoading(false);
-      }
-    })();
-  }, [filter]);
-
   const statsReady = stats !== null && !enriching && !matches.some((m) => m.pending);
-  const shown = filter === "Projects"
-    ? (projMatches ?? [])
-    : matches.filter((m) => {
-        if (filter === "Remote") return m.remoteType.startsWith("REMOTE");
-        if (filter === "Hourly") return m.salaryPeriod === "HOUR" || m.employmentType === "HOURLY";
-        if (filter === "Saved") return saved.has(m.jobId);
-        return true;
-      });
+  const shown = matches.filter((m) => {
+    if (filter === "Remote") return m.remoteType.startsWith("REMOTE");
+    if (filter === "Hourly") return m.salaryPeriod === "HOUR" || m.employmentType === "HOURLY";
+    if (filter === "Saved") return saved.has(m.jobId);
+    return true;
+  });
   const topId = matches.filter((m) => !m.pending).sort((a, b) => b.score - a.score)[0]?.jobId;
   const name = (prefs?.fullName ?? "").split(/\s+/)[0] || "there";
 
@@ -301,15 +263,7 @@ export default function FeedPage() {
           )}
 
           {shown.length === 0 && (
-            <div style={S.empty}>
-              {filter === "Projects"
-                ? (projLoading || projMatches === null)
-                  ? "Finding freelance projects that fit your skills…"
-                  : "No live projects match your profile yet — projects skew toward design, development, marketing and finance, and new ones arrive daily."
-                : filter === "Saved"
-                  ? "Saving jobs is coming soon."
-                  : "No matches in this view yet — try “All matches”, or widen your preferences."}
-            </div>
+            <div style={S.empty}>{filter === "Saved" ? "Saving jobs is coming soon." : "No matches in this view yet — try “All matches”, or widen your preferences."}</div>
           )}
 
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>

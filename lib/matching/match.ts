@@ -34,6 +34,7 @@ export interface JobMatch {
   employmentType: EmploymentType;
   salaryMin: number | null;
   salaryMax: number | null;
+  salaryCurrency: string; // budgets display in the poster's real currency
   salaryPeriod: SalaryPeriod | null;
   locationState: string | null;
   country: string | null;
@@ -59,6 +60,7 @@ interface CandidateRow {
   employmentType: EmploymentType;
   salaryMin: number | null;
   salaryMax: number | null;
+  salaryCurrency: string;
   salaryPeriod: SalaryPeriod | null;
   locationState: string | null;
   lastVerifiedAt: Date;
@@ -74,11 +76,16 @@ export interface MatchOptions {
   retrieveN?: number; // candidates kept after hard filters (default 30)
   rerankN?: number; // how many of those get an LLM score (default 12)
   rerank?: boolean; // false = Stage-1 only (fast, provisional scores, no LLM)
-  // Restrict retrieval to one kind. The feed's "Projects" pill needs this:
-  // projects compete against thousands of jobs on raw similarity, so filtering
-  // the general top-12 client-side usually yields zero — retrieval itself has
-  // to be scoped to guarantee the user's nearest projects are considered.
+  // Restrict retrieval to one kind. The /projects feed needs this: projects
+  // compete against thousands of jobs on raw similarity, so filtering a
+  // general top-12 client-side usually yields zero — retrieval itself has to
+  // be scoped to guarantee the user's nearest projects are considered.
+  // Omitted -> jobs only: the two feeds are fully separated.
   kind?: "PROJECT";
+  // Project-feed capsules, applied at retrieval for the same reason as `kind`
+  // (client-side filtering of 12 fetched cards would empty the view).
+  period?: "HOUR" | "PROJECT"; // hourly vs fixed-price
+  currency?: "USD"; // "USD only" capsule
 }
 
 export async function getMatches(profileId: string, opts: MatchOptions = {}): Promise<JobMatch[]> {
@@ -142,11 +149,17 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       OR (j.country IS NULL AND j."remoteScope" IS NULL)
     )`;
 
-  // Literal from the typed option, never user input — safe to inline.
-  const kindSql = opts.kind === "PROJECT" ? `AND j.kind = 'PROJECT'` : "";
+  // Literals from the typed options, never user input — safe to inline. The
+  // routes whitelist the query-param values before they reach MatchOptions.
+  // Default (no kind) is jobs-only: /feed and /projects are separate surfaces.
+  const kindSql = [
+    opts.kind === "PROJECT" ? `AND j.kind = 'PROJECT'` : `AND j.kind = 'JOB'`,
+    opts.period === "HOUR" ? `AND j."salaryPeriod" = 'HOUR'` : opts.period === "PROJECT" ? `AND j."salaryPeriod" = 'PROJECT'` : "",
+    opts.currency === "USD" ? `AND j."salaryCurrency" = 'USD'` : "",
+  ].join(" ");
 
   const selectCols = `j.id, j."titleRaw", j."titleNormalized", j."companyName", j.kind::text AS kind, j.source::text AS source,
-      j."sourceUrl", j."remoteType", j."employmentType", j."salaryMin", j."salaryMax",
+      j."sourceUrl", j."remoteType", j."employmentType", j."salaryMin", j."salaryMax", j."salaryCurrency",
       j."salaryPeriod", j."locationState", j.country, j."remoteScope", j."lastVerifiedAt", j."descriptionRaw",
       v.slug AS "verticalSlug", v."cardLayout"::text AS "cardLayout"`;
 
@@ -218,6 +231,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       j.salaryPeriod != null &&
       profile.salaryPeriod != null &&
       j.salaryPeriod === profile.salaryPeriod &&
+      j.salaryCurrency === "USD" && // floors are USD; comparing across currencies would be dishonest
       j.salaryMax < profile.salaryFloor
     ) {
       return false;
@@ -298,6 +312,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       employmentType: j.employmentType,
       salaryMin: j.salaryMin,
       salaryMax: j.salaryMax,
+      salaryCurrency: j.salaryCurrency,
       salaryPeriod: j.salaryPeriod,
       locationState: j.locationState,
       lastVerifiedAt: j.lastVerifiedAt,

@@ -51,12 +51,18 @@ export async function GET(req: NextRequest) {
   const { profileId, authed } = await resolveIdentity();
   if (!profileId) return NextResponse.json({ error: "no-profile" }, { status: 401 });
 
-  // ?kind=PROJECT — the feed's Projects pill: retrieval scoped to projects so
-  // the user's nearest projects surface even though jobs dominate raw similarity.
-  const kind = req.nextUrl.searchParams.get("kind") === "PROJECT" ? ("PROJECT" as const) : undefined;
+  // ?kind=PROJECT (+ optional &period=HOUR|PROJECT, &currency=USD) — the
+  // /projects feed: retrieval scoped server-side so the nearest projects
+  // surface even though jobs dominate raw similarity. Values are whitelisted
+  // here; anything else is ignored.
+  const sp = req.nextUrl.searchParams;
+  const kind = sp.get("kind") === "PROJECT" ? ("PROJECT" as const) : undefined;
+  const periodRaw = sp.get("period");
+  const period = kind && (periodRaw === "HOUR" || periodRaw === "PROJECT") ? periodRaw : undefined;
+  const currency = kind && sp.get("currency") === "USD" ? ("USD" as const) : undefined;
 
   const profile = await prisma.profile.findUnique({ where: { id: profileId }, select: { country: true } });
-  const matches = await getMatches(profileId, { rerankN: 12, rerank: false, kind });
+  const matches = await getMatches(profileId, { rerankN: 12, rerank: false, kind, period, currency });
   const totalLive = await eligibleLiveCount(profile?.country ?? null); // jobs open to them, not the whole corpus
   const alert = await feedAlert(profileId);
   return respond(matches, totalLive, authed, alert);

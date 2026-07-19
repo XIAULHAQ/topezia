@@ -19,10 +19,15 @@ export async function POST(req: NextRequest) {
   const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true, country: true } });
   if (!profile) return NextResponse.json({ error: "no-profile" }, { status: 401 });
 
-  // ?kind=PROJECT mirrors GET /api/matches — enriches the Projects view.
-  const kind = req.nextUrl.searchParams.get("kind") === "PROJECT" ? ("PROJECT" as const) : undefined;
+  // ?kind=PROJECT (+ period/currency) mirrors GET /api/matches — enriches the
+  // /projects view. Whitelisted the same way.
+  const sp = req.nextUrl.searchParams;
+  const kind = sp.get("kind") === "PROJECT" ? ("PROJECT" as const) : undefined;
+  const periodRaw = sp.get("period");
+  const period = kind && (periodRaw === "HOUR" || periodRaw === "PROJECT") ? periodRaw : undefined;
+  const currency = kind && sp.get("currency") === "USD" ? ("USD" as const) : undefined;
 
-  const matches = await getMatches(profile.id, { rerankN: 12, rerank: true, kind });
+  const matches = await getMatches(profile.id, { rerankN: 12, rerank: true, kind, period, currency });
   const totalLive = await eligibleLiveCount(profile.country); // eligible set, not whole corpus
   return NextResponse.json({
     matches,

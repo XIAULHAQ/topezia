@@ -17,6 +17,7 @@ import { prisma } from "@/lib/prisma";
 import { sanitizeJobHtml, renderJobDescription } from "@/lib/sanitize";
 import { MIN_JOBS_FOR_PAGE } from "@/lib/seo/pages";
 import SiteNav from "@/app/_components/SiteNav";
+import { curSym } from "@/lib/currency";
 
 const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
@@ -34,7 +35,7 @@ async function getJob(id: string) {
     select: {
       id: true, kind: true, titleRaw: true, titleNormalized: true, companyName: true, descriptionRaw: true,
       locationRaw: true, locationState: true, country: true, remoteType: true, employmentType: true, seniority: true,
-      salaryMin: true, salaryMax: true, salaryPeriod: true, postedAt: true, lastVerifiedAt: true,
+      salaryMin: true, salaryMax: true, salaryCurrency: true, salaryPeriod: true, postedAt: true, lastVerifiedAt: true,
       status: true, source: true, sourceUrl: true, roleId: true, verticalId: true,
       vertical: { select: { name: true, slug: true } },
       role: { select: { name: true, slug: true } },
@@ -43,10 +44,11 @@ async function getJob(id: string) {
   });
 }
 
-function salaryText(j: { salaryMin: number | null; salaryMax: number | null; salaryPeriod: string | null }) {
+function salaryText(j: { salaryMin: number | null; salaryMax: number | null; salaryCurrency: string; salaryPeriod: string | null }) {
   if (j.salaryMin == null || j.salaryMax == null) return null;
+  const sym = curSym(j.salaryCurrency); // poster's real currency, never converted
   const unit = j.salaryPeriod === "HOUR" ? "/hr" : j.salaryPeriod === "YEAR" ? "/yr" : j.salaryPeriod === "PROJECT" ? " budget" : "";
-  const fmt = (n: number) => (n >= 1000 ? `$${Math.round(n / 1000)}k` : `$${n}`);
+  const fmt = (n: number) => (n >= 1000 ? `${sym}${Math.round(n / 1000)}k` : `${sym}${n}`);
   return `${fmt(j.salaryMin)}–${fmt(j.salaryMax)}${unit}`;
 }
 

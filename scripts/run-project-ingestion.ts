@@ -9,9 +9,11 @@
  * vertical comes deterministically from the search query that found the
  * project. Cheaper, faster, and nothing is invented.
  *
- * v1 scope decisions:
- * - USD-budget projects only, so budget filtering/display stays honest without
- *   currency conversion. Revisit when projects get their own budget UI.
+ * Scope decisions:
+ * - ALL currencies: budgets are stored and displayed in the poster's real
+ *   currency (salaryCurrency), never FX-converted — the number a user sees
+ *   must match the source site. The projects feed offers a "USD only" capsule;
+ *   the salary-floor filter skips non-USD budgets (floors are USD).
  * - remoteScope GLOBAL: a public remote project is biddable from anywhere, so
  *   it's eligible in every user's country-scoped feed.
  * - Freelancer.com API T&Cs require cached data refreshed every 24h — re-run
@@ -139,17 +141,15 @@ async function main() {
   const verticals = await prisma.vertical.findMany({ select: { id: true, slug: true } });
   const verticalBySlug = new Map(verticals.map((v) => [v.slug, v.id]));
 
-  let created = 0, refreshed = 0, alreadyCurrent = 0, skippedNonUsd = 0, failed = 0;
+  let created = 0, refreshed = 0, alreadyCurrent = 0, failed = 0;
 
   for (const { query, vertical } of QUERIES) {
     const verticalId = verticalBySlug.get(vertical);
     if (!verticalId) { console.warn(`  ! unknown vertical slug ${vertical}, skipping "${query}"`); continue; }
     try {
       const projects = await crawlFreelancerProjects(query, limitPerQuery);
-      const usd = projects.filter((p) => p.currency === "USD");
-      skippedNonUsd += projects.length - usd.length;
-      console.log(`  "${query}": ${projects.length} active, ${usd.length} USD`);
-      for (const p of usd) {
+      console.log(`  "${query}": ${projects.length} active`);
+      for (const p of projects) {
         try {
           const r = await processProject(p, verticalId, skipEmbeddings);
           if (r === "created") created++;
@@ -165,7 +165,7 @@ async function main() {
     }
   }
 
-  console.log(`\nDone. Created: ${created}, Refreshed: ${refreshed}, Already current: ${alreadyCurrent}, Non-USD skipped: ${skippedNonUsd}, Failed: ${failed}`);
+  console.log(`\nDone. Created: ${created}, Refreshed: ${refreshed}, Already current: ${alreadyCurrent}, Failed: ${failed}`);
   if (skipEmbeddings) console.log("Embeddings deferred — run: npx tsx scripts/backfill-embeddings.ts");
   await prisma.$disconnect();
 }
