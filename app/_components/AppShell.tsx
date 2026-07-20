@@ -50,11 +50,10 @@ const FIND_HINT_CSS = `
 // Finding work (Find Jobs / Find Projects) lives in the top bar next to the
 // avatar, not here — the sidebar is what you've collected and who you are.
 const NAV: NavItem[] = [
-  { icon: "home", label: "Overview", soon: true },
+  { icon: "user", label: "My Profile", href: "/profile" },
   { icon: "bookmark", label: "Saved Jobs", href: "/saved" },
   { icon: "zap", label: "Saved Projects", href: "/saved/projects" },
   { icon: "briefcase", label: "Applications", soon: true },
-  { icon: "user", label: "My Profile", href: "/profile" },
   { icon: "doc", label: "Resume Builder", soon: true },
   { icon: "gauge", label: "Skill Assessment", soon: true },
   { icon: "spark", label: "Career Coach", href: "/coach" },

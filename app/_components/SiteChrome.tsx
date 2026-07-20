@@ -170,7 +170,7 @@ export function SiteHeader() {
 const FOOTER_COLS = [
   { head: "Product", links: [{ label: "Find jobs", href: "/jobs" }, { label: "Freelance Projects", href: "/projects" }, { label: "AI Career Score", href: "/onboard" }, { label: "Skill assessments", href: "/onboard" }, { label: "Resume builder", href: "/onboard" }] },
   { head: "Employers", links: [{ label: "Post a role", href: "/waitlist" }, { label: "Search talent", href: "/waitlist" }, { label: "Pricing", href: "/waitlist" }] },
-  { head: "Company", links: [{ label: "About", href: "/" }, { label: "Contact", href: "/waitlist" }] },
+  { head: "Company", links: [{ label: "About", href: "/about" }, { label: "Contact", href: "/waitlist" }] },
   { head: "Legal", links: [{ label: "Privacy Policy", href: "/privacy" }, { label: "Terms of Service", href: "/terms" }, { label: "Cookie Policy", href: "/cookies" }] },
 ];
 
