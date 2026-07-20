@@ -21,7 +21,7 @@ type NavItem = { icon: string; label: string; href?: string; soon?: boolean };
 const NAV: NavItem[] = [
   { icon: "home", label: "Overview", soon: true },
   { icon: "feed", label: "Job Feed", href: "/feed" },
-  { icon: "zap", label: "Projects", href: "/projects" },
+  { icon: "zap", label: "Freelance Projects", href: "/projects" },
   { icon: "search", label: "Search Jobs", soon: true },
   { icon: "bookmark", label: "Saved Jobs", href: "/saved" },
   { icon: "briefcase", label: "Applications", soon: true },

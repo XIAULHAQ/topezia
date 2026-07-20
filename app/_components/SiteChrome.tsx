@@ -5,9 +5,8 @@
  * on the homepage, /jobs pages, country pages, job details and public
  * profiles.
  *
- * Nav is the homepage bar with "Pricing" replaced by "Projects" (the freelance
- * projects feed) — per product call, pricing lives behind the employer
- * waitlist for now.
+ * Nav is the homepage bar with "Pricing" replaced by "Freelance Projects" — per
+ * product call, pricing lives behind the employer waitlist for now.
  *
  * The pages using this are statically cached (SEO), so the session can't be
  * known server-side — the right-hand links hydrate after load and swap to
@@ -33,7 +32,7 @@ export function Brand({ h = 26 }: { h?: number }) {
 
 const NAV_LINKS = [
   { label: "Find jobs", href: "/jobs" },
-  { label: "Projects", href: "/projects" },
+  { label: "Freelance Projects", href: "/projects" },
   // /coach is auth-gated: anonymous visitors get bounced to /login, which
   // carries the "join by uploading your resume" path to /onboard.
   { label: "AI Career Coach", href: "/coach" },
@@ -84,7 +83,7 @@ export function SiteHeader() {
 }
 
 const FOOTER_COLS = [
-  { head: "Product", links: [{ label: "Find jobs", href: "/jobs" }, { label: "Freelance projects", href: "/projects" }, { label: "AI Career Score", href: "/onboard" }, { label: "Skill assessments", href: "/onboard" }, { label: "Resume builder", href: "/onboard" }] },
+  { head: "Product", links: [{ label: "Find jobs", href: "/jobs" }, { label: "Freelance Projects", href: "/projects" }, { label: "AI Career Score", href: "/onboard" }, { label: "Skill assessments", href: "/onboard" }, { label: "Resume builder", href: "/onboard" }] },
   { head: "Employers", links: [{ label: "Post a role", href: "/waitlist" }, { label: "Search talent", href: "/waitlist" }, { label: "Pricing", href: "/waitlist" }] },
   { head: "Company", links: [{ label: "About", href: "/" }, { label: "Contact", href: "/waitlist" }] },
   { head: "Legal", links: [{ label: "Privacy Policy", href: "/privacy" }, { label: "Terms of Service", href: "/terms" }, { label: "Cookie Policy", href: "/cookies" }] },
