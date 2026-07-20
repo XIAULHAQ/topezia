@@ -14,7 +14,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 import { prisma } from "@/lib/prisma";
-import { sanitizeJobHtml, renderJobDescription } from "@/lib/sanitize";
+import { renderJobDescription, jobDescriptionText } from "@/lib/sanitize";
 import { MIN_JOBS_FOR_PAGE } from "@/lib/seo/pages";
 import SiteNav from "@/app/_components/SiteNav";
 import { SiteFooter } from "@/app/_components/SiteChrome";
@@ -86,7 +86,7 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
   const job = await getJob(params.id);
   if (!job) return { title: "Job — Topezia" };
   const title = `${job.titleRaw} at ${job.companyName} | Topezia`;
-  const description = sanitizeJobHtml(job.descriptionRaw).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 155);
+  const description = jobDescriptionText(job.descriptionRaw);
   return { title, description, alternates: { canonical: `/job/${job.id}` }, openGraph: { title, description, type: "article" } };
 }
 

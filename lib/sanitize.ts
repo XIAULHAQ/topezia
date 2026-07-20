@@ -54,6 +54,30 @@ export function renderJobDescription(raw: string): string {
     .join("");
 }
 
+/**
+ * Flatten a job description to plain prose for meta/OG descriptions.
+ *
+ * MUST decode entities before stripping tags. Greenhouse serves entity-ENCODED
+ * HTML, so its tags arrive as literal `&lt;div class=&quot;content-intro&quot;&gt;`
+ * text that a tag regex cannot match — strip-first left the markup intact, and
+ * link previews (WhatsApp, Slack, search results) decoded it back into visible
+ * `<div class="content-intro"><p><span style=...>` where the summary should be.
+ * Same trap already documented in normalize-rules.ts and match.ts.
+ */
+export function jobDescriptionText(raw: string, max = 155): string {
+  const text = decodeHtmlEntities(raw)
+    .replace(/<(style|script)[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length <= max) return text;
+  // Cut on a word boundary so the preview doesn't end mid-word.
+  const cut = text.slice(0, max);
+  const sp = cut.lastIndexOf(" ");
+  return `${(sp > max * 0.6 ? cut.slice(0, sp) : cut).replace(/[,;:.\s]+$/, "")}…`;
+}
+
 export function sanitizeJobHtml(dirty: string): string {
   return sanitizeHtml(dirty, {
     allowedTags: ["p", "br", "strong", "b", "em", "i", "u", "ul", "ol", "li", "h2", "h3", "h4", "blockquote", "a", "code", "pre", "hr", "span", "div"],
