@@ -208,6 +208,16 @@ export default async function Home() {
             <Link href="/onboard" className="h-bright" style={{ ...S.bandBtn }}>Get your free breakdown <Ic n="arrow" s={14} /></Link>
           </div>
           <div style={{ flex: "1 1 300px", minWidth: 0, position: "relative", display: "flex", flexDirection: "column", gap: 12 }}>
+            {/*
+              Labelled as an EXAMPLE. These three cards are written in the second
+              person — they assert the reader's seniority ("Senior"), which
+              skills they hold and which they don't list — and we know none of
+              that about a signed-out visitor. Same objection the login panel
+              already records against showing a stranger "97 — your AI Career
+              Score". The illustration is worth keeping; presenting it as their
+              actual breakdown is not.
+            */}
+            <div style={S.exampleTag}>Example breakdown</div>
             {STAND_CARDS.map((st) => (
               <div key={st.big} style={S.standCard}>
                 <div style={{ fontSize: 24, fontWeight: 800, background: "linear-gradient(135deg,#A5B4FC,#C4B5FD)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", minWidth: 64 }}>{st.big}</div>
@@ -398,6 +408,7 @@ const S: Record<string, CSSProperties> = {
   band: { background: C.ink, borderRadius: 24, padding: 52, position: "relative", overflow: "hidden", color: "#fff", display: "flex", gap: 48, alignItems: "center", flexWrap: "wrap" },
   eyebrowLight: { fontSize: 11, fontWeight: 700, letterSpacing: ".8px", color: "#A5B4FC", textTransform: "uppercase", marginBottom: 14 },
   bandBtn: { display: "inline-flex", alignItems: "center", gap: 8, marginTop: 24, background: GRAD, borderRadius: 11, padding: "12px 22px", fontSize: 13, fontWeight: 600, color: "#fff", textDecoration: "none", boxShadow: "0 8px 22px rgba(99,102,241,.4)" },
+  exampleTag: { alignSelf: "flex-start", fontSize: 10.5, fontWeight: 700, letterSpacing: ".6px", textTransform: "uppercase", color: "#A5B4FC", background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 999, padding: "5px 11px" },
   standCard: { background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.11)", borderRadius: 14, padding: "16px 20px", display: "flex", alignItems: "center", gap: 16 },
   ctaPrimary: { background: GRAD, color: "#fff", borderRadius: 12, padding: "13px 28px", fontSize: 14, fontWeight: 600, textDecoration: "none", boxShadow: "0 8px 22px rgba(99,102,241,.35)" },
   ctaSecondary: { border: `1px solid ${C.line}`, borderRadius: 12, padding: "13px 28px", fontSize: 14, fontWeight: 600, color: C.slate, textDecoration: "none" },
