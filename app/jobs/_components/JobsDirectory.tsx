@@ -81,23 +81,12 @@ export default function JobsDirectory({
   totalLive: number; countries: HubLink[]; verticals: HubLink[]; roles: HubLink[];
   popular: HubLink[]; postedLast7d: number; medianAgeDays: number | null;
 }) {
-  const [q, setQ] = useState("");
-  const [place, setPlace] = useState("");
   const [rowsC, setRowsC] = useState(ROWS_STEP);
   const [rowsCat, setRowsCat] = useState(ROWS_STEP);
 
-  const match = (label: string, term: string) => !term || label.toLowerCase().includes(term.trim().toLowerCase());
-
-  const countriesF = useMemo(() => countries.filter((c) => match(c.label, place)), [countries, place]);
-  // The role/skill box searches categories AND roles, since either can be what
-  // someone types ("design" -> the field, "backend engineer" -> the role).
-  const categoriesF = useMemo(() => verticals.filter((v) => match(v.label, q)), [verticals, q]);
-  const rolesF = useMemo(() => (q.trim() ? roles.filter((r) => match(r.label, q)).slice(0, 12) : []), [roles, q]);
-
   const cShown = rowsC * 3, catShown = rowsCat * 4;
-  const filtering = Boolean(q.trim() || place.trim());
-  const countriesVis = filtering ? countriesF : countriesF.slice(0, cShown);
-  const categoriesVis = filtering ? categoriesF : categoriesF.slice(0, catShown);
+  const countriesVis = countries.slice(0, cShown);
+  const categoriesVis = verticals.slice(0, catShown);
 
   const heroStats = [
     { value: totalLive.toLocaleString(), label: "live openings, counted from real postings" },
@@ -126,22 +115,15 @@ export default function JobsDirectory({
             Explore live openings across every market we cover. Upload your resume once and each role shows an honest AI match score — so you apply where you can actually win.
           </p>
 
-          <div className="tzj-search" style={{ display: "flex", gap: 0, marginTop: 28, background: "#fff", borderRadius: 14, padding: 6, maxWidth: 600, boxShadow: "0 16px 44px rgba(0,0,0,.3)" }}>
-            <div style={{ flex: 1.2, display: "flex", alignItems: "center", gap: 9, padding: "10px 14px", color: MUT, fontSize: 13, borderRight: `1px solid ${LINE}` }}>
-              <Ic n="search" s={15} />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Field or role" style={S.searchInput} aria-label="Filter by field or role" />
-            </div>
-            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 9, padding: "10px 14px", color: MUT, fontSize: 13 }}>
-              <Ic n="pin" s={15} />
-              <input value={place} onChange={(e) => setPlace(e.target.value)} placeholder="Country" style={S.searchInput} aria-label="Filter by country" />
-            </div>
-            {filtering && (
-              <button onClick={() => { setQ(""); setPlace(""); }} style={S.clearBtn}>Clear</button>
-            )}
-          </div>
-          <div style={{ fontSize: 11.5, color: "#8B96B5", marginTop: 10 }}>
-            Filters the directory below. For per-job matching, upload your resume.
-          </div>
+          {/* Same upload card as the country pages — one entry point sitewide. */}
+          <Link href="/onboard" style={S.uploadCard}>
+            <span style={{ width: 42, height: 42, borderRadius: 11, background: GRAD, color: "#fff", display: "grid", placeItems: "center", flex: "none" }}><Ic n="upload" /></span>
+            <span style={{ flex: 1 }}>
+              <span style={{ display: "block", fontSize: 14, fontWeight: 700, color: INK }}>Paste as text or upload your resume</span>
+              <span style={{ display: "block", fontSize: 12, color: MUT, marginTop: 3, lineHeight: 1.5 }}>Our AI reads it and builds your profile + career score in 2 minutes</span>
+            </span>
+            <span style={{ color: C1, flex: "none" }}><Ic n="arrow" s={14} /></span>
+          </Link>
 
           <div style={{ display: "flex", gap: 0, marginTop: 30, borderTop: "1px solid rgba(255,255,255,.1)", paddingTop: 22, flexWrap: "wrap" }}>
             {heroStats.map((hs) => (
@@ -154,29 +136,11 @@ export default function JobsDirectory({
         </div>
       </section>
 
-      {/* ── Matching roles (only while searching) ── */}
-      {rolesF.length > 0 && (
-        <section style={S.section}>
-          <h2 style={S.h2}>Matching roles</h2>
-          <p style={S.sub}>Role pages that match &ldquo;{q.trim()}&rdquo;.</p>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {rolesF.map((r) => (
-              <Link key={r.href} href={r.href} className="tzj-chip" style={S.chip}>
-                {r.label} <span style={{ color: MUT, fontWeight: 700 }}>{r.count}</span>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
       {/* ── Countries ── */}
       <section style={S.section}>
         <h2 style={S.h2}>Jobs by country</h2>
         <p style={S.sub}>Roles located there plus remote jobs hireable from anywhere.</p>
-        {countriesVis.length === 0 ? (
-          <p style={S.empty}>No countries match &ldquo;{place.trim()}&rdquo;.</p>
-        ) : (
-          <div id="tzc-grid" style={{ display: "grid", gap: 16 }}>
+        <div id="tzc-grid" style={{ display: "grid", gap: 16 }}>
             {countriesVis.map((c) => (
               <Link key={c.href} href={c.href} className="tzj-card" style={S.card}>
                 <span style={{ fontSize: 30, lineHeight: 1, flex: "none" }}>{flagOf(c.iso)}</span>
@@ -186,15 +150,14 @@ export default function JobsDirectory({
                 </span>
                 <span style={{ color: C1 }}><Ic n="arrow" s={14} /></span>
               </Link>
-            ))}
-          </div>
-        )}
-        {!filtering && countriesF.length > cShown && (
+          ))}
+        </div>
+        {countries.length > cShown && (
           <div style={{ textAlign: "center", marginTop: 20 }}>
             <button onClick={() => setRowsC((r) => r + ROWS_STEP)} className="tzj-more" style={S.more}>View more countries</button>
           </div>
         )}
-        {!filtering && countriesF.length <= cShown && cShown > ROWS_STEP * 3 && (
+        {countries.length <= cShown && cShown > ROWS_STEP * 3 && (
           <div style={{ textAlign: "center", marginTop: 20 }}>
             <button onClick={() => setRowsC(ROWS_STEP)} className="tzj-more" style={S.more}>Show fewer countries</button>
           </div>
@@ -205,10 +168,7 @@ export default function JobsDirectory({
       <section style={S.section}>
         <h2 style={S.h2}>Jobs by category</h2>
         <p style={S.sub}>The fields hiring most across every Topezia market right now.</p>
-        {categoriesVis.length === 0 ? (
-          <p style={S.empty}>No categories match &ldquo;{q.trim()}&rdquo;.</p>
-        ) : (
-          <div id="tzcat-grid" style={{ display: "grid", gap: 16 }}>
+        <div id="tzcat-grid" style={{ display: "grid", gap: 16 }}>
             {categoriesVis.map((v) => (
               <Link key={v.href} href={v.href} className="tzj-card" style={{ ...S.card, padding: 20 }}>
                 <span style={{ width: 40, height: 40, borderRadius: 11, background: GRAD, color: "#fff", display: "grid", placeItems: "center", flex: "none" }}>
@@ -219,10 +179,9 @@ export default function JobsDirectory({
                   <span style={{ display: "block", fontSize: 11.5, color: MUT, marginTop: 2 }}>{v.count.toLocaleString()} roles</span>
                 </span>
               </Link>
-            ))}
-          </div>
-        )}
-        {!filtering && categoriesF.length > catShown && (
+          ))}
+        </div>
+        {verticals.length > catShown && (
           <div style={{ textAlign: "center", marginTop: 20 }}>
             <button onClick={() => setRowsCat((r) => r + ROWS_STEP)} className="tzj-more" style={S.more}>View more categories</button>
           </div>
@@ -255,6 +214,24 @@ export default function JobsDirectory({
           </div>
         </div>
       </section>
+
+      {/* ── Roles ──
+          Kept as its own section, not just a search result: these are the
+          role pages, and without a permanent link here nothing on the site
+          would point at them. */}
+      {roles.length > 0 && (
+        <section style={{ maxWidth: 1080, margin: "0 auto", padding: "6px 24px 20px" }}>
+          <h2 style={S.h2}>Jobs by role</h2>
+          <p style={S.sub}>Every role with enough live openings to have its own page.</p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {roles.map((r) => (
+              <Link key={r.href} href={r.href} className="tzj-chip" style={S.chip}>
+                {r.label} <span style={{ color: MUT, fontWeight: 700 }}>{r.count}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ── Popular searches (only real, publishable pages) ── */}
       {popular.length > 0 && (
@@ -312,8 +289,7 @@ const S: Record<string, CSSProperties> = {
   card: { border: `1px solid ${LINE}`, borderRadius: 16, padding: "20px 22px", display: "flex", alignItems: "center", gap: 14, color: INK, textDecoration: "none", transition: "border-color .2s, box-shadow .2s" },
   chip: { border: `1px solid ${LINE}`, borderRadius: 999, padding: "9px 16px", fontSize: 12.5, fontWeight: 600, color: SLATE, textDecoration: "none", display: "inline-flex", gap: 7, transition: "all .2s" },
   more: { display: "inline-flex", alignItems: "center", gap: 7, border: `1px solid ${LINE}`, borderRadius: 999, padding: "10px 22px", fontSize: 12.5, fontWeight: 600, color: SLATE, cursor: "pointer", background: "#fff", fontFamily: "inherit", transition: "all .2s" },
-  searchInput: { flex: 1, minWidth: 0, border: "none", outline: "none", fontSize: 13, fontFamily: "inherit", color: INK, background: "transparent" },
-  clearBtn: { flex: "none", background: "#F1F5F9", color: SLATE, border: "none", borderRadius: 10, padding: "11px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
+  uploadCard: { display: "flex", alignItems: "center", gap: 14, marginTop: 28, maxWidth: 560, background: "#fff", borderRadius: 14, padding: "14px 18px", boxShadow: "0 16px 44px rgba(0,0,0,.3)", textDecoration: "none" },
   darkCta: { display: "inline-flex", alignItems: "center", gap: 8, marginTop: 22, background: GRAD, borderRadius: 11, padding: "12px 22px", fontSize: 13, fontWeight: 600, color: "#fff", textDecoration: "none", boxShadow: "0 8px 22px rgba(99,102,241,.4)" },
   snap: { background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.11)", borderRadius: 14, padding: "15px 19px", display: "flex", alignItems: "center", gap: 16 },
   snapBig: { fontSize: 22, fontWeight: 800, background: "linear-gradient(135deg,#A5B4FC,#C4B5FD)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", minWidth: 80 },
