@@ -28,30 +28,48 @@ import { sendEmail, renderPasswordResetEmail } from "@/lib/alerts/send";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Per-IP throttle. Serverless instances don't share memory, so this slows a
-// casual abuser rather than a distributed one — but it removes the free
-// unlimited-send property, which otherwise lets anyone use us to mailbomb a
-// third party (their address, our sending reputation).
-const attempts = new Map<string, { n: number; resetAt: number }>();
+/**
+ * Two limits, because they defend different things.
+ *
+ * The abuse that matters is mailbombing: pointing this at someone else's
+ * address repeatedly. That is bounded per ADDRESS, and only counted when mail
+ * actually goes out. A first cut counted every request per IP instead, which
+ * punished the wrong people — a typo, a no-op lookup for an address with no
+ * account, even a health check all consumed the budget, and everyone behind one
+ * office NAT or phone carrier shares an IP, so a handful of colleagues could
+ * lock each other out. It also fired on my own verification requests and locked
+ * out the owner's browser on the same connection after two real attempts.
+ *
+ * The per-IP limit stays, but only to stop someone hammering the endpoint (each
+ * request costs a Supabase admin call), so it is set far above what any human
+ * resetting their own password would reach.
+ *
+ * Serverless instances don't share memory, so both are best-effort: they stop
+ * a casual abuser, not a distributed one.
+ */
 const WINDOW_MS = 15 * 60 * 1000;
-const MAX_SENDS = 5;
+const MAX_SENDS_PER_EMAIL = 3;
+const MAX_REQUESTS_PER_IP = 30;
 
-function rateLimited(ip: string): boolean {
+const sends = new Map<string, { n: number; resetAt: number }>();
+const requests = new Map<string, { n: number; resetAt: number }>();
+
+function bump(store: Map<string, { n: number; resetAt: number }>, key: string, max: number): boolean {
   const now = Date.now();
-  const rec = attempts.get(ip);
+  const rec = store.get(key);
   if (!rec || now > rec.resetAt) {
-    attempts.set(ip, { n: 1, resetAt: now + WINDOW_MS });
+    store.set(key, { n: 1, resetAt: now + WINDOW_MS });
     return false;
   }
   rec.n += 1;
-  return rec.n > MAX_SENDS;
+  return rec.n > max;
 }
 
 const OK = NextResponse.json({ ok: true });
 
 export async function POST(request: Request) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  if (rateLimited(ip)) {
+  if (bump(requests, ip, MAX_REQUESTS_PER_IP)) {
     return NextResponse.json({ error: "Too many attempts. Try again in a few minutes." }, { status: 429 });
   }
 
@@ -75,8 +93,12 @@ export async function POST(request: Request) {
   try {
     const { data, error } = await admin.auth.admin.generateLink({ type: "recovery", email });
     // No such user is the expected path for a typo'd address, and must look
-    // identical from outside.
+    // identical from outside. Costs the sender nothing, so it isn't counted.
     if (error || !data?.properties?.hashed_token) return OK;
+
+    // Counted here, immediately before mail leaves — this is the budget that
+    // actually protects the recipient's inbox.
+    if (bump(sends, email, MAX_SENDS_PER_EMAIL)) return OK;
 
     const { subject, html } = renderPasswordResetEmail(data.properties.hashed_token);
     await sendEmail({ to: email, subject, html });

@@ -14,7 +14,7 @@
  * shipped as decoration — Supabase keeps you signed in already, so the control
  * would have no state to change.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -81,11 +81,30 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // These inputs are controlled, and a browser/password-manager autofill writes
+  // the DOM value WITHOUT firing React's onChange. The field then visibly holds
+  // your address while `email` state is still "" — which is why "Forgot?"
+  // answered "Enter your email first" on a filled-in form. Read the elements
+  // back rather than trusting state alone.
+  const emailRef = useRef<HTMLInputElement>(null);
+  const pwRef = useRef<HTMLInputElement>(null);
+
+  // Autofill usually lands before hydration, so reconcile once on mount.
+  useEffect(() => {
+    const e = emailRef.current?.value;
+    if (e) setEmail((cur) => cur || e);
+    const p = pwRef.current?.value;
+    if (p) setPassword((cur) => cur || p);
+  }, []);
+
   const dest = next ? DESTINATIONS.find((d) => next === d.prefix || next.startsWith(`${d.prefix}/`)) : undefined;
 
   async function forgotPassword() {
     setError(null); setNotice(null);
-    if (!email) { setError("Enter your email first, then tap reset."); return; }
+    // Fall back to the live input value, for an autofill that arrived after mount.
+    const addr = (email || emailRef.current?.value || "").trim();
+    if (!addr) { setError("Enter your email first, then tap reset."); return; }
+    if (!email) setEmail(addr);
     setLoading(true);
     try {
       // Our own endpoint, not supabase.auth.resetPasswordForEmail: that sent
@@ -95,7 +114,7 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
       const res = await fetch("/api/auth/reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: addr }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -113,11 +132,15 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
     e.preventDefault();
     setLoading(true); setError(null); setNotice(null);
     const supabase = createClient();
+    // Same autofill caveat as forgotPassword: trust the inputs over state, or a
+    // password-manager fill signs in with empty credentials.
+    const addr = (email || emailRef.current?.value || "").trim();
+    const pw = password || pwRef.current?.value || "";
     try {
       const { data, error } =
         mode === "signup"
-          ? await supabase.auth.signUp({ email, password })
-          : await supabase.auth.signInWithPassword({ email, password });
+          ? await supabase.auth.signUp({ email: addr, password: pw })
+          : await supabase.auth.signInWithPassword({ email: addr, password: pw });
       if (error) throw error;
 
       // If email confirmation is on, signUp returns no session yet.
@@ -200,7 +223,7 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
                 <label htmlFor="lg-email" style={S.label}>Email</label>
                 <div className="lg-in" style={S.inputWrap}>
                   <Ic n="mail" />
-                  <input id="lg-email" style={S.input} type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+                  <input id="lg-email" ref={emailRef} style={S.input} type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
                 </div>
               </div>
 
@@ -213,7 +236,7 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
                 </div>
                 <div className="lg-in" style={S.inputWrap}>
                   <Ic n="lock" />
-                  <input id="lg-pw" style={S.input} type={showPw ? "text" : "password"} autoComplete={mode === "signup" ? "new-password" : "current-password"} required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="at least 8 characters" />
+                  <input id="lg-pw" ref={pwRef} style={S.input} type={showPw ? "text" : "password"} autoComplete={mode === "signup" ? "new-password" : "current-password"} required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="at least 8 characters" />
                   <button type="button" onClick={() => setShowPw((v) => !v)} aria-label={showPw ? "Hide password" : "Show password"} style={S.eyeBtn}>
                     <Ic n={showPw ? "eyeOff" : "eye"} />
                   </button>
