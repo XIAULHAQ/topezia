@@ -18,11 +18,33 @@ import { C, GRAD, FONT, Icon, BrandMark, initials } from "./ui";
 
 type NavItem = { icon: string; label: string; href?: string; soon?: boolean };
 
-/** The two "go find work" destinations, shown in the top bar by the avatar. */
+/**
+ * The two "go find work" destinations: inline beside the avatar on desktop, a
+ * row of full-width buttons underneath it on mobile — squeezed onto the avatar
+ * row they collapsed to bare icons with no labels, which read as decoration
+ * rather than navigation.
+ */
 const FIND_LINKS: { icon: string; label: string; href: string }[] = [
   { icon: "feed", label: "Find Jobs", href: "/feed" },
   { icon: "zap", label: "Find Projects", href: "/projects" },
 ];
+
+/**
+ * One-time hint: a soft pulse around whichever of the two you are already
+ * looking at, so a first-time visitor can tell that the list below belongs to
+ * that button. Shown once ever — persisted, dismissed on first interaction, and
+ * silent for anyone who asked their OS to reduce motion.
+ */
+const FIND_HINT_KEY = "tz_findnav_hint_v1";
+const FIND_HINT_CSS = `
+@keyframes tz-find-hint{
+  0%{box-shadow:0 0 0 0 rgba(139,92,246,.5)}
+  70%{box-shadow:0 0 0 9px rgba(139,92,246,0)}
+  100%{box-shadow:0 0 0 0 rgba(139,92,246,0)}
+}
+.tz-find-hint{animation:tz-find-hint 1.8s ease-out 3}
+@media (prefers-reduced-motion:reduce){.tz-find-hint{animation:none}}
+`;
 
 // Finding work (Find Jobs / Find Projects) lives in the top bar next to the
 // avatar, not here — the sidebar is what you've collected and who you are.
@@ -49,6 +71,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [isMobile, setIsMobile] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false); // account dropdown (top-right)
+  const [findHint, setFindHint] = useState(false); // one-time pulse on the active Find button
   // With prefetch disabled, a nav click waits a full server round-trip with no
   // feedback — people click 3-4 times thinking it didn't register. This flag
   // paints a progress bar the INSTANT any nav link is clicked.
@@ -83,6 +106,60 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }, [navigating]);
 
   /** Instant feedback for every nav click: close menus, light the bar. */
+  // Runs once ever. localStorage throws in some privacy modes — a missing hint
+  // is cosmetic, so failing to read or write it must never break the shell.
+  useEffect(() => {
+    let seen = true;
+    try { seen = localStorage.getItem(FIND_HINT_KEY) === "1"; } catch { /* treat as seen */ }
+    if (seen) return;
+    setFindHint(true);
+    const t = setTimeout(() => {
+      setFindHint(false);
+      try { localStorage.setItem(FIND_HINT_KEY, "1"); } catch { /* nothing to do */ }
+    }, 6000);
+    return () => clearTimeout(t);
+  }, []);
+
+  function dismissFindHint() {
+    if (!findHint) return;
+    setFindHint(false);
+    try { localStorage.setItem(FIND_HINT_KEY, "1"); } catch { /* nothing to do */ }
+  }
+
+  /**
+   * `stacked` = the mobile row: two equal buttons that read as buttons. Inline
+   * (desktop) keeps the lighter treatment that already looked right there.
+   */
+  function findLinks(stacked: boolean) {
+    return FIND_LINKS.map((l) => {
+      const active = l.href === "/feed" ? pathname === "/feed" : pathname.startsWith(l.href);
+      return (
+        <Link
+          key={l.href}
+          href={l.href}
+          prefetch={false}
+          onClick={() => { dismissFindHint(); navClicked(); }}
+          className={findHint && active ? "tz-find-hint" : undefined}
+          aria-current={active ? "page" : undefined}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8, textDecoration: "none",
+            padding: stacked ? "11px 14px" : "9px 14px",
+            flex: stacked ? "1 1 0" : "none",
+            borderRadius: stacked ? 12 : 10,
+            fontSize: stacked ? 14 : 13, fontWeight: 600,
+            color: active ? C.c1 : C.slate,
+            background: active ? "#EEF2FF" : "#fff",
+            border: `1px solid ${active ? "#C7D2FE" : C.line}`,
+            whiteSpace: "nowrap",
+          }}
+        >
+          <Icon name={l.icon} size={15} />
+          {l.label}
+        </Link>
+      );
+    });
+  }
+
   function navClicked() {
     setMenuOpen(false);
     setMobileOpen(false);
@@ -109,6 +186,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: C.bg, fontFamily: FONT, color: C.ink, overflowX: "clip" }}>
+      {findHint && <style>{FIND_HINT_CSS}</style>}
       {navigating && (
         <>
           <style>{"@keyframes tz-nav{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}"}</style>
@@ -179,35 +257,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
           )}
           <div style={{ flex: 1 }} />
 
-          {/*
-            Finding work sits here, next to the avatar, rather than in the
-            sidebar. On a phone the labels alone would crowd the avatar off the
-            row, so they collapse to their icons.
-          */}
-          <nav style={{ display: "flex", alignItems: "center", gap: 6, flex: "none" }}>
-            {FIND_LINKS.map((l) => {
-              const active = l.href === "/feed" ? pathname === "/feed" : pathname.startsWith(l.href);
-              return (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  prefetch={false}
-                  onClick={navClicked}
-                  title={l.label}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 7, textDecoration: "none",
-                    padding: isMobile ? "9px 10px" : "9px 14px", borderRadius: 10, fontSize: 13, fontWeight: 600,
-                    color: active ? C.c1 : C.slate,
-                    background: active ? "#EEF2FF" : "transparent",
-                    border: `1px solid ${active ? "#C7D2FE" : "transparent"}`,
-                  }}
-                >
-                  <Icon name={l.icon} size={15} />
-                  {!isMobile && l.label}
-                </Link>
-              );
-            })}
-          </nav>
+          {/* Desktop: inline beside the avatar. Mobile gets its own row below. */}
+          {!isMobile && <nav style={{ display: "flex", alignItems: "center", gap: 6, flex: "none" }}>{findLinks(false)}</nav>}
 
           <div style={{ position: "relative" }}>
             <button onClick={() => setMenuOpen((o) => !o)} style={{ display: "flex", alignItems: "center", gap: 9, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 999, padding: "4px 14px 4px 4px", cursor: "pointer", color: C.ink, fontFamily: "inherit" }}>
@@ -234,6 +285,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
             )}
           </div>
         </div>
+
+        {isMobile && (
+          <nav style={{ display: "flex", gap: 10, marginBottom: 20 }}>{findLinks(true)}</nav>
+        )}
+
         {children}
       </main>
     </div>
