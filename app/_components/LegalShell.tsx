@@ -8,7 +8,7 @@ import { SiteHeader, SiteFooter } from "./SiteChrome";
 
 const C = { c1: "#8B5CF6", c2: "#3B82F6", ink: "#0F172A", slate: "#334155", mut: "#64748B", line: "#E2E8F0" };
 const GRAD = `linear-gradient(135deg, ${C.c1}, ${C.c2})`;
-const FONT = "'Sora', system-ui, sans-serif";
+const FONT = "var(--font-sora), system-ui, sans-serif";
 
 export default function LegalShell({ title, updated, children }: { title: string; updated: string; children: ReactNode }) {
   return (

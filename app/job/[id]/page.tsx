@@ -194,14 +194,14 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
 }
 
 const S: Record<string, CSSProperties> = {
-  page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "'Plus Jakarta Sans', sans-serif", color: INK },
+  page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "var(--font-jakarta), sans-serif", color: INK },
   nav: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", background: "#fff", borderBottom: "1px solid #ececf2" },
-  brand: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, textDecoration: "none" },
+  brand: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, textDecoration: "none" },
   navLink: { color: MUTED, textDecoration: "none", fontSize: 14, fontWeight: 600 },
   wrap: { maxWidth: 740, margin: "0 auto", padding: "28px 20px 80px" },
   crumb: { color: INDIGO, fontSize: 14, fontWeight: 600, textDecoration: "none", display: "inline-block", marginBottom: 18 },
   deadBanner: { background: "#fff7ed", border: "1px solid #fdba74", color: "#9a3412", borderRadius: 12, padding: "12px 16px", fontSize: 14, marginBottom: 18 },
-  h1: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 30, margin: "0 0 10px", lineHeight: 1.2 },
+  h1: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 30, margin: "0 0 10px", lineHeight: 1.2 },
   meta: { color: MUTED, fontSize: 16, marginBottom: 6 },
   fresh: { color: "#059669", fontSize: 13, fontWeight: 600, marginBottom: 20 },
   applyRow: { display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 20 },
@@ -210,7 +210,7 @@ const S: Record<string, CSSProperties> = {
   chips: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 22 },
   chip: { padding: "5px 10px", background: "#eef0ff", color: INDIGO, border: "1px solid #d9dcff", borderRadius: 999, fontSize: 13, fontWeight: 600 },
   matchCta: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, background: "#eef0ff", border: "1px solid #d9dcff", borderRadius: 16, padding: 18, marginBottom: 28, flexWrap: "wrap" },
-  matchTitle: { fontFamily: "'Sora', sans-serif", fontWeight: 700, fontSize: 16, marginBottom: 3 },
+  matchTitle: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 700, fontSize: 16, marginBottom: 3 },
   matchSub: { color: MUTED, fontSize: 14, lineHeight: 1.45 },
   matchBtn: { padding: "11px 20px", background: INDIGO, color: "#fff", borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: "none", whiteSpace: "nowrap" },
   body: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 28, fontSize: 15, lineHeight: 1.7, color: "#374151", overflowWrap: "break-word" },

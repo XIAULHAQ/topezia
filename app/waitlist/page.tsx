@@ -238,7 +238,7 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     justifyContent: "center",
     padding: "64px 20px",
-    fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+    fontFamily: "var(--font-jakarta), system-ui, sans-serif",
     color: BRAND.ink,
   },
   eyebrow: {
@@ -250,7 +250,7 @@ const styles: Record<string, CSSProperties> = {
     marginBottom: 10,
   },
   h1: {
-    fontFamily: "'Sora', system-ui, sans-serif",
+    fontFamily: "var(--font-sora), system-ui, sans-serif",
     fontWeight: 800,
     fontSize: 32,
     lineHeight: 1.2,

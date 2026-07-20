@@ -21,7 +21,7 @@ import type { HubLink } from "@/lib/seo/pages";
 const C1 = "#8B5CF6", C2 = "#3B82F6";
 const INK = "#0F172A", SLATE = "#334155", MUT = "#64748B", LINE = "#E2E8F0";
 const GRAD = `linear-gradient(135deg,${C1},${C2})`;
-const FONT = "'Sora', system-ui, sans-serif";
+const FONT = "var(--font-sora), system-ui, sans-serif";
 
 const PATHS: Record<string, string[]> = {
   search: ["M21 21l-4.35-4.35", "M11 5a6 6 0 1 1 0 12 6 6 0 0 1 0-12z"],

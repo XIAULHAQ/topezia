@@ -242,16 +242,16 @@ export default function DriveClient() {
 
 const btn = (disabled: boolean): CSSProperties => ({
   width: "100%", padding: "15px 20px", marginTop: 20, fontSize: 16, fontWeight: 700,
-  fontFamily: "'Plus Jakarta Sans', sans-serif", color: "#fff",
+  fontFamily: "var(--font-jakarta), sans-serif", color: "#fff",
   background: disabled ? "#c7c7d1" : INDIGO, border: "none", borderRadius: 12,
   cursor: disabled ? "default" : "pointer",
 });
 
 const S: Record<string, CSSProperties> = {
-  page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "'Plus Jakarta Sans', sans-serif", color: INK, padding: "40px 16px" },
+  page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "var(--font-jakarta), sans-serif", color: INK, padding: "40px 16px" },
   wrap: { maxWidth: 640, margin: "0 auto" },
-  brand: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, marginBottom: 28 },
-  h1: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 30, margin: "0 0 8px" },
+  brand: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, marginBottom: 28 },
+  h1: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 30, margin: "0 0 8px" },
   sub: { color: MUTED, fontSize: 16, margin: "0 0 20px", lineHeight: 1.5 },
   card: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 20, marginBottom: 14 },
   q: { fontSize: 16, fontWeight: 700, marginBottom: 12 },

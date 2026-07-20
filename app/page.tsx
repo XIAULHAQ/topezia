@@ -17,7 +17,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 const C = { c1: "#8B5CF6", c2: "#3B82F6", ink: "#0F172A", slate: "#334155", mut: "#64748B", line: "#E2E8F0" };
 const GRAD = `linear-gradient(135deg, ${C.c1}, ${C.c2})`;
-const FONT = "'Sora', system-ui, sans-serif";
+const FONT = "var(--font-sora), system-ui, sans-serif";
 
 const ICON: Record<string, string[]> = {
   search: ["M21 21l-4.35-4.35", "M11 5a6 6 0 1 1 0 12 6 6 0 0 1 0-12z"],

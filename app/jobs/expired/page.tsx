@@ -24,10 +24,10 @@ export default function ExpiredJobPage() {
 }
 
 const S: Record<string, CSSProperties> = {
-  page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "'Plus Jakarta Sans', sans-serif", color: INK, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 },
+  page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "var(--font-jakarta), sans-serif", color: INK, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 },
   card: { maxWidth: 460, textAlign: "center", background: "#fff", border: "1px solid #ececf2", borderRadius: 20, padding: "40px 32px" },
-  brand: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, marginBottom: 20 },
-  h1: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 26, margin: "0 0 12px" },
+  brand: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, marginBottom: 20 },
+  h1: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 26, margin: "0 0 12px" },
   p: { color: MUTED, fontSize: 16, lineHeight: 1.55, margin: "0 0 24px" },
   cta: { display: "inline-block", padding: "13px 26px", background: INDIGO, color: "#fff", borderRadius: 12, fontWeight: 700, fontSize: 16, textDecoration: "none" },
 };

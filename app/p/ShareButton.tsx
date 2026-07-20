@@ -30,5 +30,5 @@ export default function ShareButton({ url }: { url: string }) {
 }
 
 const S: Record<string, CSSProperties> = {
-  btn: { display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.18)", color: "#fff", borderRadius: 11, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Sora', system-ui, sans-serif" },
+  btn: { display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.18)", color: "#fff", borderRadius: 11, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-sora), system-ui, sans-serif" },
 };

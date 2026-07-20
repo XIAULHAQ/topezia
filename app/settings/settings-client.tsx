@@ -156,12 +156,12 @@ export default function SettingsClient() {
 }
 
 const S: Record<string, CSSProperties> = {
-  page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "'Plus Jakarta Sans', sans-serif", color: INK },
+  page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "var(--font-jakarta), sans-serif", color: INK },
   nav: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", background: "#fff", borderBottom: "1px solid #ececf2" },
-  brand: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, textDecoration: "none" },
+  brand: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, textDecoration: "none" },
   navLink: { color: MUTED, textDecoration: "none", fontSize: 14, fontWeight: 600 },
   wrap: { maxWidth: 680, margin: "0 auto", padding: "0 0 60px" },
-  h1: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 30, margin: "0 0 8px" },
+  h1: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 30, margin: "0 0 8px" },
   sub: { color: MUTED, fontSize: 15, margin: "0 0 24px" },
   card: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 20, marginBottom: 16 },
   dangerCard: { background: "#fff", border: "1px solid #f3d0cc", borderRadius: 16, padding: 20, marginBottom: 16 },

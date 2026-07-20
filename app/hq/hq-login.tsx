@@ -72,7 +72,7 @@ export default function HqLogin({ configured }: { configured: boolean }) {
 }
 
 const S: Record<string, CSSProperties> = {
-  page: { minHeight: "100vh", background: "#F8FAFC", fontFamily: "'Sora', system-ui, sans-serif", color: "#0F172A", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 },
+  page: { minHeight: "100vh", background: "#F8FAFC", fontFamily: "var(--font-sora), system-ui, sans-serif", color: "#0F172A", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 },
   card: { width: "100%", maxWidth: 380, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 18, padding: 30 },
   h1: { fontSize: 22, fontWeight: 800, letterSpacing: "-0.5px", margin: 0 },
   sub: { fontSize: 13, color: "#64748B", margin: "8px 0 22px", lineHeight: 1.6 },

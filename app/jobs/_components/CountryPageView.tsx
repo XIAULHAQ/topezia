@@ -24,7 +24,7 @@ import AlertCapture from "./AlertCapture";
 const C1 = "#8B5CF6", C2 = "#3B82F6";
 const INK = "#0F172A", SLATE = "#334155", MUT = "#64748B", LINE = "#E2E8F0";
 const GRAD = `linear-gradient(135deg,${C1},${C2})`;
-const FONT = "'Sora', system-ui, sans-serif";
+const FONT = "var(--font-sora), system-ui, sans-serif";
 
 const PATHS: Record<string, string[]> = {
   pin: ["M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z", "M12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"],

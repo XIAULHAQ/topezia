@@ -12,7 +12,7 @@ const LINE = "#E2E8F0";
 const C1 = "#6366F1";
 const C2 = "#8B5CF6";
 const GRAD = `linear-gradient(135deg, ${C1}, ${C2})`;
-const FONT = "'Sora', system-ui, sans-serif";
+const FONT = "var(--font-sora), system-ui, sans-serif";
 
 export default function Loading() {
   return (

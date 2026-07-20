@@ -20,7 +20,7 @@ export const C = {
   navy2: "#1E1B4B",
 };
 export const GRAD = `linear-gradient(135deg, ${C.c1}, ${C.c2})`;
-export const FONT = "'Sora', system-ui, sans-serif";
+export const FONT = "var(--font-sora), system-ui, sans-serif";
 
 /**
  * The 2-character avatar initials used everywhere there's no photo.

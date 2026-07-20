@@ -73,15 +73,15 @@ export default function ResetPage() {
 
 const btn = (disabled: boolean): CSSProperties => ({
   width: "100%", padding: "13px 20px", marginTop: 18, fontSize: 16, fontWeight: 700,
-  fontFamily: "'Plus Jakarta Sans', sans-serif", color: "#fff",
+  fontFamily: "var(--font-jakarta), sans-serif", color: "#fff",
   background: disabled ? "#c7c7d1" : INDIGO, border: "none", borderRadius: 12, cursor: disabled ? "default" : "pointer",
 });
 
 const S: Record<string, CSSProperties> = {
-  page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "'Plus Jakarta Sans', sans-serif", color: INK, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 },
+  page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "var(--font-jakarta), sans-serif", color: INK, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 },
   card: { width: "100%", maxWidth: 400, background: "#fff", border: "1px solid #ececf2", borderRadius: 20, padding: 32 },
-  brand: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, textDecoration: "none", display: "inline-block", marginBottom: 20 },
-  h1: { fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 26, margin: "0 0 6px" },
+  brand: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, textDecoration: "none", display: "inline-block", marginBottom: 20 },
+  h1: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 26, margin: "0 0 6px" },
   sub: { color: MUTED, fontSize: 15, margin: "0 0 20px", lineHeight: 1.5 },
   label: { display: "block", fontSize: 13, fontWeight: 700, color: MUTED, margin: "12px 0 6px" },
   input: { width: "100%", padding: "11px 13px", fontSize: 15, borderRadius: 10, border: "1px solid #e2e2ea", fontFamily: "inherit", boxSizing: "border-box" },

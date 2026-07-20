@@ -255,7 +255,7 @@ function BarRow({ label, value, max }: { label: string; value: number; max: numb
 }
 
 const S: Record<string, CSSProperties> = {
-  page: { minHeight: "100vh", background: "#F8FAFC", fontFamily: "'Sora', system-ui, sans-serif", color: "#0F172A", padding: "40px 24px 80px", maxWidth: 1100, margin: "0 auto" },
+  page: { minHeight: "100vh", background: "#F8FAFC", fontFamily: "var(--font-sora), system-ui, sans-serif", color: "#0F172A", padding: "40px 24px 80px", maxWidth: 1100, margin: "0 auto" },
   h1: { fontSize: 28, fontWeight: 800, letterSpacing: "-0.7px", margin: 0 },
   sub: { fontSize: 13.5, color: "#64748B", margin: "8px 0 0", lineHeight: 1.6 },
   note: { fontSize: 12.5, color: "#64748B", lineHeight: 1.6, margin: "12px 0 0" },

@@ -15,7 +15,7 @@ import { SiteFooter } from "@/app/_components/SiteChrome";
 
 const C = { c1: "#8B5CF6", c2: "#3B82F6", ink: "#0F172A", slate: "#334155", mut: "#64748B", line: "#E2E8F0", bg: "#F1F5F9", navy: "#0F172A", navy2: "#1E1B4B" };
 const GRAD = `linear-gradient(135deg, ${C.c1}, ${C.c2})`;
-const FONT = "'Sora', system-ui, sans-serif";
+const FONT = "var(--font-sora), system-ui, sans-serif";
 const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com";
 
 const PATHS: Record<string, string[]> = {

@@ -75,15 +75,15 @@ export default function AlertCapture({ slug, place, label }: { slug: string; pla
 const btn = (busy: boolean): CSSProperties => ({
   padding: "12px 20px", background: busy ? "#c7c7d1" : INDIGO, color: "#fff", border: "none",
   borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: busy ? "default" : "pointer",
-  fontFamily: "'Plus Jakarta Sans', sans-serif", whiteSpace: "nowrap",
+  fontFamily: "var(--font-jakarta), sans-serif", whiteSpace: "nowrap",
 });
 
 const S: Record<string, CSSProperties> = {
   wrap: { background: "#eef0ff", border: "1px solid #d9dcff", borderRadius: 16, padding: 20, marginBottom: 28 },
-  title: { fontFamily: "'Sora', sans-serif", fontWeight: 700, fontSize: 17, marginBottom: 4, color: INK },
-  doneTitle: { fontFamily: "'Sora', sans-serif", fontWeight: 700, fontSize: 17, marginBottom: 4, color: "#059669" },
+  title: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 700, fontSize: 17, marginBottom: 4, color: INK },
+  doneTitle: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 700, fontSize: 17, marginBottom: 4, color: "#059669" },
   sub: { color: MUTED, fontSize: 14, lineHeight: 1.45, marginBottom: 12 },
   form: { display: "flex", gap: 8, flexWrap: "wrap" },
-  input: { flex: 1, minWidth: 200, padding: "11px 13px", fontSize: 15, borderRadius: 10, border: "1px solid #d9dcff", fontFamily: "'Plus Jakarta Sans', sans-serif" },
+  input: { flex: 1, minWidth: 200, padding: "11px 13px", fontSize: 15, borderRadius: 10, border: "1px solid #d9dcff", fontFamily: "var(--font-jakarta), sans-serif" },
   error: { color: "#dc2626", fontSize: 13, marginTop: 8 },
 };
