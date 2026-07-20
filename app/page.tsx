@@ -97,7 +97,15 @@ export default async function Home() {
           <div style={{ flex: "1 1 340px", minWidth: 0, position: "relative" }}>
             <div style={{ borderRadius: 24, overflow: "hidden", boxShadow: "0 24px 60px rgba(15,23,42,.16)", height: 440 }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=1000&q=80" alt="A professional at work" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              {/*
+                Ask Unsplash for the LANDSCAPE crop we actually render. The
+                default w=1000 returns the source 1000x1498 portrait, of which
+                object-fit discarded more than half vertically — while still
+                being too narrow for a 2x display (1076px needed), so it paid
+                for pixels it threw away AND looked soft. h= + fit=crop lets the
+                CDN do the cropping. This is the LCP image, so it stays eager.
+              */}
+              <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=1100&h=900&fit=crop&q=75" alt="A professional at work" width={1100} height={900} decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             </div>
             <div style={S.floatCardL}>
               <div style={{ position: "relative", width: 46, height: 46, flex: "none" }}>
@@ -228,7 +236,9 @@ export default async function Home() {
           {AUDIENCES.map((a) => (
             <div key={a.tag} style={{ border: `1px solid ${C.line}`, borderRadius: 20, overflow: "hidden", display: "flex", flexDirection: "column" }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={a.img} alt="" style={{ width: "100%", height: 220, objectFit: "cover" }} />
+              {/* Below the fold on every viewport, so defer it rather than
+                  racing the hero and the font for connections. */}
+              <img src={a.img} alt="" width={1120} height={450} loading="lazy" decoding="async" style={{ width: "100%", height: 220, objectFit: "cover" }} />
               <div style={{ padding: "26px 28px" }}>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".7px", color: C.c1, textTransform: "uppercase", marginBottom: 10 }}>{a.tag}</div>
                 <h3 style={{ margin: 0, fontSize: 19, fontWeight: 800, letterSpacing: "-0.4px" }}>{a.title}</h3>
@@ -307,8 +317,8 @@ const BIG_STATS = [
   { value: "38 days", label: "average time from roadmap to accepted offer" },
 ];
 const AUDIENCES = [
-  { tag: "For professionals", title: "Apply only where you can win", desc: "Every role shows an honest AI match with the reasons behind it — so you spend effort on the interviews that go somewhere.", cta: "Browse matched roles", href: "/onboard", img: "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=1000&q=80" },
-  { tag: "For employers", title: "Shortlists, not stacks of CVs", desc: "Post a role and receive candidates ranked by verified skills and real fit — with assessment-backed profiles you can trust.", cta: "Start hiring", href: "/waitlist", img: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=1000&q=80" },
+  { tag: "For professionals", title: "Apply only where you can win", desc: "Every role shows an honest AI match with the reasons behind it — so you spend effort on the interviews that go somewhere.", cta: "Browse matched roles", href: "/onboard", img: "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=1120&h=450&fit=crop&q=75" },
+  { tag: "For employers", title: "Shortlists, not stacks of CVs", desc: "Post a role and receive candidates ranked by verified skills and real fit — with assessment-backed profiles you can trust.", cta: "Start hiring", href: "/waitlist", img: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=1120&h=450&fit=crop&q=75" },
 ];
 const PRINCIPLES = [
   { icon: "gauge", label: "Honest scoring", text: "Every match shows its real score — including the low ones — with the exact skills it values and the gaps it doesn't. Numbers are never inflated to upsell you." },
@@ -327,9 +337,8 @@ const HOVER_CSS = `
 `;
 
 const S: Record<string, CSSProperties> = {
-  header: { background: "rgba(255,255,255,.92)", backdropFilter: "blur(10px)", borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, zIndex: 20 },
-  headerInner: { maxWidth: 1180, margin: "0 auto", padding: "14px 24px", display: "flex", alignItems: "center", gap: 26, flexWrap: "wrap" },
-  hnav: { display: "flex", gap: 22, fontSize: 13, fontWeight: 500, color: C.slate, flexWrap: "wrap" },
+  // (header/headerInner/hnav lived here until the bar moved to SiteChrome.tsx;
+  // removed as dead, and so the old blur can't be copied back out of them.)
   hlink: { color: C.slate, textDecoration: "none" },
   joinBtn: { background: GRAD, color: "#fff", borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 600, textDecoration: "none", boxShadow: "0 5px 14px rgba(99,102,241,.3)" },
   heroInner: { maxWidth: 1180, margin: "0 auto", padding: "64px 24px 72px", display: "flex", gap: 56, alignItems: "center", flexWrap: "wrap", position: "relative" },

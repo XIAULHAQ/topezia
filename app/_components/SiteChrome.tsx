@@ -116,7 +116,15 @@ export function SiteFooter() {
 }
 
 const S: Record<string, CSSProperties> = {
-  header: { background: "rgba(255,255,255,.92)", backdropFilter: "blur(10px)", borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, zIndex: 50, fontFamily: FONT },
+  // Solid, NOT frosted. `backdrop-filter: blur()` on a sticky full-width header
+  // forces the compositor to re-read and re-blur the entire header strip every
+  // scrolled frame, and that cost scales with painted area — invisible at 709px
+  // but measured on a 1411px/2x window at avg 20.1ms/frame with 11 frames over
+  // 25ms, versus 16.7ms and zero dropped frames with the blur off. At the old
+  // .92 alpha the blur only acted on the 8% showing through, so it bought
+  // almost nothing visually. Anything above ~.95 without a blur ghosts sharp
+  // text through the bar, so this is fully opaque.
+  header: { background: "#fff", borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, zIndex: 50, fontFamily: FONT },
   headerInner: { maxWidth: 1180, margin: "0 auto", padding: "14px 24px", display: "flex", alignItems: "center", gap: 26 },
   hnav: { display: "flex", gap: 22, fontSize: 13, fontWeight: 500, color: C.slate, flexWrap: "wrap" },
   hlink: { color: C.slate, textDecoration: "none" },
