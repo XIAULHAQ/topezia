@@ -31,6 +31,12 @@ export async function middleware(request: NextRequest) {
   // Touch the session so it refreshes if needed.
   const { data: { user } } = await supabase.auth.getUser();
 
+  // Diagnostic: proves from outside whether middleware actually ran for a given
+  // path. Excluding /api here once broke sessions silently, and confirming the
+  // revert had shipped was otherwise guesswork — nothing about middleware is
+  // observable in a response. Carries no user data.
+  response.headers.set("x-tz-mw", user ? "1-auth" : "1-anon");
+
   // ── Auth gate ──
   // These routes need an identity (a Supabase session OR the anonymous
   // profile cookie — "no account needed to start" still holds). Visitors with
