@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
-import { ANON_COOKIE } from "@/lib/anon-session";
+import { ANON_COOKIE, ANON_COOKIE_MAX_AGE, LAST_UID_COOKIE } from "@/lib/anon-session";
 
 export async function POST() {
   const supabase = createClient();
@@ -41,5 +41,14 @@ export async function POST() {
 
   const res = NextResponse.json({ ok: true, hasProfile });
   res.cookies.set(ANON_COOKIE, "", { maxAge: 0, path: "/" }); // done with the anon session
+  // Remember WHO signed in on this device, so /login can greet them by name
+  // after they log out (the anon cookie we just cleared can't do that).
+  res.cookies.set(LAST_UID_COOKIE, user.id, {
+    maxAge: ANON_COOKIE_MAX_AGE,
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
   return res;
 }

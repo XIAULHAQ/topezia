@@ -57,8 +57,12 @@ export default async function Home() {
     if (profile) redirect("/feed");
   }
 
+  // overflow-x: clip contains the decorative radial glows, which are absolutely
+  // positioned with negative offsets and would otherwise let the page scroll
+  // sideways on a phone. `clip` rather than `hidden` so it does not create a
+  // scroll container and break sticky descendants.
   return (
-    <div style={{ minHeight: "100vh", background: "#fff", fontFamily: FONT, color: C.ink }}>
+    <div style={{ minHeight: "100vh", background: "#fff", fontFamily: FONT, color: C.ink, overflowX: "clip" }}>
       <style>{HOVER_CSS}</style>
 
       {/* ── Header — THE global bar (SiteChrome), Pricing replaced by Projects ── */}
@@ -68,7 +72,7 @@ export default async function Home() {
       <section style={{ position: "relative", overflow: "hidden", background: "linear-gradient(180deg,#F8FAFF,#fff)" }}>
         <div style={{ position: "absolute", top: -180, right: -120, width: 560, height: 560, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.14), transparent 68%)" }} />
         <div style={S.heroInner}>
-          <div style={{ flex: 1, minWidth: 340 }}>
+          <div style={{ flex: "1 1 340px", minWidth: 0 }}>
             <div style={S.badge}><Ic n="spark" s={13} />Infinite potential. Intelligent future.</div>
             <h1 style={S.h1}>The AI that <Grad>actually understands</Grad> your career</h1>
             <p style={S.heroSub}>Topezia&apos;s AI reads your real experience, benchmarks it against 1.4M live roles every week, and builds a step-by-step roadmap to the role you want — no endless scrolling, no guesswork.</p>
@@ -90,7 +94,7 @@ export default async function Home() {
             </div>
           </div>
 
-          <div style={{ flex: 1, minWidth: 340, position: "relative" }}>
+          <div style={{ flex: "1 1 340px", minWidth: 0, position: "relative" }}>
             <div style={{ borderRadius: 24, overflow: "hidden", boxShadow: "0 24px 60px rgba(15,23,42,.16)", height: 440 }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=1000&q=80" alt="A professional at work" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -126,7 +130,7 @@ export default async function Home() {
           <h2 style={S.h2}>A job search that knows where you stand</h2>
           <p style={{ margin: "14px 0 0", fontSize: 14.5, color: C.mut, lineHeight: 1.65 }}>Not a feed to scroll — a system that measures your profile against the market and moves you toward the right offer.</p>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(280px,100%),1fr))", gap: 20 }}>
           {FEATURES.map((f) => (
             <div key={f.title} className="h-card" style={S.featureCard}>
               <div style={{ width: 46, height: 46, borderRadius: 13, background: GRAD, color: "#fff", display: "grid", placeItems: "center", marginBottom: 18 }}><Ic n={f.icon} s={20} /></div>
@@ -141,13 +145,13 @@ export default async function Home() {
       <section style={{ maxWidth: 1180, margin: "0 auto", padding: "42px 24px" }}>
         <div style={S.band}>
           <div style={{ position: "absolute", top: -140, right: -80, width: 460, height: 460, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.34), transparent 68%)" }} />
-          <div style={{ flex: 1, minWidth: 300, position: "relative" }}>
+          <div style={{ flex: "1 1 300px", minWidth: 0, position: "relative" }}>
             <div style={S.eyebrowLight}>Where you stand</div>
             <h2 style={{ ...S.h2, color: "#fff", fontSize: 29 }}>See yourself the way the market sees you</h2>
             <p style={{ margin: "16px 0 0", fontSize: 14, lineHeight: 1.7, color: "#B9C0D4", maxWidth: 440 }}>Topezia benchmarks your skills against every open role at your level — what you have, what&apos;s missing, and exactly which skill unlocks the next tier of offers.</p>
             <Link href="/onboard" className="h-bright" style={{ ...S.bandBtn }}>Get your free breakdown <Ic n="arrow" s={14} /></Link>
           </div>
-          <div style={{ flex: 1, minWidth: 300, position: "relative", display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ flex: "1 1 300px", minWidth: 0, position: "relative", display: "flex", flexDirection: "column", gap: 12 }}>
             {STAND_CARDS.map((st) => (
               <div key={st.big} style={S.standCard}>
                 <div style={{ fontSize: 24, fontWeight: 800, background: "linear-gradient(135deg,#A5B4FC,#C4B5FD)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", minWidth: 64 }}>{st.big}</div>
@@ -161,7 +165,7 @@ export default async function Home() {
       {/* ── AI roadmap ── */}
       <section style={{ maxWidth: 1180, margin: "0 auto", padding: "42px 24px" }}>
         <div style={{ display: "flex", gap: 56, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 320 }}>
+          <div style={{ flex: "1 1 320px", minWidth: 0 }}>
             <div style={{ ...S.eyebrowLight, color: C.c1 }}>Your AI roadmap</div>
             <h2 style={{ ...S.h2, fontSize: 29 }}>From where you are to the role you want — step by step</h2>
             <p style={{ margin: "14px 0 0", fontSize: 14, lineHeight: 1.7, color: C.mut, maxWidth: 460 }}>The AI doesn&apos;t just score you. It plots the shortest path to your target role and updates it every time you learn, certify, or ship something new.</p>
@@ -181,7 +185,7 @@ export default async function Home() {
             </div>
           </div>
           {/* Roadmap product illustration */}
-          <div style={{ flex: 1, minWidth: 340 }}>
+          <div style={{ flex: "1 1 340px", minWidth: 0 }}>
             <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 20, boxShadow: "0 24px 60px rgba(15,23,42,.12)", overflow: "hidden" }}>
               <div style={{ background: C.ink, padding: "20px 22px", color: "#fff", display: "flex", alignItems: "center", gap: 14, position: "relative", overflow: "hidden" }}>
                 <div style={{ position: "absolute", top: -60, right: -40, width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.4), transparent 68%)" }} />
@@ -208,7 +212,7 @@ export default async function Home() {
             </div>
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 16, marginTop: 52 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(200px,100%),1fr))", gap: 16, marginTop: 52 }}>
           {BIG_STATS.map((b) => (
             <div key={b.label} style={{ textAlign: "center", border: `1px solid ${C.line}`, borderRadius: 16, padding: "22px 16px" }}>
               <div style={{ fontSize: 27, fontWeight: 800, background: GRAD, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>{b.value}</div>
@@ -220,7 +224,7 @@ export default async function Home() {
 
       {/* ── Two audiences ── */}
       <section style={{ maxWidth: 1180, margin: "0 auto", padding: "42px 24px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(360px,1fr))", gap: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(360px,100%),1fr))", gap: 20 }}>
           {AUDIENCES.map((a) => (
             <div key={a.tag} style={{ border: `1px solid ${C.line}`, borderRadius: 20, overflow: "hidden", display: "flex", flexDirection: "column" }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -240,7 +244,7 @@ export default async function Home() {
       <section style={{ background: "#F8FAFC", borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}`, marginTop: 30 }}>
         <div style={{ maxWidth: 1180, margin: "0 auto", padding: "64px 24px" }}>
           <h2 style={{ ...S.h2, textAlign: "center", fontSize: 27, marginBottom: 38 }}>Why members trust the scores</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(280px,100%),1fr))", gap: 20 }}>
             {PRINCIPLES.map((p) => (
               <div key={p.label} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 18, padding: 26 }}>
                 <div style={{ width: 42, height: 42, borderRadius: 12, background: GRAD, color: "#fff", display: "grid", placeItems: "center", marginBottom: 14 }}><Ic n={p.icon} s={19} /></div>

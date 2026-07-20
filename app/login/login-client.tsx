@@ -176,6 +176,12 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
                   ? "Create an account to keep your profile, score and matches — on every device."
                   : "Save your matches, score and roadmap so they follow you across devices."
                 : "Your roadmap, career score and matched roles are waiting."}
+              {viewer && (
+                <>
+                  {" "}
+                  <a href="/api/auth/forget" className="lg-link" style={{ color: C.c1, fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>Not you?</a>
+                </>
+              )}
             </p>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 26 }}>

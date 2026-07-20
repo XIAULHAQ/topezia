@@ -18,6 +18,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap"
           rel="stylesheet"
         />
+        {/*
+          Global border-box, which every design file assumed and the app never
+          had. Without it any `width: 100%` element ALSO adds its padding, so
+          layouts overflowed horizontally by exactly the padding on narrow
+          screens (onboard was 392px wide in a 360px viewport). Individual
+          components had been patching this locally; this fixes it at the root.
+        */}
+        <style dangerouslySetInnerHTML={{ __html: "*,*::before,*::after{box-sizing:border-box}" }} />
       </head>
       <body style={{ margin: 0 }}>{children}</body>
     </html>

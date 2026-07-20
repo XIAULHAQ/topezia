@@ -6,8 +6,10 @@
  * to the account and the person is routed on (see login-client).
  */
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
+import { LAST_UID_COOKIE } from "@/lib/anon-session";
 import LoginClient, { type LoginStats, type Viewer } from "./login-client";
 
 export const metadata: Metadata = {
@@ -56,14 +58,21 @@ async function getStats(): Promise<LoginStats | null> {
 async function getViewer(): Promise<Viewer | null> {
   try {
     const { userId, authed } = await currentIdentity();
-    if (!userId) return null;
-    const p = await prisma.profile.findUnique({ where: { userId }, select: { fullName: true, photoUrl: true } });
+    // After logout there is no session AND the anon cookie was cleared at
+    // login, so fall back to the device's last-signed-in id — that is the
+    // whole point of "Welcome back".
+    const lastUid = cookies().get(LAST_UID_COOKIE)?.value || null;
+    const lookupId = userId ?? lastUid;
+    if (!lookupId) return null;
+    const p = await prisma.profile.findUnique({ where: { userId: lookupId }, select: { fullName: true, photoUrl: true } });
     const firstName = p?.fullName?.trim().split(/\s+/)[0] ?? null;
     if (!firstName) return null;
     // Photos are stored as data URIs; skip an unusually large one rather than
     // inline hundreds of KB into a cold sign-in page (initials stand in).
     const photoUrl = p?.photoUrl && p.photoUrl.length <= 400_000 ? p.photoUrl : null;
-    return { firstName, photoUrl, hasAccount: authed };
+    // Recognised via the last-signed-in cookie => they definitely have an
+    // account, so the form stays in sign-in mode.
+    return { firstName, photoUrl, hasAccount: authed || (!userId && !!lastUid) };
   } catch {
     return null;
   }

@@ -89,7 +89,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     } catch {
       /* anon session — nothing to sign out */
     }
-    router.push("/");
+    router.push("/login"); // land on sign-in, not the marketing page
   }
 
   // Mobile: the sidebar is an off-canvas drawer (always full labels). Desktop:
