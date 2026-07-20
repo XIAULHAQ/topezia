@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
+import { getBrowseHub } from "@/lib/seo/pages";
 import { SiteHeader, SiteFooter } from "@/app/_components/SiteChrome";
 import type { CSSProperties, ReactNode } from "react";
 
@@ -57,6 +58,51 @@ export default async function Home() {
     if (profile) redirect("/feed");
   }
 
+  /**
+   * Every headline number below is COUNTED, matching /about and the login
+   * panel. This page previously carried six invented figures — "1.4M live
+   * roles" against a corpus of ~3k, "120,000+ professionals found their next
+   * role", plus a stat band claiming 97% match-prediction accuracy on
+   * completed hires, 3x more interviews, and a 38-day average to an accepted
+   * offer. None of those were measurements; the last three describe outcomes
+   * the product has not produced yet. They are replaced with figures the
+   * database can answer, so the homepage cannot drift away from reality.
+   */
+  const [hub, liveProjects, topEmployers] = await Promise.all([
+    getBrowseHub(),
+    prisma.job.count({ where: { status: "LIVE", kind: "PROJECT" } }).catch(() => 0),
+    /**
+     * The trust strip named Stripe, Careem, Tabby, Deel, noon and Wio. NONE of
+     * them has ever had a posting in this corpus — a visitor searching for any
+     * of those names finds nothing, which is the fastest possible way to lose
+     * their trust on a product whose whole pitch is honesty. Now read from the
+     * employers actually carrying live roles.
+     */
+    prisma.job
+      .groupBy({ by: ["companyName"], where: { status: "LIVE" }, _count: { companyName: true }, orderBy: { _count: { companyName: "desc" } }, take: 14 })
+      .catch(() => [] as { companyName: string; _count: { companyName: number } }[]),
+  ]);
+  // Some boards suffix the locale onto the company name ("Wolt - English").
+  const brands = Array.from(
+    new Set(topEmployers.map((e) => e.companyName.replace(/\s*[-–]\s*(English|EN|US|Global)$/i, "").trim()).filter(Boolean))
+  ).slice(0, 6);
+  const nf = (v: number) => v.toLocaleString();
+  /**
+   * Every entry is dropped when its count is zero, and the whole band is hidden
+   * when nothing survives. getBrowseHub degrades to an EMPTY hub if the
+   * database is unreachable rather than throwing — so without this guard a
+   * transient DB blip would publish "0 live roles, verified from company career
+   * pages" to the homepage. Showing nothing is honest; showing a zero is not.
+   */
+  const bigStats = [
+    { n: hub.totalLive, label: "live roles, verified from company career pages" },
+    { n: hub.countries.length, label: "markets with dedicated, localized pages" },
+    { n: liveProjects, label: "freelance projects open for bids right now" },
+    { n: hub.postedLast7d, label: "roles added in the last 7 days" },
+  ]
+    .filter((x) => x.n > 0)
+    .map((x) => ({ value: nf(x.n), label: x.label }));
+
   // overflow-x: clip contains the decorative radial glows, which are absolutely
   // positioned with negative offsets and would otherwise let the page scroll
   // sideways on a phone. `clip` rather than `hidden` so it does not create a
@@ -75,7 +121,7 @@ export default async function Home() {
           <div style={{ flex: "1 1 340px", minWidth: 0 }}>
             <div style={S.badge}><Ic n="spark" s={13} />Infinite potential. Intelligent future.</div>
             <h1 style={S.h1}>The AI that <Grad>actually understands</Grad> your career</h1>
-            <p style={S.heroSub}>Topezia&apos;s AI reads your real experience, benchmarks it against 1.4M live roles every week, and builds a step-by-step roadmap to the role you want — no endless scrolling, no guesswork.</p>
+            <p style={S.heroSub}>Topezia&apos;s AI reads your real experience, benchmarks it against every live role in your field, and builds a step-by-step roadmap to the role you want — no endless scrolling, no guesswork.</p>
 
             <Link href="/onboard" className="h-upload" style={S.upload}>
               <span style={{ width: 38, height: 38, borderRadius: 10, background: "rgba(255,255,255,.18)", color: "#fff", display: "grid", placeItems: "center", flex: "none" }}><Ic n="upload" s={17} /></span>
@@ -90,7 +136,7 @@ export default async function Home() {
                   <img key={i} src={src} alt="" style={{ width: 30, height: 30, borderRadius: "50%", border: "2px solid #fff", objectFit: "cover", marginLeft: i ? -9 : 0 }} />
                 ))}
               </div>
-              <div style={{ fontSize: 12, color: C.mut }}><strong style={{ color: C.ink }}>120,000+</strong> professionals found their next role on Topezia</div>
+              <div style={{ fontSize: 12, color: C.mut }}>Your AI career breakdown in <strong style={{ color: C.ink }}>2 minutes</strong> — free while we&apos;re growing, no account needed to start</div>
             </div>
           </div>
 
@@ -122,15 +168,17 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ── Trust strip (honest label) ── */}
-      <section style={{ borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}`, background: "#F8FAFC" }}>
-        <div style={S.trustInner}>
-          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: ".6px", color: C.mut, textTransform: "uppercase" }}>Jobs aggregated from companies like</span>
-          {["Stripe", "Careem", "Tabby", "Deel", "noon", "Wio"].map((b) => (
-            <span key={b} style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8", letterSpacing: "-0.3px" }}>{b}</span>
-          ))}
-        </div>
-      </section>
+      {/* ── Trust strip — real employers, counted from live postings ── */}
+      {brands.length > 0 && (
+        <section style={{ borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}`, background: "#F8FAFC" }}>
+          <div style={S.trustInner}>
+            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: ".6px", color: C.mut, textTransform: "uppercase" }}>Hiring on Topezia right now</span>
+            {brands.map((b) => (
+              <span key={b} style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8", letterSpacing: "-0.3px" }}>{b}</span>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ── How it works ── */}
       <section style={{ maxWidth: 1180, margin: "0 auto", padding: "72px 24px 30px" }}>
@@ -220,14 +268,16 @@ export default async function Home() {
             </div>
           </div>
         </div>
+        {bigStats.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(200px,100%),1fr))", gap: 16, marginTop: 52 }}>
-          {BIG_STATS.map((b) => (
+          {bigStats.map((b) => (
             <div key={b.label} style={{ textAlign: "center", border: `1px solid ${C.line}`, borderRadius: 16, padding: "22px 16px" }}>
               <div style={{ fontSize: 27, fontWeight: 800, background: GRAD, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>{b.value}</div>
               <div style={{ fontSize: 12, color: C.mut, marginTop: 6, lineHeight: 1.5 }}>{b.label}</div>
             </div>
           ))}
         </div>
+        )}
       </section>
 
       {/* ── Two audiences ── */}
@@ -309,12 +359,6 @@ const ROADMAP_STEPS = [
   { title: "Kubernetes certification", meta: "Completed · match +18%", done: true },
   { title: "System design assessment", meta: "Verified · top 8% score", done: true },
   { title: "Lead a cross-team project", meta: "In progress · unlocks 14 Staff roles", done: false },
-];
-const BIG_STATS = [
-  { value: "1.4M", label: "live roles analyzed by the AI every week" },
-  { value: "97%", label: "match-prediction accuracy on completed hires" },
-  { value: "3×", label: "more interviews for members who follow their roadmap" },
-  { value: "38 days", label: "average time from roadmap to accepted offer" },
 ];
 const AUDIENCES = [
   { tag: "For professionals", title: "Apply only where you can win", desc: "Every role shows an honest AI match with the reasons behind it — so you spend effort on the interviews that go somewhere.", cta: "Browse matched roles", href: "/onboard", img: "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=1120&h=450&fit=crop&q=75" },

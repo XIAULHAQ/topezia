@@ -97,11 +97,20 @@ export default async function AboutPage() {
   ]);
 
   const n = (v: number) => v.toLocaleString();
-  // Every figure below is counted, and each label says exactly what was counted.
+  /**
+   * Counted, and each entry drops out when its count is zero. getBrowseHub
+   * degrades to an EMPTY hub when the database is unreachable rather than
+   * throwing, so without this guard a transient blip would publish "0 live
+   * roles" as a proud headline number. "2 min" is not a count — it describes
+   * our own pipeline — so it always stands.
+   */
+  const counted = [
+    { v: hub.totalLive, label: "live roles, verified from company career pages" },
+    { v: hub.countries.length, label: hub.countries.length === 1 ? "market with a dedicated, localized page" : "markets with dedicated, localized pages" },
+    { v: liveProjects, label: "freelance projects open for bids right now" },
+  ].filter((x) => x.v > 0);
   const stats: { big: string; label: string }[] = [
-    { big: n(hub.totalLive), label: "live roles, verified from company career pages" },
-    { big: String(hub.countries.length), label: hub.countries.length === 1 ? "market with a dedicated, localized page" : "markets with dedicated, localized pages" },
-    ...(liveProjects > 0 ? [{ big: n(liveProjects), label: "freelance projects open for bids right now" }] : []),
+    ...counted.map((x) => ({ big: n(x.v), label: x.label })),
     { big: "2 min", label: "from resume to full career breakdown" },
   ];
 
@@ -168,7 +177,7 @@ export default async function AboutPage() {
             <div style={S.cardIcon}><Ic n="briefcase" /></div>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Full-time roles</h3>
             <p style={{ margin: "9px 0 14px", fontSize: 13, lineHeight: 1.65, color: C.mut }}>
-              AI-matched jobs across {hub.countries.length} {hub.countries.length === 1 ? "market" : "markets"}, scored against your real experience with the reasons behind every fit.
+              AI-matched jobs {hub.countries.length > 0 ? `across ${hub.countries.length} ${hub.countries.length === 1 ? "market" : "markets"}` : "from company career pages"}, scored against your real experience with the reasons behind every fit.
             </p>
             <span style={S.modeCta}>Browse jobs <Ic n="arrow" s={14} /></span>
           </Link>
