@@ -14,20 +14,21 @@ import { ANON_COOKIE, ANON_COOKIE_MAX_AGE, LAST_UID_COOKIE } from "@/lib/anon-se
 
 export async function POST() {
   const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not-authenticated" }, { status: 401 });
+  // Local JWT verification (see middleware.ts) — this runs on the sign-in
+  // critical path, where the getUser() round-trip was pure added latency.
+  const { data } = await supabase.auth.getClaims();
+  const userId = data?.claims?.sub ?? null;
+  if (!userId) return NextResponse.json({ error: "not-authenticated" }, { status: 401 });
 
   const anonUid = cookies().get(ANON_COOKIE)?.value ?? null;
-  let hasProfile = (await prisma.profile.count({ where: { userId: user.id } })) > 0;
+  let hasProfile = (await prisma.profile.count({ where: { userId } })) > 0;
 
-  if (anonUid && anonUid !== user.id) {
+  if (anonUid && anonUid !== userId) {
     const anonProfile = await prisma.profile.findUnique({ where: { userId: anonUid }, select: { id: true } });
     if (anonProfile) {
       if (!hasProfile) {
         // Move the anon profile onto the account.
-        await prisma.profile.update({ where: { id: anonProfile.id }, data: { userId: user.id } });
+        await prisma.profile.update({ where: { id: anonProfile.id }, data: { userId } });
         hasProfile = true;
       } else {
         // Account already has a profile — discard the anon one (MVP: keep the
@@ -43,7 +44,7 @@ export async function POST() {
   res.cookies.set(ANON_COOKIE, "", { maxAge: 0, path: "/" }); // done with the anon session
   // Remember WHO signed in on this device, so /login can greet them by name
   // after they log out (the anon cookie we just cleared can't do that).
-  res.cookies.set(LAST_UID_COOKIE, user.id, {
+  res.cookies.set(LAST_UID_COOKIE, userId, {
     maxAge: ANON_COOKIE_MAX_AGE,
     path: "/",
     httpOnly: true,

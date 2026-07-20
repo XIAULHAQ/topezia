@@ -28,14 +28,31 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Touch the session so it refreshes if needed.
-  const { data: { user } } = await supabase.auth.getUser();
+  /**
+   * getClaims, not getUser. getUser() validates the token by calling Supabase's
+   * auth server — a network round-trip on EVERY request, measured at a large
+   * share of the 1.4-2.3s per-call floor. getClaims() verifies the JWT's ES256
+   * signature locally against the project's JWKS (confirmed present at
+   * /auth/v1/.well-known/jwks.json; fetched once and cached per instance).
+   *
+   * The part that must not regress: token REFRESH. getClaims() still goes
+   * through getSession() first, which refreshes an expired token and persists
+   * the rotated cookies through setAll — the exact path whose loss broke
+   * sessions when /api was excluded from middleware. Only the signature
+   * check moved off the network; the refresh machinery is untouched.
+   *
+   * Trade accepted: a deleted user's JWT stays valid until it expires (≤1h)
+   * where getUser() would have caught it immediately. Every lookup keyed on
+   * userId just finds nothing in that window.
+   */
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const user = claimsData?.claims ?? null;
 
   // Diagnostic: proves from outside whether middleware actually ran for a given
   // path. Excluding /api here once broke sessions silently, and confirming the
   // revert had shipped was otherwise guesswork — nothing about middleware is
   // observable in a response. Carries no user data.
-  response.headers.set("x-tz-mw", user ? "1-auth" : "1-anon");
+  response.headers.set("x-tz-mw", user ? "2-auth" : "2-anon");
 
   // ── Auth gate ──
   // These routes need an identity (a Supabase session OR the anonymous

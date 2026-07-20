@@ -14,10 +14,13 @@ import { ANON_COOKIE } from "@/lib/anon-session";
 export async function currentIdentity(): Promise<{ userId: string | null; authed: boolean }> {
   try {
     const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (user) return { userId: user.id, authed: true };
+    // getClaims verifies the JWT's ES256 signature locally against the cached
+    // JWKS instead of calling Supabase's auth server per request (see
+    // middleware.ts for the full rationale — same change, same trade). The
+    // token's `sub` is the user id getUser() would have returned.
+    const { data } = await supabase.auth.getClaims();
+    const sub = data?.claims?.sub;
+    if (sub) return { userId: sub, authed: true };
   } catch {
     // Supabase not reachable / not configured — fall through to anon.
   }
