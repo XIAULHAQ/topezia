@@ -5,6 +5,7 @@
  */
 import type { MetadataRoute } from "next";
 import { listPublishedPages } from "@/lib/seo/pages";
+import { prisma } from "@/lib/prisma";
 
 export const revalidate = 3600;
 
@@ -19,8 +20,30 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${base}/`, lastModified: now, changeFrequency: "daily", priority: 1 },
     { url: `${base}/jobs`, lastModified: now, changeFrequency: "daily", priority: 0.9 },
     { url: `${base}/about`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
+    { url: `${base}/portfolio`, lastModified: now, changeFrequency: "daily", priority: 0.7 },
     { url: `${base}/waitlist`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
   ];
+
+  // Published portfolios are real content pages with a named author — the
+  // strongest indexable asset here, and the whole reason they're public.
+  // Degrades to nothing rather than failing the sitemap if the DB is unhappy.
+  let portfolioPages: MetadataRoute.Sitemap = [];
+  try {
+    const rows = await prisma.portfolio.findMany({
+      where: { status: "PUBLISHED" },
+      orderBy: { publishedAt: "desc" },
+      take: 5000,
+      select: { slug: true, updatedAt: true },
+    });
+    portfolioPages = rows.map((r) => ({
+      url: `${base}/portfolio/${r.slug}`,
+      lastModified: r.updatedAt,
+      changeFrequency: "monthly" as const,
+      priority: 0.6,
+    }));
+  } catch {
+    /* leave empty */
+  }
 
   let jobPages: MetadataRoute.Sitemap = [];
   try {
@@ -35,5 +58,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // Never let a DB hiccup break sitemap.xml — ship the static routes at least.
   }
 
-  return [...staticRoutes, ...jobPages];
+  return [...staticRoutes, ...portfolioPages, ...jobPages];
 }
