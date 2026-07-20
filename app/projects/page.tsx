@@ -18,7 +18,7 @@ import { useRouter } from "next/navigation";
 import AppShell from "@/app/_components/AppShell";
 import { C, GRAD, FONT, Icon, MatchRing } from "@/app/_components/ui";
 import { curSym } from "@/lib/currency";
-import { fetchProfileShared } from "@/lib/fetch-profile";
+import { ensureFreshSession } from "@/lib/ensure-session";
 
 type Match = {
   jobId: string; title: string; company: string; verticalSlug: string;
@@ -78,16 +78,15 @@ export default function ProjectsPage() {
     // ever shows projects.
     (async () => {
       try {
-        // Same refresh-race guard as the feed: one authenticated request first,
-        // shared in flight, so parallel calls cannot each rotate the token.
-        await fetchProfileShared().catch(() => null);
+        // Refresh only if one is due; no round-trip in the common case.
+        await ensureFreshSession();
         const r = await fetch("/api/saves?kind=PROJECT");
         if (r.ok && !cancelled) setSaved(new Set(((await r.json()).jobs ?? []).map((j: { jobId: string }) => j.jobId)));
       } catch { /* optional — the page works without it */ }
     })();
 
     (async () => {
-      await fetchProfileShared().catch(() => null);
+      await ensureFreshSession();
       if (cancelled) return;
       setLoading(true); setError(false);
       const qs = new URLSearchParams({ kind: "PROJECT" });
