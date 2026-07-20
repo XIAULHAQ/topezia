@@ -15,6 +15,7 @@ import AppShell from "@/app/_components/AppShell";
 import AlertCapture from "@/app/jobs/_components/AlertCapture";
 import { C, GRAD, FONT, Icon, MatchRing, Card, SoonTag } from "@/app/_components/ui";
 import { curSym } from "@/lib/currency";
+import { fetchProfileShared } from "@/lib/fetch-profile";
 
 type Match = {
   jobId: string; title: string; company: string; verticalSlug: string; cardLayout: string;
@@ -128,12 +129,10 @@ export default function FeedPage() {
     })();
     (async () => {
       try {
-        const r = await fetch("/api/profile");
-        if (r.ok) {
-          const d = await r.json();
-          const p = d.profile;
-          if (p) setPrefs({ fullName: p.fullName, headline: p.headline, remoteTypes: p.remoteTypes ?? [], locations: p.locations ?? [], salaryFloor: p.salaryFloor, salaryTarget: p.salaryTarget, salaryPeriod: p.salaryPeriod });
-        }
+        // Shared with AppShell's avatar fetch — same endpoint, one request.
+        const d = await fetchProfileShared();
+        const p = d?.profile as Prefs | null | undefined;
+        if (p) setPrefs({ fullName: p.fullName, headline: p.headline, remoteTypes: p.remoteTypes ?? [], locations: p.locations ?? [], salaryFloor: p.salaryFloor, salaryTarget: p.salaryTarget, salaryPeriod: p.salaryPeriod });
       } catch { /* optional */ }
     })();
   }, []);

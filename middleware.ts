@@ -58,6 +58,20 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Run on everything except static assets and the click-out redirect.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|go/).*)"],
+  /**
+   * Page routes only.
+   *
+   * `api/` is excluded deliberately. Neither thing this middleware does applies
+   * to an API request: every GATED entry above is a page path, so the gate
+   * never fires for /api/*, and each route handler resolves the session itself
+   * through currentIdentity(). Running here as well meant every API call paid
+   * TWO network round-trips to Supabase auth — getUser() validates the token
+   * against the auth server, it is not a local check. The feed alone fires five
+   * API calls, so that was ten auth round-trips per load, and measured as a
+   * 1.4-2.3s floor on every endpoint including ones that return an empty list.
+   *
+   * Session refresh still happens: route handlers can write cookies, and any
+   * page navigation passes through here.
+   */
+  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|go/).*)"],
 };

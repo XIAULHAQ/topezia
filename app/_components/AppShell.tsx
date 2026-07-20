@@ -15,6 +15,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { C, GRAD, FONT, Icon, BrandMark, initials } from "./ui";
+import { fetchProfileShared } from "@/lib/fetch-profile";
 
 type NavItem = { icon: string; label: string; href?: string; soon?: boolean };
 
@@ -82,9 +83,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Self-contained identity: the top-bar avatar needs the signed-in name/photo,
     // and this shell wraps pages that don't otherwise fetch it.
-    fetch("/api/profile")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { setName(d?.profile?.fullName ?? null); setPhoto(d?.profile?.photoUrl ?? null); })
+    // Shared with the page inside the shell — /feed needs the same endpoint,
+    // and two parallel calls cost two auth round-trips for one answer.
+    fetchProfileShared()
+      .then((d) => {
+        const pr = d?.profile as { fullName?: string; photoUrl?: string } | null | undefined;
+        setName(pr?.fullName ?? null); setPhoto(pr?.photoUrl ?? null);
+      })
       .catch(() => {});
   }, []);
 
