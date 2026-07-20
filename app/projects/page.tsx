@@ -53,10 +53,35 @@ export default function ProjectsPage() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [saved, setSaved] = useState<Set<string>>(new Set());
+
+  // Saving was wired on the feed but never here, so projects could be found and
+  // not kept. Same endpoint — a project IS a Job — and the same optimistic
+  // update: flip immediately, revert only if the request fails.
+  async function toggleSave(jobId: string) {
+    const wasSaved = saved.has(jobId);
+    setSaved((prev) => { const n = new Set(prev); wasSaved ? n.delete(jobId) : n.add(jobId); return n; });
+    try {
+      if (wasSaved) await fetch(`/api/saves?jobId=${encodeURIComponent(jobId)}`, { method: "DELETE" });
+      else await fetch("/api/saves", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId }) });
+    } catch {
+      setSaved((prev) => { const n = new Set(prev); wasSaved ? n.add(jobId) : n.delete(jobId); return n; }); // revert
+    }
+  }
 
   // Refetch whenever a capsule changes — the scope lives in the query string.
   useEffect(() => {
     let cancelled = false;
+    // Existing saves, so an already-saved project renders filled instead of
+    // looking unsaved until you click it. ?kind=PROJECT because this list only
+    // ever shows projects.
+    (async () => {
+      try {
+        const r = await fetch("/api/saves?kind=PROJECT");
+        if (r.ok && !cancelled) setSaved(new Set(((await r.json()).jobs ?? []).map((j: { jobId: string }) => j.jobId)));
+      } catch { /* optional — the page works without it */ }
+    })();
+
     (async () => {
       setLoading(true); setError(false);
       const qs = new URLSearchParams({ kind: "PROJECT" });
@@ -152,7 +177,16 @@ export default function ProjectsPage() {
                       <MatchRing value={m.score} pending={m.pending} />
                       <div style={{ fontSize: 10.5, color: C.mut, width: 46, lineHeight: 1.35 }}>{m.pending ? "scoring…" : "match to you"}</div>
                     </div>
-                    <a href={`/job/${m.jobId}?score=${m.score}&pos=${i + 1}`} style={S.applyBtn}>View &amp; bid</a>
+                    <div style={{ display: "flex", gap: 7 }}>
+                      <div
+                        onClick={() => toggleSave(m.jobId)}
+                        title={saved.has(m.jobId) ? "Saved — click to remove" : "Save this project"}
+                        style={{ ...S.iconBtn, cursor: "pointer", ...(saved.has(m.jobId) ? { background: "#EEF2FF", color: C.c1, borderColor: "#C7D2FE" } : {}) }}
+                      >
+                        <Icon name="bookmark" size={15} />
+                      </div>
+                      <a href={`/job/${m.jobId}?score=${m.score}&pos=${i + 1}`} style={S.applyBtn}>View &amp; bid</a>
+                    </div>
                   </div>
                 </div>
                 {(m.whyLine || m.pending) && (
@@ -183,6 +217,7 @@ const S: Record<string, CSSProperties> = {
   metaItem: { display: "inline-flex", alignItems: "center", gap: 5 },
   tagHave: { background: "#ECFDF5", color: "#047857", fontSize: 11, fontWeight: 600, borderRadius: 999, padding: "3px 10px" },
   tagGap: { background: "#FFF7ED", color: "#C2410C", fontSize: 11, fontWeight: 600, borderRadius: 999, padding: "3px 10px" },
+  iconBtn: { width: 34, height: 34, border: `1px solid ${C.line}`, borderRadius: 9, display: "grid", placeItems: "center", color: C.mut, flex: "none" },
   applyBtn: { background: GRAD, color: "#fff", borderRadius: 10, padding: "9px 18px", fontSize: 12.5, fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap", boxShadow: "0 4px 12px rgba(99,102,241,.25)" },
   cardFoot: { display: "flex", alignItems: "center", gap: 8, marginTop: 14, paddingTop: 12, borderTop: `1px solid #F1F5F9`, fontSize: 12, color: C.slate, lineHeight: 1.5, flexWrap: "wrap" },
 };
