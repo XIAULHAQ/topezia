@@ -15,6 +15,7 @@
  */
 import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 const C = { c1: "#8B5CF6", c2: "#3B82F6", ink: "#0F172A", slate: "#334155", mut: "#64748B", line: "#E2E8F0" };
@@ -39,19 +40,60 @@ const NAV_LINKS = [
   { label: "For employers", href: "/waitlist" },
 ];
 
+/**
+ * Below 720px the inline nav is hidden. It used to be hidden with nothing in
+ * its place, so phone visitors had NO navigation at all — jobs, projects and
+ * the coach were unreachable from the header. The burger + panel below is that
+ * missing route. The sign-in/join pair moves into the panel at the same
+ * breakpoint: at 375px it was wrapping "Sign in" and "Join free" onto two lines
+ * each and crowding the logo.
+ */
 const CHROME_CSS = `
 .tzc-link:hover{color:${C.c1}!important}
 .tzc-flink:hover{color:#fff!important}
 .tzc-bright:hover{filter:brightness(1.1)}
-@media (max-width:720px){ .tzc-nav{display:none!important} }
+.tzc-burger{display:none}
+.tzc-mlink:hover{background:#F5F3FF!important;color:${C.c1}!important}
+@media (max-width:720px){
+  .tzc-nav{display:none!important}
+  .tzc-auth{display:none!important}
+  .tzc-burger{display:grid!important}
+}
+@media (min-width:721px){ .tzc-menu{display:none!important} }
 `;
 
 export function SiteHeader() {
   // null = unknown (render anonymous default; no wrong flash for visitors).
   const [authed, setAuthed] = useState<boolean | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const pathname = usePathname();
+
   useEffect(() => {
     createClient().auth.getSession().then(({ data }) => setAuthed(Boolean(data.session))).catch(() => {});
   }, []);
+
+  // Close on navigation. Next's client routing keeps this component mounted, so
+  // without this the panel stays open on top of the page you just opened.
+  useEffect(() => { setMenuOpen(false); }, [pathname]);
+
+  // Escape closes, and the page behind must not scroll under an open panel.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [menuOpen]);
+
+  const close = () => setMenuOpen(false);
+
+  const accountLinks = authed
+    ? [{ label: "My feed", href: "/feed" }, { label: "My profile", href: "/profile" }]
+    : [{ label: "Sign in", href: "/login" }];
 
   return (
     <header style={S.header}>
@@ -66,18 +108,61 @@ export function SiteHeader() {
           ))}
         </nav>
         <div style={{ flex: 1 }} />
-        {authed ? (
-          <>
-            <Link href="/feed" className="tzc-link" style={{ ...S.hlink, padding: "9px 14px" }}>My feed</Link>
-            <Link href="/profile" className="tzc-bright" style={S.joinBtn}>My profile</Link>
-          </>
-        ) : (
-          <>
-            <Link href="/login" className="tzc-link" style={{ ...S.hlink, padding: "9px 14px" }}>Sign in</Link>
-            <Link href="/onboard" className="tzc-bright" style={S.joinBtn}>Join free</Link>
-          </>
-        )}
+        <div className="tzc-auth" style={S.authRow}>
+          {authed ? (
+            <>
+              <Link href="/feed" className="tzc-link" style={{ ...S.hlink, padding: "9px 14px" }}>My feed</Link>
+              <Link href="/profile" className="tzc-bright" style={S.joinBtn}>My profile</Link>
+            </>
+          ) : (
+            <>
+              <Link href="/login" className="tzc-link" style={{ ...S.hlink, padding: "9px 14px" }}>Sign in</Link>
+              <Link href="/onboard" className="tzc-bright" style={S.joinBtn}>Join free</Link>
+            </>
+          )}
+        </div>
+
+        <button
+          type="button"
+          className="tzc-burger"
+          style={S.burger}
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+          aria-controls="tzc-mobile-menu"
+          onClick={() => setMenuOpen((v) => !v)}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.ink} strokeWidth={2} strokeLinecap="round">
+            {menuOpen
+              ? <><path d="M6 6l12 12" /><path d="M18 6L6 18" /></>
+              : <><path d="M3 6h18" /><path d="M3 12h18" /><path d="M3 18h18" /></>}
+          </svg>
+        </button>
       </div>
+
+      {menuOpen && (
+        <>
+          {/* Tap-outside target. Sits under the panel, over the page. */}
+          <div style={S.scrim} onClick={() => setMenuOpen(false)} aria-hidden />
+          <div id="tzc-mobile-menu" className="tzc-menu" style={S.menu}>
+            {/*
+              Close on tap, not just on the pathname effect below. Waiting for
+              the route to resolve leaves the panel sitting over the page for
+              the whole navigation — barely visible on a fast connection, a
+              second or more of looking-broken on a slow phone.
+            */}
+            {NAV_LINKS.map((l) => (
+              <Link key={l.label} href={l.href} className="tzc-mlink" style={S.mlink} onClick={close}>{l.label}</Link>
+            ))}
+            <div style={S.mDivider} />
+            {accountLinks.map((l) => (
+              <Link key={l.label} href={l.href} className="tzc-mlink" style={S.mlink} onClick={close}>{l.label}</Link>
+            ))}
+            {!authed && (
+              <Link href="/onboard" className="tzc-bright" style={S.mCta} onClick={close}>Join free</Link>
+            )}
+          </div>
+        </>
+      )}
     </header>
   );
 }
@@ -124,7 +209,26 @@ const S: Record<string, CSSProperties> = {
   // almost nothing visually. Anything above ~.95 without a blur ghosts sharp
   // text through the bar, so this is fully opaque.
   header: { background: "#fff", borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, zIndex: 50, fontFamily: FONT },
-  headerInner: { maxWidth: 1180, margin: "0 auto", padding: "14px 24px", display: "flex", alignItems: "center", gap: 26 },
+  // Lifted above the scrim: both are children of <header>, so inside that
+  // stacking context a plain bar would be painted over and dimmed by its own
+  // menu's backdrop — logo and close button included.
+  headerInner: { position: "relative", zIndex: 61, maxWidth: 1180, margin: "0 auto", padding: "14px 24px", display: "flex", alignItems: "center", gap: 26, background: "#fff" },
+  authRow: { display: "flex", alignItems: "center", gap: 8, flex: "none" },
+
+  burger: { width: 40, height: 40, placeItems: "center", flex: "none", background: "none", border: "none", padding: 0, cursor: "pointer", marginLeft: "auto" },
+  // Covers the page, not the header — the panel itself sits above this.
+  scrim: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(15,23,42,.35)", zIndex: 40 },
+  menu: {
+    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 60,
+    background: "#fff", borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}`,
+    boxShadow: "0 18px 40px rgba(15,23,42,.14)",
+    padding: 10, display: "flex", flexDirection: "column", gap: 2,
+    // A long enough list must scroll rather than run off a short phone screen.
+    maxHeight: "calc(100vh - 100%)", overflowY: "auto",
+  },
+  mlink: { display: "block", padding: "13px 14px", borderRadius: 10, color: C.slate, textDecoration: "none", fontSize: 15, fontWeight: 600 },
+  mDivider: { height: 1, background: C.line, margin: "8px 4px" },
+  mCta: { display: "block", textAlign: "center", margin: "6px 4px 4px", padding: "13px 18px", background: `linear-gradient(135deg,${C.c1},${C.c2})`, color: "#fff", borderRadius: 12, fontSize: 15, fontWeight: 700, textDecoration: "none" },
   hnav: { display: "flex", gap: 22, fontSize: 13, fontWeight: 500, color: C.slate, flexWrap: "wrap" },
   hlink: { color: C.slate, textDecoration: "none" },
   joinBtn: { background: `linear-gradient(135deg,${C.c1},${C.c2})`, color: "#fff", borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 600, textDecoration: "none", boxShadow: "0 6px 16px rgba(99,102,241,.3)" },
