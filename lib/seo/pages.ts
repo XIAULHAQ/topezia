@@ -440,13 +440,18 @@ export async function listPublishedPages(): Promise<string[]> {
   return paths;
 }
 
-export interface HubLink { href: string; label: string; count: number }
+export interface HubLink { href: string; label: string; count: number; iso?: string; slug?: string }
 export interface BrowseHub {
   totalLive: number;
   verticals: HubLink[];
   roles: HubLink[];
   states: HubLink[];
   countries: HubLink[];
+  /** Directory-page headline numbers — all counted, none estimated. */
+  postedLast7d: number;
+  medianAgeDays: number | null;
+  /** Role × country pairs that BOTH clear the floor — real "popular search" links. */
+  popular: HubLink[];
 }
 
 /**
@@ -457,13 +462,17 @@ export interface BrowseHub {
  * handful of queries, never one-per-row. Anything below MIN_JOBS_FOR_PAGE is
  * omitted, so the hub only ever links to pages that actually resolve.
  */
-const EMPTY_HUB: BrowseHub = { totalLive: 0, verticals: [], roles: [], states: [], countries: [] };
+const EMPTY_HUB: BrowseHub = { totalLive: 0, verticals: [], roles: [], states: [], countries: [], postedLast7d: 0, medianAgeDays: null, popular: [] };
 
 export async function getBrowseHub(): Promise<BrowseHub> {
   let verticals, roles, totalLive, vCounts, rCounts, states, countries;
   let globalRemote = 0;
+  let postedLast7d = 0;
+  let ageRows: { postedAt: Date | null; firstSeenAt: Date }[] = [];
+  let pairCounts: { roleId: string | null; country: string | null; _count: { id: number } }[] = [];
+  const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
   try {
-    [verticals, roles, totalLive, vCounts, rCounts, states, countries, globalRemote] = await Promise.all([
+    [verticals, roles, totalLive, vCounts, rCounts, states, countries, globalRemote, postedLast7d, ageRows, pairCounts] = await Promise.all([
       prisma.vertical.findMany({ select: { id: true, name: true, slug: true } }),
       prisma.role.findMany({ select: { id: true, name: true, slug: true } }),
       prisma.job.count({ where: { status: "LIVE", kind: "JOB" } }),
@@ -472,6 +481,11 @@ export async function getBrowseHub(): Promise<BrowseHub> {
       prisma.job.groupBy({ by: ["locationState"], where: { status: "LIVE", kind: "JOB", locationState: { not: null } }, _count: { id: true } }),
       prisma.job.groupBy({ by: ["country"], where: { status: "LIVE", kind: "JOB", country: { not: null } }, _count: { id: true } }),
       prisma.job.count({ where: { status: "LIVE", kind: "JOB", remoteScope: "GLOBAL" } }),
+      // postedAt (the source date), not firstSeenAt: after a full re-ingest
+      // every job is "newly seen", which would just restate the total.
+      prisma.job.count({ where: { status: "LIVE", kind: "JOB", postedAt: { gt: weekAgo } } }),
+      prisma.job.findMany({ where: { status: "LIVE", kind: "JOB" }, select: { postedAt: true, firstSeenAt: true }, take: 4000 }),
+      prisma.job.groupBy({ by: ["roleId", "country"], where: { status: "LIVE", kind: "JOB", roleId: { not: null }, country: { not: null } }, _count: { id: true } }),
     ]);
   } catch (err) {
     // A DB blip must never crash the build or 500 the hub — degrade to empty.
@@ -514,9 +528,36 @@ export async function getBrowseHub(): Promise<BrowseHub> {
     ...FEATURED_COUNTRIES,
   ]);
   const cLinks = [...countryIsos]
-    .map((iso) => ({ href: `/jobs/${countrySlug(iso)}`, label: countryName(iso), count: (locatedByCountry.get(iso) ?? 0) + globalRemote }))
+    .map((iso) => ({ href: `/jobs/${countrySlug(iso)}`, label: countryName(iso), count: (locatedByCountry.get(iso) ?? 0) + globalRemote, iso }))
     .filter((l) => keep(l.count))
     .sort(desc);
 
-  return { totalLive, verticals: vLinks, roles: rLinks, states: sLinks, countries: cLinks };
+  // Median posting age in days — postedAt when the source gave one, else when
+  // we first saw it (an upper bound on freshness, never an invention).
+  let medianAgeDays: number | null = null;
+  if (ageRows.length > 0) {
+    const days = ageRows
+      .map((a) => (Date.now() - new Date(a.postedAt ?? a.firstSeenAt).getTime()) / 86400000)
+      .sort((x, y) => x - y);
+    medianAgeDays = Math.round(days[Math.floor(days.length / 2)]);
+  }
+
+  // "Popular searches" must be real destinations. A role x country page is
+  // built from LOCATED jobs only (not the country page's eligibility rule), so
+  // the pairs are counted directly and kept only when they clear the floor —
+  // otherwise every chip would link into a 404, which is exactly the
+  // breadcrumb bug we already fixed once.
+  const popular: HubLink[] = pairCounts
+    .filter((p) => p.roleId && p.country && keep(p._count.id) && COUNTRY_NAMES[p.country])
+    .map((p) => ({ role: rById.get(p.roleId!), iso: p.country!, count: p._count.id }))
+    .filter((p): p is { role: { id: string; name: string; slug: string }; iso: string; count: number } => !!p.role)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 12)
+    .map((p) => ({
+      href: countryHref(p.role.slug, p.iso),
+      label: `${p.role.name} in ${countryName(p.iso)}`,
+      count: p.count,
+    }));
+
+  return { totalLive, verticals: vLinks, roles: rLinks, states: sLinks, countries: cLinks, postedLast7d, medianAgeDays, popular };
 }
