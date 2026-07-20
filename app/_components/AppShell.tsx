@@ -18,12 +18,18 @@ import { C, GRAD, FONT, Icon, BrandMark, initials } from "./ui";
 
 type NavItem = { icon: string; label: string; href?: string; soon?: boolean };
 
+/** The two "go find work" destinations, shown in the top bar by the avatar. */
+const FIND_LINKS: { icon: string; label: string; href: string }[] = [
+  { icon: "feed", label: "Find Jobs", href: "/feed" },
+  { icon: "zap", label: "Find Projects", href: "/projects" },
+];
+
+// Finding work (Find Jobs / Find Projects) lives in the top bar next to the
+// avatar, not here — the sidebar is what you've collected and who you are.
 const NAV: NavItem[] = [
   { icon: "home", label: "Overview", soon: true },
-  { icon: "feed", label: "Job Feed", href: "/feed" },
-  { icon: "zap", label: "Freelance Projects", href: "/projects" },
-  { icon: "search", label: "Search Jobs", soon: true },
   { icon: "bookmark", label: "Saved Jobs", href: "/saved" },
+  { icon: "zap", label: "Saved Projects", href: "/saved/projects" },
   { icon: "briefcase", label: "Applications", soon: true },
   { icon: "user", label: "My Profile", href: "/profile" },
   { icon: "doc", label: "Resume Builder", soon: true },
@@ -172,6 +178,37 @@ export default function AppShell({ children }: { children: ReactNode }) {
             </div>
           )}
           <div style={{ flex: 1 }} />
+
+          {/*
+            Finding work sits here, next to the avatar, rather than in the
+            sidebar. On a phone the labels alone would crowd the avatar off the
+            row, so they collapse to their icons.
+          */}
+          <nav style={{ display: "flex", alignItems: "center", gap: 6, flex: "none" }}>
+            {FIND_LINKS.map((l) => {
+              const active = l.href === "/feed" ? pathname === "/feed" : pathname.startsWith(l.href);
+              return (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  prefetch={false}
+                  onClick={navClicked}
+                  title={l.label}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 7, textDecoration: "none",
+                    padding: isMobile ? "9px 10px" : "9px 14px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+                    color: active ? C.c1 : C.slate,
+                    background: active ? "#EEF2FF" : "transparent",
+                    border: `1px solid ${active ? "#C7D2FE" : "transparent"}`,
+                  }}
+                >
+                  <Icon name={l.icon} size={15} />
+                  {!isMobile && l.label}
+                </Link>
+              );
+            })}
+          </nav>
+
           <div style={{ position: "relative" }}>
             <button onClick={() => setMenuOpen((o) => !o)} style={{ display: "flex", alignItems: "center", gap: 9, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 999, padding: "4px 14px 4px 4px", cursor: "pointer", color: C.ink, fontFamily: "inherit" }}>
               {photo ? (

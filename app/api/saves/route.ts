@@ -17,9 +17,17 @@ async function currentProfileId(): Promise<string | null> {
   return p?.id ?? null;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const pid = await currentProfileId();
   if (!pid) return NextResponse.json({ jobs: [] });
+
+  // Saves are one table across both kinds (JobSave points at Job, and a project
+  // IS a Job with kind = PROJECT). ?kind= splits them for the two saved pages.
+  // WITHOUT the param the response is unfiltered, which the feed depends on —
+  // it marks bookmark state from the full id list and must keep seeing both.
+  const kindParam = new URL(req.url).searchParams.get("kind")?.toUpperCase();
+  const kind = kindParam === "JOB" || kindParam === "PROJECT" ? kindParam : null;
+
   const saves = await prisma.jobSave.findMany({
     where: { profileId: pid },
     orderBy: { createdAt: "desc" },
@@ -29,11 +37,11 @@ export async function GET() {
   if (ids.length === 0) return NextResponse.json({ jobs: [] });
 
   const rows = await prisma.job.findMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, ...(kind ? { kind } : {}) },
     select: {
-      id: true, titleRaw: true, companyName: true, locationState: true, country: true, remoteScope: true,
+      id: true, kind: true, titleRaw: true, companyName: true, locationState: true, country: true, remoteScope: true,
       remoteType: true, employmentType: true, salaryMin: true, salaryMax: true, salaryPeriod: true,
-      source: true, lastVerifiedAt: true, status: true, vertical: { select: { slug: true } },
+      salaryCurrency: true, source: true, lastVerifiedAt: true, status: true, vertical: { select: { slug: true } },
     },
   });
   // Preserve save order (most-recent first) and only surface still-live jobs.
@@ -42,9 +50,9 @@ export async function GET() {
     .map((id) => byId.get(id))
     .filter((j): j is NonNullable<typeof j> => !!j && j.status === "LIVE")
     .map((j) => ({
-      jobId: j.id, title: j.titleRaw, company: j.companyName, locationState: j.locationState,
+      jobId: j.id, kind: j.kind, title: j.titleRaw, company: j.companyName, locationState: j.locationState,
       country: j.country, remoteScope: j.remoteScope, remoteType: j.remoteType, employmentType: j.employmentType,
-      salaryMin: j.salaryMin, salaryMax: j.salaryMax, salaryPeriod: j.salaryPeriod,
+      salaryMin: j.salaryMin, salaryMax: j.salaryMax, salaryPeriod: j.salaryPeriod, salaryCurrency: j.salaryCurrency,
       source: j.source, verticalSlug: j.vertical?.slug ?? "", lastVerifiedAt: j.lastVerifiedAt,
     }));
   return NextResponse.json({ jobs });

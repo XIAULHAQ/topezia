@@ -1,13 +1,20 @@
 "use client";
 
-/** Saved jobs list — fetches /api/saves and renders removable job cards. */
+/**
+ * Saved list — fetches /api/saves and renders removable cards.
+ *
+ * One component for both saved pages. Projects ARE jobs with kind = PROJECT,
+ * so the only real differences are the copy and the fact that a project's money
+ * is a budget in the poster's own currency rather than a salary.
+ */
 import { useEffect, useState, type CSSProperties } from "react";
 import { C, GRAD, Icon, Card } from "@/app/_components/ui";
+import { curSym } from "@/lib/currency";
 
 type SavedJob = {
-  jobId: string; title: string; company: string; locationState: string | null;
+  jobId: string; kind: string; title: string; company: string; locationState: string | null;
   country: string | null; remoteScope: string | null; remoteType: string; employmentType: string;
-  salaryMin: number | null; salaryMax: number | null; salaryPeriod: string | null;
+  salaryMin: number | null; salaryMax: number | null; salaryPeriod: string | null; salaryCurrency: string;
   source: string; verticalSlug: string; lastVerifiedAt: string;
 };
 
@@ -20,18 +27,21 @@ function placeLabel(j: SavedJob): string {
 }
 function fmtSalary(j: SavedJob): string | null {
   if (j.salaryMin == null && j.salaryMax == null) return null;
-  const per = j.salaryPeriod === "HOUR" ? "/hr" : j.salaryPeriod === "PER_MILE" ? "/mi" : j.salaryPeriod === "DAY" ? "/day" : "/yr";
+  // Never convert — show what the poster listed, in their currency.
+  const sym = curSym(j.salaryCurrency);
+  const per = j.salaryPeriod === "HOUR" ? "/hr" : j.salaryPeriod === "PER_MILE" ? "/mi" : j.salaryPeriod === "DAY" ? "/day" : j.salaryPeriod === "PROJECT" ? " budget" : "/yr";
   const k = (n: number) => (j.salaryPeriod === "YEAR" && n >= 1000 ? `${Math.round(n / 1000)}k` : `${n.toLocaleString()}`);
-  if (j.salaryMin != null && j.salaryMax != null) return `$${k(j.salaryMin)}–${k(j.salaryMax)}${per}`;
-  return `$${k((j.salaryMin ?? j.salaryMax)!)}${per}`;
+  if (j.salaryMin != null && j.salaryMax != null) return `${sym}${k(j.salaryMin)}–${sym}${k(j.salaryMax)}${per}`;
+  return `${sym}${k((j.salaryMin ?? j.salaryMax)!)}${per}`;
 }
 
-export default function SavedClient() {
+export default function SavedClient({ kind = "JOB" }: { kind?: "JOB" | "PROJECT" }) {
   const [jobs, setJobs] = useState<SavedJob[] | null>(null);
+  const isProject = kind === "PROJECT";
 
   useEffect(() => {
-    fetch("/api/saves").then((r) => (r.ok ? r.json() : { jobs: [] })).then((d) => setJobs(d.jobs ?? [])).catch(() => setJobs([]));
-  }, []);
+    fetch(`/api/saves?kind=${kind}`).then((r) => (r.ok ? r.json() : { jobs: [] })).then((d) => setJobs(d.jobs ?? [])).catch(() => setJobs([]));
+  }, [kind]);
 
   async function unsave(jobId: string) {
     setJobs((prev) => (prev ? prev.filter((j) => j.jobId !== jobId) : prev));
@@ -40,13 +50,18 @@ export default function SavedClient() {
 
   return (
     <div style={{ maxWidth: 820 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, margin: "0 0 6px", letterSpacing: "-0.4px" }}>Saved jobs</h1>
-      <p style={{ color: C.mut, fontSize: 14, margin: "0 0 22px" }}>Jobs you bookmarked from your feed. They stay here until you remove them.</p>
+      <h1 style={{ fontSize: 24, fontWeight: 800, margin: "0 0 6px", letterSpacing: "-0.4px" }}>{isProject ? "Saved projects" : "Saved jobs"}</h1>
+      <p style={{ color: C.mut, fontSize: 14, margin: "0 0 22px" }}>
+        {isProject
+          ? "Freelance projects you bookmarked. They stay here until you remove them."
+          : "Jobs you bookmarked from your feed. They stay here until you remove them."}
+      </p>
 
       {jobs === null && <p style={{ color: C.mut }}>Loading…</p>}
       {jobs !== null && jobs.length === 0 && (
         <div style={{ background: "#fff", border: `1px dashed ${C.line}`, borderRadius: 16, padding: 40, textAlign: "center", color: C.mut }}>
-          Nothing saved yet. Tap the <Icon name="bookmark" size={14} /> on any job in your <a href="/feed" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>feed</a> to save it here.
+          Nothing saved yet. Tap the <Icon name="bookmark" size={14} /> on any {isProject ? "project" : "job"} in{" "}
+          <a href={isProject ? "/projects" : "/feed"} style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>{isProject ? "freelance projects" : "your feed"}</a> to save it here.
         </div>
       )}
 
@@ -62,13 +77,13 @@ export default function SavedClient() {
                   <div style={{ fontSize: 12.5, color: C.slate, fontWeight: 600, marginTop: 3 }}>{j.company}</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginTop: 8, fontSize: 11.5, color: C.mut }}>
                     <span style={S.meta}><Icon name="pin" size={13} />{placeLabel(j)}</span>
-                    <span style={S.meta}><Icon name="clock" size={13} />{label(j.employmentType)}</span>
+                    {!isProject && <span style={S.meta}><Icon name="clock" size={13} />{label(j.employmentType)}</span>}
                     {sal && <span style={{ ...S.meta, color: "#059669", fontWeight: 600 }}><Icon name="coins" size={13} />{sal}</span>}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <div onClick={() => unsave(j.jobId)} title="Remove from saved" style={S.remove}><Icon name="bookmark" size={15} /></div>
-                  <a href={`/job/${j.jobId}`} style={S.view}>View job</a>
+                  <a href={`/job/${j.jobId}`} style={S.view}>{isProject ? "View project" : "View job"}</a>
                 </div>
               </div>
             </Card>
