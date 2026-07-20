@@ -59,9 +59,19 @@ export async function middleware(request: NextRequest) {
   // profile cookie — "no account needed to start" still holds). Visitors with
   // neither get sent to /login, which carries a prominent "join by uploading
   // your résumé" path to /onboard, and ?next= brings them back here after.
-  const GATED = ["/feed", "/profile", "/settings", "/saved", "/coach", "/projects"];
+  // NOTE the specificity: "/portfolio/new" only, never "/portfolio". Portfolios
+  // are public by product decision — browsing the grid and opening someone's
+  // work needs no account, and both are indexed. Only authoring is gated.
+  const GATED = ["/feed", "/profile", "/settings", "/saved", "/coach", "/projects", "/portfolio/new"];
   const { pathname } = request.nextUrl;
-  const isGated = GATED.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  // Editing someone's work is gated; viewing it is not. That can't be expressed
+  // as a prefix — "/portfolio" would swallow the public pages — so it is matched
+  // explicitly. Gating HERE rather than relying on the page's own redirect()
+  // also means the check runs before any page code, and page-level redirect()
+  // proved unreliable in this route (it throws correctly, but Next rendered
+  // not-found instead of honouring it).
+  const isEditRoute = /^\/portfolio\/[^/]+\/edit\/?$/.test(pathname);
+  const isGated = isEditRoute || GATED.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   if (isGated && !user) {
     // Cookie name mirrors lib/anon-session.ts ANON_COOKIE (inlined: that
     // module imports next/headers, which middleware must not pull in).

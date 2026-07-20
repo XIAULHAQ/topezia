@@ -366,6 +366,9 @@ model Profile {
   insightUnsubToken String  @unique @default(uuid()) // one-click unsubscribe, no login needed
   insightSnapshots  InsightSnapshot[]
 
+  portfolios        Portfolio[]
+  portfolioSaves    PortfolioSave[]
+
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
@@ -552,4 +555,122 @@ model JobAlert {
 
   @@unique([email, queryKey])
   @@index([email])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Portfolio — a member's own published work.
+//
+// NOT to be confused with Job.kind = PROJECT, which is a freelance brief someone
+// is hiring for. These are the opposite direction: work already done, shown off.
+// The naming overlap is a real trap, so the model, routes (/portfolio) and UI
+// copy all say "portfolio" and never "project".
+//
+// Public by product decision: a portfolio exists to be seen, shared with a
+// client who has no account, and indexed. Only creating and saving need auth.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum PortfolioCategory {
+  // Marketing & Creative
+  BRANDING_IDENTITY
+  GRAPHIC_DESIGN
+  ILLUSTRATION
+  PHOTOGRAPHY
+  VIDEO_MOTION
+  UI_UX_DESIGN
+  SOCIAL_CONTENT
+  COPYWRITING
+  // Tech & Software
+  WEB_APPLICATION
+  MOBILE_APP
+  API_BACKEND
+  OPEN_SOURCE
+  DATA_ML
+  DEVOPS_INFRA
+  TECHNICAL_WRITING
+}
+
+enum PortfolioStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum PortfolioMediaKind {
+  IMAGE
+  VIDEO
+}
+
+model Portfolio {
+  id          String            @id @default(uuid())
+  profileId   String
+  profile     Profile           @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  // Stable public URL, e.g. "monolab-branding-k3m9x2". Never reused.
+  slug        String            @unique
+  title       String
+  description String?
+  category    PortfolioCategory
+  status      PortfolioStatus   @default(DRAFT)
+
+  // Cover image for the grid. A storage path, resolved to a CDN URL on read.
+  coverPath   String?
+  // Cover's intrinsic size, so the masonry grid can reserve the right box
+  // BEFORE the image loads — without this a Pinterest layout reflows on every
+  // image that arrives.
+  coverWidth  Int?
+  coverHeight Int?
+
+  // Free-text tags, deliberately not FKs to the Skill taxonomy yet: "Technology
+  // Used" (Next.js, Figma) largely isn't in a taxonomy built for job skills, and
+  // forcing resolution would drop what people actually type. Both are indexed
+  // for chip filtering; wiring skills into the taxonomy for matching is a
+  // follow-up, once we can see what people really enter.
+  skills       String[]
+  technologies String[]
+
+  media        PortfolioMedia[]
+  saves        PortfolioSave[]
+
+  publishedAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([profileId, status])
+  @@index([status, publishedAt])
+  @@index([category, status, publishedAt])
+}
+
+model PortfolioMedia {
+  id          String             @id @default(uuid())
+  portfolioId String
+  portfolio   Portfolio          @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  kind        PortfolioMediaKind
+
+  // IMAGE: storage object path. VIDEO: the canonical watch URL.
+  // Never a user-supplied filename — see the upload route.
+  path        String
+  // VIDEO only: the extracted id, so embeds are built by us rather than by
+  // interpolating a user-supplied URL into an iframe src.
+  videoId     String?
+
+  width       Int?
+  height      Int?
+  caption     String?
+  position    Int                @default(0)
+
+  createdAt   DateTime @default(now())
+
+  @@index([portfolioId, position])
+}
+
+model PortfolioSave {
+  id          String    @id @default(uuid())
+  profileId   String
+  profile     Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  portfolioId String
+  portfolio   Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@unique([profileId, portfolioId])
+  @@index([profileId, createdAt])
 }
