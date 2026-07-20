@@ -150,11 +150,38 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
         return;
       }
 
-      // Link any anonymous profile to this account and route accordingly.
-      const res = await fetch("/api/auth/link", { method: "POST" });
-      const { hasProfile } = res.ok ? await res.json() : { hasProfile: false };
+      /**
+       * You are SIGNED IN by this point — the session exists whatever happens
+       * below. Linking an anonymous profile is a nice-to-have, so it must never
+       * be able to trap you on the login screen.
+       *
+       * It used to be a bare `await fetch(...)` with no timeout, and it is the
+       * one call here that touches the database. If it hung — this database has
+       * thrown connection-pool timeouts — the await never settled, `loading`
+       * stayed true, and the button sat disabled forever with no error and no
+       * navigation. Signing in looked frozen.
+       */
+      let hasProfile = false;
+      try {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), 8000);
+        const res = await fetch("/api/auth/link", { method: "POST", signal: ctl.signal });
+        clearTimeout(timer);
+        if (res.ok) hasProfile = Boolean((await res.json()).hasProfile);
+      } catch {
+        // Timed out or failed. Carry on: /feed sends people without a profile
+        // to /onboard by itself, so the worst case is one extra redirect.
+        hasProfile = true;
+      }
+
       // `next` is already validated server-side as an internal path.
-      router.push(next && hasProfile ? next : hasProfile ? "/feed" : "/onboard");
+      const dest = next && hasProfile ? next : hasProfile ? "/feed" : "/onboard";
+      router.push(dest);
+      // Belt and braces: if the client-side navigation hasn't moved us shortly,
+      // go the hard way rather than leaving someone staring at a dead button.
+      setTimeout(() => {
+        if (window.location.pathname === "/login") window.location.assign(dest);
+      }, 2500);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setLoading(false);
