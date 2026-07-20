@@ -74,6 +74,30 @@ export function renderConfirmEmail(label: string, confirmToken: string): { subje
   };
 }
 
+/**
+ * Password reset — transactional, sent by US rather than by Supabase.
+ *
+ * The link points at our own /reset with the recovery token_hash, NOT at
+ * Supabase's verify endpoint. That matters: Supabase's endpoint only honours a
+ * redirect_to that is on the project's allow-list and otherwise silently falls
+ * back to the dashboard's Site URL — which is how reset links were landing on
+ * localhost. Sending people straight to our domain removes that failure mode
+ * entirely, and /reset exchanges the token for a session itself.
+ */
+export function renderPasswordResetEmail(tokenHash: string): { subject: string; html: string } {
+  const url = `${siteUrl()}/reset?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`;
+  return {
+    subject: "Reset your Topezia password",
+    html: shell(
+      `<h1 style="font-size:20px;margin:0 0 8px;color:#1a1a2e;">Set a new password</h1>
+       <p style="color:#6b7280;font-size:15px;line-height:1.55;margin:0 0 20px;">Click below to choose a new password for your Topezia account. This link works once and expires in an hour.</p>
+       <a href="${url}" style="display:inline-block;padding:12px 24px;background:#4f46e5;color:#fff;border-radius:10px;font-weight:700;font-size:15px;text-decoration:none;">Set a new password</a>
+       <p style="color:#9ca3af;font-size:13px;line-height:1.55;margin:20px 0 0;">Or paste this into your browser:<br/><span style="color:#6b7280;word-break:break-all;">${escapeHtml(url)}</span></p>`,
+      `If you didn't ask to reset your password, ignore this email — your password stays as it is.`
+    ),
+  };
+}
+
 /** The alert itself — bulk, so it must carry the unsubscribe affordances. */
 export function renderAlertEmail(
   label: string,

@@ -3,13 +3,19 @@
 /**
  * /reset — set a new password after clicking the emailed reset link.
  *
- * Supabase's recovery link lands here with a recovery session already
- * established (the browser client picks the token out of the URL), so we just
- * collect a new password and call updateUser. No token handling of our own.
+ * Our reset mail (see app/api/auth/reset) links straight here with the recovery
+ * token in `?token_hash=`, rather than bouncing through Supabase's verify
+ * endpoint — that endpoint only honours allow-listed redirects and otherwise
+ * falls back to the project's Site URL, which is how these links ended up on
+ * localhost. So the exchange happens here: verifyOtp turns the token into a
+ * session, and then updateUser can set the password.
+ *
+ * Still tolerates arriving with a session already established, which is what
+ * happens for any older Supabase-issued link still sitting in someone's inbox.
  */
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
@@ -17,20 +23,39 @@ const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
 const MUTED = "#6b7280";
 
-export default function ResetPage() {
+function ResetForm() {
   const router = useRouter();
+  const params = useSearchParams();
+  const tokenHash = params.get("token_hash");
   const [password, setPassword] = useState("");
   const [ready, setReady] = useState(false);
+  const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    // Confirm we actually arrived in a recovery session; otherwise there's
-    // nothing to reset and the link was stale or opened directly.
     const supabase = createClient();
-    supabase.auth.getSession().then(({ data }) => setReady(Boolean(data.session)));
-  }, []);
+    (async () => {
+      // A token in the URL is the normal path now: exchange it for a recovery
+      // session. Strip it from the address bar straight after, so the one-shot
+      // token isn't left sitting in history or copied out of a shared URL.
+      if (tokenHash) {
+        const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
+        window.history.replaceState({}, "", "/reset");
+        if (!error) {
+          setReady(true);
+          setChecking(false);
+          return;
+        }
+      }
+      // Otherwise fall back to an already-established session (an older
+      // Supabase-issued link, or a page refresh after the exchange).
+      const { data } = await supabase.auth.getSession();
+      setReady(Boolean(data.session));
+      setChecking(false);
+    })();
+  }, [tokenHash]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -55,6 +80,8 @@ export default function ResetPage() {
 
         {done ? (
           <p style={S.notice}>Password updated. Taking you to your feed…</p>
+        ) : checking ? (
+          <p style={S.sub}>Checking your reset link…</p>
         ) : !ready ? (
           <p style={S.sub}>This reset link is invalid or expired. Request a fresh one from the <Link href="/login" style={S.link}>login page</Link>.</p>
         ) : (
@@ -68,6 +95,16 @@ export default function ResetPage() {
         )}
       </form>
     </main>
+  );
+}
+
+// useSearchParams needs a Suspense boundary, or the whole route opts out of
+// static rendering at build time.
+export default function ResetPage() {
+  return (
+    <Suspense fallback={<main style={S.page}><div style={S.card}><p style={S.sub}>Loading…</p></div></main>}>
+      <ResetForm />
+    </Suspense>
   );
 }
 

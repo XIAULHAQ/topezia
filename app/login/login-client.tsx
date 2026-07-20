@@ -88,8 +88,19 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
     if (!email) { setError("Enter your email first, then tap reset."); return; }
     setLoading(true);
     try {
-      const { error } = await createClient().auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset` });
-      if (error) throw error;
+      // Our own endpoint, not supabase.auth.resetPasswordForEmail: that sent
+      // Supabase-branded mail, and its redirectTo (window.location.origin) is
+      // only honoured when allow-listed — otherwise Supabase fell back to the
+      // project's Site URL and the link landed on localhost.
+      const res = await fetch("/api/auth/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Couldn't send a reset email.");
+      }
       setNotice("If that email has an account, a reset link is on its way.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't send a reset email.");
