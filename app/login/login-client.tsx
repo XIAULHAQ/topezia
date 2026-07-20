@@ -60,6 +60,10 @@ const DESTINATIONS: { prefix: string; label: string; eyebrow: string }[] = [
 const CSS = `
 .lg-in:focus-within{border-color:#A5B4FC!important;box-shadow:0 0 0 3px rgba(139,92,246,.12)}
 .lg-btn:hover{filter:brightness(1.08)}
+.lg-btn:disabled{cursor:progress}
+@keyframes lg-spin{to{transform:rotate(360deg)}}
+.lg-spin{animation:lg-spin .7s linear infinite;transform-origin:50% 50%}
+@media (prefers-reduced-motion:reduce){.lg-spin{animation-duration:2s}}
 .lg-join:hover{border-color:#A5B4FC!important;background:#F5F3FF!important}
 .lg-link:hover{color:${C.c2}!important}
 @media (max-width:900px){ .lg-panel{display:none!important} .lg-left{padding:22px 20px!important} }
@@ -80,6 +84,9 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // What the button reports while it works. "…" alone left people unsure
+  // anything had happened during a multi-second sign-in.
+  const [phase, setPhase] = useState<"idle" | "auth" | "setup">("idle");
 
   // These inputs are controlled, and a browser/password-manager autofill writes
   // the DOM value WITHOUT firing React's onChange. The field then visibly holds
@@ -130,8 +137,12 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    setLoading(true); setError(null); setNotice(null);
+    setLoading(true); setError(null); setNotice(null); setPhase("auth");
     const supabase = createClient();
+    // Warm the destination WHILE Supabase authenticates. Its RSC payload
+    // downloads during a request we are already waiting on, instead of starting
+    // cold after it. Prefetch is disabled app-wide, so ask explicitly.
+    try { router.prefetch("/feed"); } catch { /* best effort */ }
     // Same autofill caveat as forgotPassword: trust the inputs over state, or a
     // password-manager fill signs in with empty credentials.
     const addr = (email || emailRef.current?.value || "").trim();
@@ -161,10 +172,14 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
        * stayed true, and the button sat disabled forever with no error and no
        * navigation. Signing in looked frozen.
        */
+      setPhase("setup");
       let hasProfile = false;
       try {
         const ctl = new AbortController();
-        const timer = setTimeout(() => ctl.abort(), 8000);
+        // 2.5s, not 8s. This call is a no-op for anyone who has no anonymous
+        // profile to migrate — the common case for a returning sign-in — so a
+        // long ceiling only ever showed up as dead time on the button.
+        const timer = setTimeout(() => ctl.abort(), 2500);
         const res = await fetch("/api/auth/link", { method: "POST", signal: ctl.signal });
         clearTimeout(timer);
         if (res.ok) hasProfile = Boolean((await res.json()).hasProfile);
@@ -185,6 +200,7 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setLoading(false);
+      setPhase("idle");
     }
   }
 
@@ -273,8 +289,16 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
               {error && <p style={S.error}>{error}</p>}
               {notice && <p style={S.notice}>{notice}</p>}
 
-              <button type="submit" className="lg-btn" style={{ ...S.submit, opacity: loading ? 0.7 : 1 }} disabled={loading}>
-                {loading ? "…" : mode === "signup" ? "Create account" : "Sign in"}
+              <button type="submit" className="lg-btn" style={{ ...S.submit, opacity: loading ? 0.85 : 1 }} disabled={loading} aria-busy={loading}>
+                {loading ? (
+                  <>
+                    <svg className="lg-spin" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+                      <circle cx="8" cy="8" r="6.5" stroke="rgba(255,255,255,.32)" strokeWidth="2.5" />
+                      <path d="M8 1.5a6.5 6.5 0 0 1 6.5 6.5" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" />
+                    </svg>
+                    {phase === "setup" ? "Setting up your feed…" : mode === "signup" ? "Creating your account…" : "Signing you in…"}
+                  </>
+                ) : mode === "signup" ? "Create account" : "Sign in"}
                 {!loading && <Ic n="arrow" />}
               </button>
             </div>
