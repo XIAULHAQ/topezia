@@ -1,19 +1,15 @@
 /**
- * Admin waitlist stats — GET /api/admin/waitlist-stats
- * Requires `Authorization: Bearer {ADMIN_ACCESS_TOKEN}` header, or the
- * `admin_token` cookie set by visiting /admin/waitlist?token=... once.
+ * Founding-employer waitlist stats — GET /api/hq/waitlist-stats
+ * Requires the signed /hq session cookie (password sign-in, lib/hq-auth.ts).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isValidAdminToken } from "@/lib/admin-auth";
+import { HQ_COOKIE, sessionValid } from "@/lib/hq-auth";
 
 const FOUNDING_MEMBER_CAP = 100;
 
 export async function GET(req: NextRequest) {
-  const headerToken = req.headers.get("authorization")?.replace("Bearer ", "");
-  const cookieToken = req.cookies.get("admin_token")?.value;
-
-  if (!isValidAdminToken(headerToken) && !isValidAdminToken(cookieToken)) {
+  if (!sessionValid(req.cookies.get(HQ_COOKIE)?.value)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -8,7 +8,10 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: "*",
         allow: "/",
         // Personal / transactional surfaces have no business in the index.
-        disallow: ["/api/", "/admin/", "/feed", "/onboard", "/login", "/go/", "/jobs/expired"],
+        // The internal dashboard is deliberately absent: listing a private
+        // path here would publish its location. It refuses indexing with
+        // noindex metadata instead.
+        disallow: ["/api/", "/feed", "/onboard", "/login", "/go/", "/jobs/expired"],
       },
     ],
     sitemap: `${base}/sitemap.xml`,

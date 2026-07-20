@@ -1,18 +1,14 @@
 "use client";
 
 /**
- * Admin dashboard — /admin?token=YOUR_ADMIN_ACCESS_TOKEN
+ * The signed-in HQ dashboard body — rendered only after app/hq/page.tsx has
+ * verified the session server-side, so this file never has to hold a secret.
  *
  * One place for both audiences: MEMBERS (job seekers who created a profile)
- * and the founding-employer WAITLIST. Visiting with ?token= once stores it in
- * a cookie, so the URL can be bookmarked without the secret in it.
+ * and the founding-employer WAITLIST.
  *
- * Auth is the shared ADMIN_ACCESS_TOKEN (lib/admin-auth.ts) — deliberately
- * simple for a single admin, and it fails closed when the env var is unset.
- * Phase 2 swaps that one function for a real role check; this page is unchanged.
- *
- * Everything below is real personal data, so both endpoints are uncached and
- * /admin/ is disallowed in robots.txt.
+ * Everything below is real personal data: both endpoints are uncached, the
+ * session cookie is httpOnly, and the page refuses indexing.
  */
 import { useEffect, useState, type CSSProperties } from "react";
 
@@ -61,30 +57,29 @@ const COUNTRY_NAMES: Record<string, string> = {
 const countryLabel = (c: string) => (c === "Unknown" ? "Not set" : COUNTRY_NAMES[c] ?? c);
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 
-export default function AdminPage() {
+export default function HqDashboard() {
   const [tab, setTab] = useState<"members" | "waitlist">("members");
   const [members, setMembers] = useState<MemberStats | null>(null);
   const [waitlist, setWaitlist] = useState<WaitlistStats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
-    if (token) {
-      document.cookie = `admin_token=${token}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
-      // Drop the secret from the address bar once it is stored.
-      window.history.replaceState({}, "", "/admin");
-    }
-    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    // The session cookie is httpOnly and rides along automatically — there is
+    // no secret for this script to hold.
     const load = async (url: string) => {
-      const res = await fetch(url, { headers });
+      const res = await fetch(url);
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Failed to load (${res.status})`);
       return res.json();
     };
-    Promise.all([load("/api/admin/members"), load("/api/admin/waitlist-stats")])
+    Promise.all([load("/api/hq/members"), load("/api/hq/waitlist-stats")])
       .then(([m, w]) => { setMembers(m); setWaitlist(w); })
       .catch((e) => setError(e.message));
   }, []);
+
+  async function signOut() {
+    await fetch("/api/hq/logout", { method: "POST" }).catch(() => {});
+    window.location.href = "/hq";
+  }
 
   if (error) {
     return (
@@ -92,9 +87,7 @@ export default function AdminPage() {
         <div style={S.errorBox}>
           <p style={{ fontWeight: 700, marginBottom: 6 }}>Can&apos;t load the dashboard</p>
           <p style={{ fontSize: 14, color: "#64748B", lineHeight: 1.6 }}>
-            {error}. Visit <code style={S.code}>/admin?token=YOUR_ADMIN_ACCESS_TOKEN</code> once to authenticate.
-            If that still fails, <code style={S.code}>ADMIN_ACCESS_TOKEN</code> is not set in the environment —
-            the gate fails closed by design.
+            {error}. Your session may have expired — <a href="/hq" style={S.link}>sign in again</a>.
           </p>
         </div>
       </main>
@@ -104,8 +97,13 @@ export default function AdminPage() {
 
   return (
     <main style={S.page}>
-      <h1 style={S.h1}>Topezia admin</h1>
-      <p style={S.sub}>Members and founding-employer signups. Real personal data — this page is uncached and excluded from search.</p>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <h1 style={S.h1}>Topezia HQ</h1>
+          <p style={S.sub}>Members and founding-employer signups. Real personal data — uncached and excluded from search.</p>
+        </div>
+        <button onClick={signOut} style={S.signOut}>Sign out</button>
+      </div>
 
       <div style={{ display: "flex", gap: 8, margin: "22px 0 26px", flexWrap: "wrap" }}>
         <button onClick={() => setTab("members")} style={tab === "members" ? S.tabOn : S.tabOff}>
@@ -273,5 +271,6 @@ const S: Record<string, CSSProperties> = {
   link: { color: "#4F46E5", textDecoration: "none" },
   anon: { color: "#94A3B8", fontStyle: "italic" },
   errorBox: { background: "#fff", border: "1px solid #FECACA", borderRadius: 14, padding: 22, maxWidth: 560 },
+  signOut: { flex: "none", background: "#fff", border: "1px solid #E2E8F0", borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600, color: "#334155", cursor: "pointer", fontFamily: "inherit" },
   code: { background: "#F1F5F9", padding: "2px 6px", borderRadius: 5, fontSize: 12.5 },
 };

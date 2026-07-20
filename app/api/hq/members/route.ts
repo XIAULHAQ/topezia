@@ -1,12 +1,11 @@
 /**
- * Admin member stats — GET /api/admin/members
+ * Member stats — GET /api/hq/members
  *
- * Same gate as the waitlist endpoint: `Authorization: Bearer {ADMIN_ACCESS_TOKEN}`
- * or the `admin_token` cookie set by visiting /admin?token=... once.
+ * Requires the signed /hq session cookie (password sign-in, lib/hq-auth.ts).
  *
  * This returns real personal data (names, emails, countries), so it is
- * force-dynamic and never cached, and the gate fails closed when
- * ADMIN_ACCESS_TOKEN is unset (see lib/admin-auth.ts).
+ * force-dynamic and never cached, and the gate fails closed when no dashboard
+ * password is configured.
  *
  * Emails come from Supabase's `auth.users`, which lives in the same Postgres
  * we already connect to — no service-role key needed. A profile whose userId
@@ -15,7 +14,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isValidAdminToken } from "@/lib/admin-auth";
+import { HQ_COOKIE, sessionValid } from "@/lib/hq-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -32,9 +31,7 @@ type MemberRow = {
 };
 
 export async function GET(req: NextRequest) {
-  const headerToken = req.headers.get("authorization")?.replace("Bearer ", "");
-  const cookieToken = req.cookies.get("admin_token")?.value;
-  if (!isValidAdminToken(headerToken) && !isValidAdminToken(cookieToken)) {
+  if (!sessionValid(req.cookies.get(HQ_COOKIE)?.value)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
