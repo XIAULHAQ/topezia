@@ -59,19 +59,25 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   /**
-   * Page routes only.
+   * `api/` MUST stay in here. It was excluded once as an optimisation — the
+   * gate never fires for API paths and each route handler resolves the session
+   * itself, so the getUser() call looked like pure waste. It is not.
    *
-   * `api/` is excluded deliberately. Neither thing this middleware does applies
-   * to an API request: every GATED entry above is a page path, so the gate
-   * never fires for /api/*, and each route handler resolves the session itself
-   * through currentIdentity(). Running here as well meant every API call paid
-   * TWO network round-trips to Supabase auth — getUser() validates the token
-   * against the auth server, it is not a local check. The feed alone fires five
-   * API calls, so that was ten auth round-trips per load, and measured as a
-   * 1.4-2.3s floor on every endpoint including ones that return an empty list.
+   * This middleware is the ONLY place that can persist a ROTATED session. When
+   * Supabase refreshes an access token it issues a new refresh token and
+   * invalidates the old one; the new pair has to be written back to the
+   * browser. Route handlers cannot do that through the shared server client —
+   * its setAll() throws outside a response context and is swallowed (see
+   * lib/supabase/server.ts, which says as much and points here).
    *
-   * Session refresh still happens: route handlers can write cookies, and any
-   * page navigation passes through here.
+   * So with api/ excluded: the feed fires four API calls, one of them refreshes
+   * the token, the rotation is lost, and the browser is left holding a refresh
+   * token the server has already consumed. The session dies a moment later —
+   * signing in worked, then the next gated page bounced the user to /login.
+   *
+   * Any future attempt at this optimisation has to solve cookie persistence
+   * first. Verifying the JWT locally (getClaims) is the safe version, because
+   * it removes the network round-trip WITHOUT removing the refresh path.
    */
-  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|go/).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|go/).*)"],
 };
