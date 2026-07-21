@@ -23,8 +23,9 @@ import { currentIdentity } from "@/lib/identity";
 import { SiteHeader, SiteFooter } from "@/app/_components/SiteChrome";
 import { portfolioImageUrl } from "@/lib/portfolio/storage";
 import { categoryLabel, categorySlug } from "@/lib/portfolio/categories";
-import { youTubeEmbedUrl } from "@/lib/portfolio/video";
+import { youTubeEmbedUrl, portfolioVideoPosterUrl } from "@/lib/portfolio/video";
 import PortfolioRail from "./portfolio-rail";
+import VideoEmbed from "./video-embed";
 
 export const dynamic = "force-dynamic";
 
@@ -180,21 +181,17 @@ export default async function PortfolioDetailPage({ params }: { params: { slug: 
 
             {p.media.map((m, i) => {
               if (m.kind === "VIDEO") {
-                const embed = m.videoId ? youTubeEmbedUrl(m.videoId) : null;
+                if (!m.videoId) return null;
+                // autoplay is safe here: the iframe is only mounted on click.
+                const embed = youTubeEmbedUrl(m.videoId, { autoplay: true });
                 if (!embed) return null;
                 return (
                   <figure key={i} style={S.figure}>
-                    <div style={S.videoFrame}>
-                      <iframe
-                        src={embed}
-                        title={m.caption ?? `${p.title} — video ${i + 1}`}
-                        style={S.iframe}
-                        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                        loading="lazy"
-                        referrerPolicy="strict-origin-when-cross-origin"
-                      />
-                    </div>
+                    <VideoEmbed
+                      embedUrl={embed}
+                      posterUrl={portfolioVideoPosterUrl(m.videoId)}
+                      title={m.caption ?? `${p.title} — video ${i + 1}`}
+                    />
                     {m.caption && <figcaption style={S.caption}>{m.caption}</figcaption>}
                   </figure>
                 );
@@ -295,8 +292,6 @@ const S: Record<string, CSSProperties> = {
   figure: { margin: "0 0 20px" },
   media: { width: "100%", height: "auto", borderRadius: 14, display: "block", marginBottom: 20 },
   caption: { fontSize: 12.5, color: C.mut, marginTop: -12, marginBottom: 20, lineHeight: 1.5 },
-  videoFrame: { position: "relative", width: "100%", aspectRatio: "16 / 9", borderRadius: 14, overflow: "hidden", background: "#000" },
-  iframe: { position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 },
   about: { marginTop: 14 },
   aboutHead: { fontSize: 12, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: ".6px", margin: "0 0 10px" },
   description: { fontSize: 15, lineHeight: 1.8, color: C.slate, whiteSpace: "pre-wrap", margin: 0, maxWidth: 680 },
