@@ -40,7 +40,18 @@ export default function ProfileView() {
   const [p, setP] = useState<Profile | null>(null);
   const [ins, setIns] = useState<Insights | null>(null);
   const [tab, setTab] = useState<Tab>("Overview");
+  // Own work, drafts included. Deliberately NOT folded into /api/profile:
+  // that endpoint is on the dashboard's hot path and this is only needed on
+  // one tab of one page.
+  const [work, setWork] = useState<{ id: string; slug: string; title: string; status: string; coverUrl: string | null }[] | null>(null);
   const [shared, setShared] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/portfolio")
+      .then((r) => (r.ok ? r.json() : { portfolios: [] }))
+      .then((d) => setWork(d.portfolios ?? []))
+      .catch(() => setWork([]));
+  }, []);
 
   async function shareProfile() {
     if (!p?.publicSlug) return;
@@ -217,8 +228,35 @@ export default function ProfileView() {
 
           {showProjects && (
             <Card>
-              <SectionHead icon="zap" title="Featured projects" tag={<SoonTag label="Coming soon" />} />
-              <p style={{ ...S.about, color: C.mut, margin: 0 }}>Showcase standout work here — projects, links and highlights. Coming soon.</p>
+              <SectionHead
+                icon="image"
+                title="My work"
+                tag={<a href="/portfolio/mine" style={{ fontSize: 12.5, fontWeight: 600, color: C.c1, textDecoration: "none" }}>Manage</a>}
+              />
+              {work === null && <p style={{ ...S.about, color: C.mut, margin: 0 }}>Loading…</p>}
+              {work !== null && work.length === 0 && (
+                <p style={{ ...S.about, color: C.mut, margin: 0 }}>
+                  Nothing published yet. <a href="/portfolio/new" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>Add a piece of work</a> — it gets its own public page you can share with anyone.
+                </p>
+              )}
+              {work !== null && work.length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(150px,100%),1fr))", gap: 12 }}>
+                  {work.map((w) => (
+                    <a key={w.id} href={`/portfolio/${w.slug}`} style={{ textDecoration: "none", color: "inherit" }}>
+                      <div style={{ aspectRatio: "4 / 3", borderRadius: 10, overflow: "hidden", background: "#F1F5F9", display: "grid", placeItems: "center", color: C.mut }}>
+                        {w.coverUrl
+                          // eslint-disable-next-line @next/next/no-img-element
+                          ? <img src={w.coverUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                          : <Icon name="image" size={18} />}
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, marginTop: 7, lineHeight: 1.35 }}>{w.title}</div>
+                      {w.status !== "PUBLISHED" && (
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#9A3412", marginTop: 3 }}>Draft — only you can see it</div>
+                      )}
+                    </a>
+                  ))}
+                </div>
+              )}
             </Card>
           )}
 

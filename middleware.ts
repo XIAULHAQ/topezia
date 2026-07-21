@@ -62,7 +62,7 @@ export async function middleware(request: NextRequest) {
   // NOTE the specificity: "/portfolio/new" only, never "/portfolio". Portfolios
   // are public by product decision — browsing the grid and opening someone's
   // work needs no account, and both are indexed. Only authoring is gated.
-  const GATED = ["/feed", "/profile", "/settings", "/saved", "/coach", "/projects", "/portfolio/new"];
+  const GATED = ["/feed", "/profile", "/settings", "/saved", "/coach", "/projects", "/portfolio/new", "/portfolio/mine"];
   const { pathname } = request.nextUrl;
   // Editing someone's work is gated; viewing it is not. That can't be expressed
   // as a prefix — "/portfolio" would swallow the public pages — so it is matched

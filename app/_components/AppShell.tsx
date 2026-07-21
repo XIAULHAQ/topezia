@@ -53,6 +53,7 @@ const NAV: NavItem[] = [
   { icon: "user", label: "My Profile", href: "/profile" },
   { icon: "bookmark", label: "Saved Jobs", href: "/saved" },
   { icon: "zap", label: "Saved Projects", href: "/saved/projects" },
+  { icon: "image", label: "My Work", href: "/portfolio/mine" },
   { icon: "briefcase", label: "Applications", soon: true },
   { icon: "doc", label: "Resume Builder", soon: true },
   { icon: "gauge", label: "Skill Assessment", soon: true },

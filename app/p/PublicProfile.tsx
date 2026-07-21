@@ -10,6 +10,7 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
+import { portfolioImageUrl } from "@/lib/portfolio/storage";
 import ShareButton from "./ShareButton";
 import { SiteFooter } from "@/app/_components/SiteChrome";
 
@@ -74,6 +75,8 @@ export interface PubProfile {
   employmentTypes: string[];
   remoteTypes: string[];
   locations: string[];
+  /** Published work only — drafts never appear on a public profile. */
+  portfolios: { slug: string; title: string; coverUrl: string | null }[];
 }
 
 /** Fetch a public profile by slug (cached so page + generateMetadata share one query). */
@@ -85,6 +88,14 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
       currentLocation: true, industries: true, employmentTypes: true, remoteTypes: true, locations: true,
       workHistory: true, education: true, certifications: true,
       skills: { select: { proficiency: true, tier: true, skill: { select: { name: true } } } },
+      // PUBLISHED only. A draft is private to its author and must never leak
+      // onto their public page.
+      portfolios: {
+        where: { status: "PUBLISHED" },
+        orderBy: { publishedAt: "desc" },
+        take: 12,
+        select: { slug: true, title: true, coverPath: true },
+      },
     },
   });
   if (!p || !p.publicSlug) return null;
@@ -106,6 +117,7 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     employmentTypes: p.employmentTypes,
     remoteTypes: p.remoteTypes,
     locations: p.locations,
+    portfolios: p.portfolios.map((w) => ({ slug: w.slug, title: w.title, coverUrl: portfolioImageUrl(w.coverPath) })),
   };
 });
 
@@ -255,9 +267,21 @@ export default function PublicProfile({ p, tab }: { p: PubProfile; tab: PublicTa
               </Card>
             )}
 
-            {show.projects && (
-              <Card><Head icon="zap" title="Featured projects" soon />
-                <p style={{ ...S.about, color: C.mut, margin: 0 }}>Project highlights will appear here. Coming soon.</p>
+            {show.projects && p.portfolios.length > 0 && (
+              <Card><Head icon="image" title="Work" />
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(170px,100%),1fr))", gap: 14 }}>
+                  {p.portfolios.map((w) => (
+                    <a key={w.slug} href={`/portfolio/${w.slug}`} style={{ textDecoration: "none", color: "inherit" }}>
+                      <div style={{ aspectRatio: "4 / 3", borderRadius: 10, overflow: "hidden", background: "#F1F5F9" }}>
+                        {w.coverUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={w.coverUrl} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        )}
+                      </div>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, marginTop: 8, lineHeight: 1.35 }}>{w.title}</div>
+                    </a>
+                  ))}
+                </div>
               </Card>
             )}
 
