@@ -76,9 +76,9 @@ const CSS = `
 const ROWS_STEP = 3;
 
 export default function JobsDirectory({
-  totalLive, countries, verticals, roles, popular, postedLast7d, medianAgeDays,
+  totalLive, countries, verticals, roles, skills, popular, postedLast7d, medianAgeDays,
 }: {
-  totalLive: number; countries: HubLink[]; verticals: HubLink[]; roles: HubLink[];
+  totalLive: number; countries: HubLink[]; verticals: HubLink[]; roles: HubLink[]; skills: HubLink[];
   popular: HubLink[]; postedLast7d: number; medianAgeDays: number | null;
 }) {
   const [rowsC, setRowsC] = useState(ROWS_STEP);
@@ -187,6 +187,25 @@ export default function JobsDirectory({
           </div>
         )}
       </section>
+
+      {/* ── Skill hubs ── */}
+      {skills.length > 0 && (
+        <section style={S.section}>
+          <h2 style={S.h2}>Jobs and freelance work by craft</h2>
+          <p style={S.sub}>
+            Emerging crafts where the work shows up as both salaried roles and freelance briefs. Each page carries both, because
+            for this kind of work one without the other is half the picture.
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {skills.map((h) => (
+              <Link key={h.href} href={h.href} className="tzj-card" style={{ ...S.card, padding: "14px 18px", flex: "0 1 auto" }}>
+                <span style={{ fontSize: 13.5, fontWeight: 700 }}>{h.label}</span>
+                <span style={{ fontSize: 11.5, color: MUT, marginLeft: 8 }}>{h.count} openings &amp; briefs</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ── Market snapshot ── */}
       <section style={{ maxWidth: 1080, margin: "0 auto", padding: "44px 24px" }}>

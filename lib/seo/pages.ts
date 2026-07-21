@@ -9,7 +9,8 @@
  * evaluated per request and reflected in the sitemap.
  */
 import { prisma } from "@/lib/prisma";
-import type { EmploymentType, RemoteType, SalaryPeriod } from "@prisma/client";
+import type { EmploymentType, JobKind, RemoteType, SalaryPeriod } from "@prisma/client";
+import { hubBySlug, hubMatchIds, HUBS, type SkillHub } from "./hubs";
 import { getCachedIntro } from "./intro";
 
 export const MIN_JOBS_FOR_PAGE = 5;
@@ -28,6 +29,10 @@ export interface SeoJob {
   salaryMin: number | null;
   salaryMax: number | null;
   salaryPeriod: SalaryPeriod | null;
+  // Projects post a budget in the client's OWN currency and are never
+  // FX-converted, so the symbol has to travel with the row.
+  salaryCurrency: string;
+  kind: JobKind;
   lastVerifiedAt: Date;
   postedAt: Date | null;
   source: string;
@@ -36,7 +41,7 @@ export interface SeoJob {
 }
 
 export interface SeoPage {
-  kind: "vertical" | "role" | "remote-role" | "role-state" | "role-country" | "place";
+  kind: "vertical" | "role" | "remote-role" | "role-state" | "role-country" | "place" | "hub";
   heading: string;
   intro: string;
   canonicalPath: string;
@@ -44,13 +49,19 @@ export interface SeoPage {
   state?: string; // lowercase state segment, for role-state pages
   country?: string; // ISO-2, for role-country pages
   jobs: SeoJob[];
+  /**
+   * Hub pages only: freelance briefs, listed separately from salaried jobs.
+   * They are a different transaction — you bid on someone else's site — so
+   * mixing them into one list would misrepresent both.
+   */
+  projects?: SeoJob[];
   total: number;
   siblings: { href: string; label: string }[];
 }
 
 const JOB_SELECT = {
   id: true, titleRaw: true, companyName: true, locationState: true, country: true, remoteScope: true, remoteType: true,
-  employmentType: true, salaryMin: true, salaryMax: true, salaryPeriod: true,
+  employmentType: true, salaryMin: true, salaryMax: true, salaryPeriod: true, salaryCurrency: true, kind: true,
   lastVerifiedAt: true, postedAt: true, source: true, sourceUrl: true, descriptionRaw: true,
 } as const;
 
@@ -116,11 +127,57 @@ export const countryName = (iso: string) => COUNTRY_NAMES[iso.toUpperCase()] ?? 
 export const countryHref = (roleSlug: string, iso: string) => `/jobs/${roleSlug}/${countrySlug(iso)}`;
 
 /**
+ * A hub page: salaried jobs and freelance briefs for one craft, side by side.
+ *
+ * The floor is applied to the COMBINED total on purpose. Video & Motion has 4
+ * live jobs — below MIN_JOBS_FOR_PAGE on its own — and 9 live projects. Judging
+ * the two halves separately would 404 a page that has 13 real listings on it.
+ */
+async function buildHubPage(hub: SkillHub): Promise<SeoPage | null> {
+  const { jobIds, projectIds } = await hubMatchIds(hub);
+  const total = jobIds.length + projectIds.length;
+  if (total < MIN_JOBS_FOR_PAGE) return null;
+
+  const [jobs, projects] = await Promise.all([
+    prisma.job.findMany({ where: { id: { in: jobIds } }, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
+    prisma.job.findMany({ where: { id: { in: projectIds } }, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
+  ]);
+
+  return {
+    kind: "hub",
+    heading: hub.heading,
+    intro: hub.blurb,
+    canonicalPath: `/jobs/${hub.slug}`,
+    slug: hub.slug,
+    jobs,
+    projects,
+    total,
+    siblings: await siblingsForHub(hub.slug),
+  };
+}
+
+/** Hubs link to each other and back to the directory — never to a dead page. */
+async function siblingsForHub(exceptSlug: string) {
+  const out = HUBS.filter((h) => h.slug !== exceptSlug).map((h) => ({ href: `/jobs/${h.slug}`, label: h.name }));
+  out.push({ href: "/projects", label: "All freelance projects" });
+  out.push({ href: "/jobs", label: "Browse all jobs" });
+  return out;
+}
+
+/**
  * Resolve a /jobs/* slug (plus optional state) into a publishable page, or null
  * if it doesn't exist / is too thin. Caller should 404 on null.
  */
 async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | null> {
   const clean = slug.toLowerCase();
+
+  // Skill hubs first: they own their slug outright, and a hub slug is chosen
+  // never to collide with a role or vertical. No {place} variants — a hub is
+  // already a narrow cut, and slicing it by state would guarantee thin pages.
+  if (!place) {
+    const hub = hubBySlug(clean);
+    if (hub) return buildHubPage(hub);
+  }
 
   // /jobs/{role-slug}/{place} — {place} is a US state code OR a country slug.
   // States are checked first so every existing US page resolves exactly as
@@ -308,18 +365,18 @@ async function siblingsForRole(roleId: string, roleSlug: string, excludeState?: 
   const out: { href: string; label: string }[] = [];
   const onPlacePage = Boolean(excludeState || excludeCountry);
 
-  const remote = await prisma.job.count({ where: { status: "LIVE", roleId, remoteType: { in: REMOTE_TYPES } } });
+  const remote = await prisma.job.count({ where: { status: "LIVE", kind: "JOB", roleId, remoteType: { in: REMOTE_TYPES } } });
   if (remote >= MIN_JOBS_FOR_PAGE && !onPlacePage) out.push({ href: `/jobs/remote-${roleSlug}`, label: `Remote (${remote})` });
 
   const [states, countries] = await Promise.all([
     prisma.job.groupBy({
       by: ["locationState"],
-      where: { status: "LIVE", roleId, locationState: { not: null } },
+      where: { status: "LIVE", kind: "JOB", roleId, locationState: { not: null } },
       _count: { id: true },
     }),
     prisma.job.groupBy({
       by: ["country"],
-      where: { status: "LIVE", roleId, country: { not: null } },
+      where: { status: "LIVE", kind: "JOB", roleId, country: { not: null } },
       _count: { id: true },
     }),
   ]);
@@ -349,7 +406,7 @@ async function siblingsForVertical(verticalId: string, _verticalSlug: string) {
   if (roles.length === 0) return [];
   const counts = await prisma.job.groupBy({
     by: ["roleId"],
-    where: { status: "LIVE", roleId: { in: roles.map((r) => r.id) } },
+    where: { status: "LIVE", kind: "JOB", roleId: { in: roles.map((r) => r.id) } },
     _count: { id: true },
   });
   const byRole = new Map(counts.map((c) => [c.roleId, c._count.id]));
@@ -373,34 +430,42 @@ export async function listPublishedPages(): Promise<string[]> {
   const [verticals, roles, vCounts, rCounts, rRemote, rStates, rCountries, vCountries] = await Promise.all([
     prisma.vertical.findMany({ select: { id: true, slug: true } }),
     prisma.role.findMany({ select: { id: true, slug: true } }),
-    prisma.job.groupBy({ by: ["verticalId"], where: { status: "LIVE" }, _count: { id: true } }),
-    prisma.job.groupBy({ by: ["roleId"], where: { status: "LIVE", roleId: { not: null } }, _count: { id: true } }),
+    prisma.job.groupBy({ by: ["verticalId"], where: { status: "LIVE", kind: "JOB" }, _count: { id: true } }),
+    prisma.job.groupBy({ by: ["roleId"], where: { status: "LIVE", kind: "JOB", roleId: { not: null } }, _count: { id: true } }),
     prisma.job.groupBy({
       by: ["roleId"],
-      where: { status: "LIVE", roleId: { not: null }, remoteType: { in: REMOTE_TYPES } },
+      where: { status: "LIVE", kind: "JOB", roleId: { not: null }, remoteType: { in: REMOTE_TYPES } },
       _count: { id: true },
     }),
     prisma.job.groupBy({
       by: ["roleId", "locationState"],
-      where: { status: "LIVE", roleId: { not: null }, locationState: { not: null } },
+      where: { status: "LIVE", kind: "JOB", roleId: { not: null }, locationState: { not: null } },
       _count: { id: true },
     }),
     // One more grouped aggregate, not a query per country — the sitemap already
     // timed out once from per-row counting.
     prisma.job.groupBy({
       by: ["roleId", "country"],
-      where: { status: "LIVE", roleId: { not: null }, country: { not: null } },
+      where: { status: "LIVE", kind: "JOB", roleId: { not: null }, country: { not: null } },
       _count: { id: true },
     }),
     prisma.job.groupBy({
       by: ["verticalId", "country"],
-      where: { status: "LIVE", country: { not: null } },
+      where: { status: "LIVE", kind: "JOB", country: { not: null } },
       _count: { id: true },
     }),
   ]);
 
   const vSlug = new Map(verticals.map((v) => [v.id, v.slug]));
   const rSlug = new Map(roles.map((r) => [r.id, r.slug]));
+
+  // Hubs publish on their COMBINED job+project count, so they can't be derived
+  // from the aggregates above — each one is matched by its own rules. There are
+  // only a handful, and the queries are indexed scans.
+  for (const hub of HUBS) {
+    const { jobIds, projectIds } = await hubMatchIds(hub);
+    if (jobIds.length + projectIds.length >= MIN_JOBS_FOR_PAGE) paths.push(`/jobs/${hub.slug}`);
+  }
 
   for (const c of vCounts) {
     const slug = vSlug.get(c.verticalId);
@@ -445,6 +510,12 @@ export interface BrowseHub {
   totalLive: number;
   verticals: HubLink[];
   roles: HubLink[];
+  /**
+   * Skill hubs. Counted across jobs AND freelance projects, unlike every other
+   * link here — that combined total is the whole point of a hub, so showing a
+   * jobs-only number would undercount the page it links to.
+   */
+  skills: HubLink[];
   states: HubLink[];
   countries: HubLink[];
   /** Directory-page headline numbers — all counted, none estimated. */
@@ -462,7 +533,7 @@ export interface BrowseHub {
  * handful of queries, never one-per-row. Anything below MIN_JOBS_FOR_PAGE is
  * omitted, so the hub only ever links to pages that actually resolve.
  */
-const EMPTY_HUB: BrowseHub = { totalLive: 0, verticals: [], roles: [], states: [], countries: [], postedLast7d: 0, medianAgeDays: null, popular: [] };
+const EMPTY_HUB: BrowseHub = { totalLive: 0, verticals: [], roles: [], skills: [], states: [], countries: [], postedLast7d: 0, medianAgeDays: null, popular: [] };
 
 export async function getBrowseHub(): Promise<BrowseHub> {
   let verticals, roles, totalLive, vCounts, rCounts, states, countries;
@@ -559,5 +630,20 @@ export async function getBrowseHub(): Promise<BrowseHub> {
       count: p.count,
     }));
 
-  return { totalLive, verticals: vLinks, roles: rLinks, states: sLinks, countries: cLinks, postedLast7d, medianAgeDays, popular };
+  // Hubs are matched by their own rules, so they can't come from the
+  // aggregates above. A hub below the floor is omitted rather than linked into
+  // a 404 — the same discipline as every other link on this page.
+  const skills: HubLink[] = [];
+  for (const hub of HUBS) {
+    try {
+      const { jobIds, projectIds } = await hubMatchIds(hub);
+      const count = jobIds.length + projectIds.length;
+      if (keep(count)) skills.push({ href: `/jobs/${hub.slug}`, label: hub.name, count });
+    } catch {
+      // One hub failing must not empty the whole directory.
+    }
+  }
+  skills.sort(desc);
+
+  return { totalLive, verticals: vLinks, roles: rLinks, skills, states: sLinks, countries: cLinks, postedLast7d, medianAgeDays, popular };
 }

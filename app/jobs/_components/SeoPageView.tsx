@@ -38,11 +38,24 @@ function placeLabel(j: SeoJob): string {
 const plainText = (html: string) =>
   decodeHtmlEntities(html).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
+const CUR_SYM: Record<string, string> = { USD: "$", EUR: "\u20ac", GBP: "\u00a3", INR: "\u20b9", PKR: "Rs", AUD: "A$", CAD: "C$", AED: "AED ", SAR: "SAR " };
+
+/**
+ * Pay, in the currency it was actually posted in.
+ *
+ * Projects carry a fixed budget for the whole engagement rather than a salary,
+ * and it is never FX-converted — showing a client's PKR budget as dollars
+ * would invent a number nobody agreed to.
+ */
 function salaryText(j: SeoJob): string | null {
   if (j.salaryMin == null || j.salaryMax == null) return null;
-  const unit = j.salaryPeriod === "HOUR" ? "/hr" : j.salaryPeriod === "YEAR" ? "/yr" : "";
-  const fmt = (n: number) => (n >= 1000 ? `$${Math.round(n / 1000)}k` : `$${n}`);
-  return `${fmt(j.salaryMin)}–${fmt(j.salaryMax)}${unit}`;
+  const sym = CUR_SYM[j.salaryCurrency] ?? `${j.salaryCurrency} `;
+  const unit =
+    j.salaryPeriod === "HOUR" ? "/hr"
+    : j.salaryPeriod === "PROJECT" ? " budget"
+    : j.salaryPeriod === "YEAR" ? "/yr" : "";
+  const fmt = (n: number) => (n >= 1000 ? `${sym}${Math.round(n / 1000)}k` : `${sym}${n}`);
+  return `${fmt(j.salaryMin)}\u2013${fmt(j.salaryMax)}${unit}`;
 }
 
 function freshness(d: Date): string {
@@ -88,7 +101,39 @@ function jsonLd(page: SeoPage) {
   };
 }
 
+function SectionHead({ title, sub }: { title: string; sub: string }) {
+  return (
+    <div style={S.sectionHead}>
+      <div style={S.sectionTitle}>{title}</div>
+      <div style={S.sectionSub}>{sub}</div>
+    </div>
+  );
+}
+
+/** One card shape for both kinds — the only difference is the verb. */
+function ListingCard({ j }: { j: SeoJob }) {
+  const pay = salaryText(j);
+  const isProject = j.kind === "PROJECT";
+  return (
+    <div style={S.card}>
+      <div style={S.cardTop}>
+        <div style={{ flex: 1 }}>
+          <div style={S.jobTitle}>{j.titleRaw}</div>
+          <div style={S.jobMeta}>
+            {j.companyName} · {placeLabel(j)} · {isProject ? "Freelance" : label(j.employmentType)}
+            {pay ? ` · ${pay}` : ""}
+          </div>
+        </div>
+        <a style={S.viewBtn} href={`/job/${j.id}`}>{isProject ? "View & bid" : "View job"}</a>
+      </div>
+      <div style={S.fresh}>● {freshness(j.lastVerifiedAt)} · via {label(j.source)}</div>
+    </div>
+  );
+}
+
 export default function SeoPageView({ page }: { page: SeoPage }) {
+  const isHub = page.kind === "hub";
+  const projects = page.projects ?? [];
   return (
     <main style={S.page}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd(page)) }} />
@@ -112,26 +157,33 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
           <Link href="/onboard" style={S.ctaBtn}>Show my matches →</Link>
         </div>
 
-        <div style={S.count}>{page.total} verified {page.total === 1 ? "job" : "jobs"}</div>
+        {isHub ? (
+          <>
+            {/* Two lists, not one. A salaried job and a freelance brief are
+                different transactions — you apply for one and bid on the
+                other — so merging them would misrepresent both. */}
+            <SectionHead
+              title={`${page.jobs.length} ${page.jobs.length === 1 ? "job" : "jobs"}`}
+              sub="Salaried roles, straight from company career pages."
+            />
+            {page.jobs.map((j) => <ListingCard key={j.id} j={j} />)}
+            {page.jobs.length === 0 && (
+              <p style={S.empty}>No salaried openings matching this right now — the freelance briefs below are where this work is being posted today.</p>
+            )}
 
-        {page.jobs.map((j) => {
-          const pay = salaryText(j);
-          return (
-            <div key={j.id} style={S.card}>
-              <div style={S.cardTop}>
-                <div style={{ flex: 1 }}>
-                  <div style={S.jobTitle}>{j.titleRaw}</div>
-                  <div style={S.jobMeta}>
-                    {j.companyName} · {placeLabel(j)} · {label(j.employmentType)}
-                    {pay ? ` · ${pay}` : ""}
-                  </div>
-                </div>
-                <a style={S.viewBtn} href={`/job/${j.id}`}>View job</a>
-              </div>
-              <div style={S.fresh}>● {freshness(j.lastVerifiedAt)} · via {label(j.source)}</div>
-            </div>
-          );
-        })}
+            <SectionHead
+              title={`${projects.length} freelance ${projects.length === 1 ? "project" : "projects"}`}
+              sub="Live client briefs. You bid on the client's own site — Topezia never sits in between."
+            />
+            {projects.map((j) => <ListingCard key={j.id} j={j} />)}
+            {projects.length === 0 && <p style={S.empty}>No open briefs right now. New ones land daily.</p>}
+          </>
+        ) : (
+          <>
+            <div style={S.count}>{page.total} verified {page.total === 1 ? "job" : "jobs"}</div>
+            {page.jobs.map((j) => <ListingCard key={j.id} j={j} />)}
+          </>
+        )}
 
         {page.siblings.length > 0 && (
           <nav style={S.siblings}>
@@ -168,6 +220,10 @@ const S: Record<string, CSSProperties> = {
   jobMeta: { color: MUTED, fontSize: 14, marginTop: 3 },
   viewBtn: { padding: "8px 16px", background: INDIGO, color: "#fff", borderRadius: 10, fontWeight: 700, textDecoration: "none", fontSize: 14, whiteSpace: "nowrap" },
   fresh: { color: "#059669", fontSize: 12, fontWeight: 600, marginTop: 10 },
+  sectionHead: { marginTop: 30, marginBottom: 12 },
+  sectionTitle: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 20 },
+  sectionSub: { color: MUTED, fontSize: 14, marginTop: 3, lineHeight: 1.5 },
+  empty: { color: MUTED, fontSize: 14, lineHeight: 1.6, background: "#fff", border: "1px dashed #dcdce6", borderRadius: 14, padding: 18, margin: 0 },
   siblings: { marginTop: 36, paddingTop: 24, borderTop: "1px solid #e6e6ef" },
   sibHead: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 700, fontSize: 15, marginBottom: 12 },
   sibList: { display: "flex", flexWrap: "wrap", gap: 8 },

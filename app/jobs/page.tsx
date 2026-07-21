@@ -34,6 +34,7 @@ export default async function JobsHubPage() {
         countries={hub.countries}
         verticals={hub.verticals}
         roles={hub.roles}
+        skills={hub.skills}
         popular={hub.popular}
         postedLast7d={hub.postedLast7d}
         medianAgeDays={hub.medianAgeDays}
