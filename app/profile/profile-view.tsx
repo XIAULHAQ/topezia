@@ -94,6 +94,17 @@ export default function ProfileView() {
   const showEdu = tab === "Overview" || tab === "Education";
   const showSkillsTab = tab === "Skills";
 
+  // Same contract as the public page: a tab with nothing behind it isn't
+  // offered. Overview keeps its add-prompts — this is the owner's dashboard —
+  // but a dedicated empty tab would just open an empty room.
+  const tabHas: Record<Tab, boolean> = {
+    Overview: true,
+    Experience: p.workHistory.length > 0,
+    Skills: p.skills.length > 0,
+    Projects: (work?.length ?? 0) > 0,
+    Education: p.education.length > 0 || p.certifications.length > 0,
+  };
+
   return (
     <div>
       <style>{"@media (max-width:820px){.pv-grid{grid-template-columns:1fr!important}.pv-2col{grid-template-columns:1fr!important}.pv-hero{padding:22px 20px!important}}"}</style>
@@ -169,9 +180,9 @@ export default function ProfileView() {
         </div>
       </section>
 
-      {/* ── Tabs ── */}
+      {/* ── Tabs — only the ones with something behind them ── */}
       <div style={{ display: "flex", gap: 8, margin: "20px 0", flexWrap: "wrap" }}>
-        {TABS.map((t) => (
+        {TABS.filter((t) => tabHas[t] || t === tab).map((t) => (
           <button key={t} onClick={() => setTab(t)} style={t === tab ? S.tabOn : S.tabOff}>{t}</button>
         ))}
       </div>

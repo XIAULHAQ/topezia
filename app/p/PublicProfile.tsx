@@ -1,16 +1,17 @@
+"use client";
+
 /**
  * Public, SEO-indexed profile (/p/{slug} + /p/{slug}/{tab}) — the shareable,
  * recruiter-facing view of a real profile, ported from the Topezia public
- * design. Server-rendered so the content is crawlable. Only what's backed by
+ * design. A client component, but still server-rendered on first load so the
+ * content is crawlable (data + metadata live in profile-data.ts); tab clicks
+ * switch instantly in the client and only rewrite the URL. Only what's backed by
  * real data is shown; unbuilt bits (projects, languages, messaging) are honest
  * "coming soon". No private data (salary) is exposed.
  */
-import { cache } from "react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import type { Metadata } from "next";
-import { prisma } from "@/lib/prisma";
-import { portfolioImageUrl } from "@/lib/portfolio/storage";
 import ShareButton from "./ShareButton";
 import { SiteFooter } from "@/app/_components/SiteChrome";
 
@@ -48,8 +49,8 @@ const initials = (name: string | null) => {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 };
 
-export type PublicTab = "overview" | "experience" | "skills" | "projects" | "education";
-export const TAB_SLUGS: Exclude<PublicTab, "overview">[] = ["experience", "skills", "projects", "education"];
+import type { PubProfile, PublicTab } from "./profile-data";
+
 const TAB_NAV: { key: PublicTab; label: string; href: (s: string) => string }[] = [
   { key: "overview", label: "Overview", href: (s) => `/p/${s}` },
   { key: "experience", label: "Experience", href: (s) => `/p/${s}/experience` },
@@ -58,86 +59,25 @@ const TAB_NAV: { key: PublicTab; label: string; href: (s: string) => string }[] 
   { key: "education", label: "Education", href: (s) => `/p/${s}/education` },
 ];
 
-export interface PubProfile {
-  slug: string;
-  fullName: string | null;
-  photoUrl: string | null;
-  headline: string | null;
-  field: string | null;
-  yearsExperience: number | null;
-  currentLocation: string | null;
-  isRemote: boolean;
-  industries: string[];
-  skills: { name: string; proficiency: string | null; tier: string }[];
-  workHistory: { title?: string; company?: string; years?: string }[];
-  education: { degree?: string; institution?: string; year?: string }[];
-  certifications: string[];
-  employmentTypes: string[];
-  remoteTypes: string[];
-  locations: string[];
-  /** Published work only — drafts never appear on a public profile. */
-  portfolios: { slug: string; title: string; coverUrl: string | null }[];
-}
-
-/** Fetch a public profile by slug (cached so page + generateMetadata share one query). */
-export const getPublicProfile = cache(async (slug: string): Promise<PubProfile | null> => {
-  const p = await prisma.profile.findUnique({
-    where: { publicSlug: slug },
-    select: {
-      publicSlug: true, fullName: true, photoUrl: true, headlineRoleId: true, yearsExperience: true,
-      currentLocation: true, industries: true, employmentTypes: true, remoteTypes: true, locations: true,
-      workHistory: true, education: true, certifications: true,
-      skills: { select: { proficiency: true, tier: true, skill: { select: { name: true } } } },
-      // PUBLISHED only. A draft is private to its author and must never leak
-      // onto their public page.
-      portfolios: {
-        where: { status: "PUBLISHED" },
-        orderBy: { publishedAt: "desc" },
-        take: 12,
-        select: { slug: true, title: true, coverPath: true },
-      },
-    },
-  });
-  if (!p || !p.publicSlug) return null;
-  const headline = p.headlineRoleId ? (await prisma.role.findUnique({ where: { id: p.headlineRoleId }, select: { name: true } }))?.name ?? null : null;
-  return {
-    slug: p.publicSlug,
-    fullName: p.fullName,
-    photoUrl: p.photoUrl,
-    headline,
-    field: p.industries[0] ? label(p.industries[0]) : null,
-    yearsExperience: p.yearsExperience,
-    currentLocation: p.currentLocation,
-    isRemote: p.remoteTypes.some((r) => r.startsWith("REMOTE")),
-    industries: p.industries,
-    skills: p.skills.map((s) => ({ name: s.skill.name, proficiency: s.proficiency, tier: s.tier })),
-    workHistory: (p.workHistory as PubProfile["workHistory"]) ?? [],
-    education: (p.education as PubProfile["education"]) ?? [],
-    certifications: p.certifications,
-    employmentTypes: p.employmentTypes,
-    remoteTypes: p.remoteTypes,
-    locations: p.locations,
-    portfolios: p.portfolios.map((w) => ({ slug: w.slug, title: w.title, coverUrl: portfolioImageUrl(w.coverPath) })),
+export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; tab: PublicTab }) {
+  // Tabs are SEO routes (/p/{slug}/skills …), but every tab renders subsets of
+  // the same payload — so a click switches instantly client-side and just
+  // rewrites the URL. Crawlers still see real hrefs; back/forward still works.
+  const [tab, setTab] = useState<PublicTab>(initialTab);
+  useEffect(() => {
+    const onPop = () => {
+      const seg = window.location.pathname.split("/").filter(Boolean)[2];
+      setTab(TAB_NAV.some((t) => t.key === seg) ? (seg as PublicTab) : "overview");
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  const openTab = (t: (typeof TAB_NAV)[number]) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    setTab(t.key);
+    window.history.pushState(null, "", t.href(p.slug));
   };
-});
 
-export function profileMetadata(p: PubProfile, tab: PublicTab): Metadata {
-  const name = p.fullName ?? "Topezia member";
-  const role = p.headline ?? p.field ?? "professional";
-  const tabName = tab === "overview" ? "" : ` · ${label(tab)}`;
-  const title = `${name} — ${role}${tabName} | Topezia`;
-  const desc = `${name} is ${p.headline ? `a ${p.headline}` : "a professional"}${p.yearsExperience ? ` with ${p.yearsExperience}+ years of experience` : ""}${p.industries.length ? ` in ${p.industries.map(label).join(", ")}` : ""}. See their skills, experience and background on Topezia.`;
-  const path = tab === "overview" ? `/p/${p.slug}` : `/p/${p.slug}/${tab}`;
-  return {
-    title,
-    description: desc,
-    alternates: { canonical: path },
-    openGraph: { title, description: desc, url: `${SITE}${path}`, type: "profile", images: p.photoUrl ? [p.photoUrl] : undefined },
-    robots: { index: true, follow: true },
-  };
-}
-
-export default function PublicProfile({ p, tab }: { p: PubProfile; tab: PublicTab }) {
   const name = p.fullName ?? "Topezia member";
   // Core first — "Top skills" is the person's identity, not their side tools.
   const topSkills = [...p.skills]
@@ -147,6 +87,24 @@ export default function PublicProfile({ p, tab }: { p: PubProfile; tab: PublicTa
     })
     .slice(0, 6);
   const show = { about: tab === "overview", exp: tab === "overview" || tab === "experience", skills: tab === "skills", projects: tab === "overview" || tab === "projects", edu: tab === "overview" || tab === "education" };
+  // A public profile shows what exists, never an empty shell: sections with
+  // nothing in them disappear from the overview, and so do their tabs. A
+  // dedicated tab reached by direct URL still renders its honest empty note.
+  const has = {
+    about: Boolean(p.headline || p.industries.length),
+    exp: p.workHistory.length > 0,
+    skills: p.skills.length > 0,
+    projects: p.portfolios.length > 0,
+    edu: p.education.length > 0,
+    certs: p.certifications.length > 0,
+  };
+  const tabHas: Record<string, boolean> = {
+    overview: true,
+    experience: has.exp,
+    skills: has.skills,
+    projects: has.projects,
+    education: has.edu || has.certs,
+  };
   const url = `${SITE}/p/${p.slug}`;
 
   return (
@@ -184,7 +142,8 @@ export default function PublicProfile({ p, tab }: { p: PubProfile; tab: PublicTa
               <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginTop: 13, color: "#94A3C0", fontSize: 12.5 }}>
                 {p.currentLocation && <span style={S.meta}><Ic n="pin" s={14} />{p.currentLocation}</span>}
                 {p.isRemote && <span style={S.meta}><Ic n="globe" s={14} />Open to remote</span>}
-                {p.yearsExperience != null && <span style={S.meta}><Ic n="briefcase" s={14} />{p.yearsExperience}+ years experience</span>}
+                {/* 0 years is real data but "0+ years experience" reads as a bug — only brag when there's something to brag about */}
+                {!!p.yearsExperience && <span style={S.meta}><Ic n="briefcase" s={14} />{p.yearsExperience}+ years experience</span>}
               </div>
               <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
                 {["linkedin", "github", "globe", "mail"].map((n) => <span key={n} style={S.social} title="Links — coming soon"><Ic n={n} s={16} /></span>)}
@@ -196,24 +155,24 @@ export default function PublicProfile({ p, tab }: { p: PubProfile; tab: PublicTa
           </div>
         </section>
 
-        {/* tab nav (SEO routes) */}
+        {/* tab nav (SEO routes) — a tab with nothing behind it isn't offered;
+            the current tab stays visible even when empty so a direct visit
+            doesn't lose its nav */}
         <nav style={{ display: "flex", gap: 8, margin: "20px 0", flexWrap: "wrap" }}>
-          {TAB_NAV.map((t) => (
-            <Link key={t.key} href={t.href(p.slug)} style={t.key === tab ? S.tabOn : S.tabOff}>{t.label}</Link>
+          {TAB_NAV.filter((t) => tabHas[t.key] || t.key === tab).map((t) => (
+            <a key={t.key} href={t.href(p.slug)} onClick={openTab(t)} style={t.key === tab ? S.tabOn : S.tabOff}>{t.label}</a>
           ))}
         </nav>
 
         <div className="pp-grid" style={S.grid}>
           <div style={{ display: "flex", flexDirection: "column", gap: 22, minWidth: 0 }}>
-            {show.about && (
+            {show.about && has.about && (
               <Card><Head icon="user" title="About" />
-                {p.headline || p.industries.length
-                  ? <p style={S.about}>{p.headline ?? "Professional"}{p.yearsExperience != null ? ` with ${p.yearsExperience}+ years of experience` : ""}{p.industries.length ? ` across ${p.industries.map(label).join(", ")}` : ""}.</p>
-                  : <p style={{ ...S.about, color: C.mut }}>This member hasn&apos;t added a summary yet.</p>}
+                <p style={S.about}>{p.headline ?? "Professional"}{p.yearsExperience ? ` with ${p.yearsExperience}+ years of experience` : ""}{p.industries.length ? ` across ${p.industries.map(label).join(", ")}` : ""}.</p>
               </Card>
             )}
 
-            {show.exp && (
+            {show.exp && (has.exp || tab === "experience") && (
               <Card><Head icon="briefcase" title="Experience" />
                 {p.workHistory.length ? (
                   <div style={{ display: "flex", flexDirection: "column" }}>
@@ -285,24 +244,28 @@ export default function PublicProfile({ p, tab }: { p: PubProfile; tab: PublicTa
               </Card>
             )}
 
-            {show.edu && (
-              <div className="pp-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
-                <Card><Head icon="grad" title="Education" />
-                  {p.education.length ? p.education.map((e, i) => (
-                    <div key={i} style={{ marginBottom: i < p.education.length - 1 ? 12 : 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 700 }}>{e.degree ?? "Degree"}</div>
-                      {e.institution && <div style={{ fontSize: 12.5, color: C.c1, fontWeight: 600, marginTop: 3 }}>{e.institution}</div>}
-                      {e.year && <div style={{ fontSize: 11.5, color: C.mut, marginTop: 3 }}>{e.year}</div>}
-                    </div>
-                  )) : <Empty text="No education listed." />}
-                </Card>
-                <Card><Head icon="award" title="Certifications" />
-                  {p.certifications.length ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                      {p.certifications.map((c) => <div key={c} style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: GRAD, flex: "none" }} /><div style={{ fontSize: 12.5, fontWeight: 600 }}>{c}</div></div>)}
-                    </div>
-                  ) : <Empty text="No certifications listed." />}
-                </Card>
+            {show.edu && (has.edu || has.certs || tab === "education") && (
+              <div className="pp-2col" style={{ display: "grid", gridTemplateColumns: (has.edu || tab === "education") && (has.certs || tab === "education") ? "1fr 1fr" : "1fr", gap: 22 }}>
+                {(has.edu || tab === "education") && (
+                  <Card><Head icon="grad" title="Education" />
+                    {p.education.length ? p.education.map((e, i) => (
+                      <div key={i} style={{ marginBottom: i < p.education.length - 1 ? 12 : 0 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 700 }}>{e.degree ?? "Degree"}</div>
+                        {e.institution && <div style={{ fontSize: 12.5, color: C.c1, fontWeight: 600, marginTop: 3 }}>{e.institution}</div>}
+                        {e.year && <div style={{ fontSize: 11.5, color: C.mut, marginTop: 3 }}>{e.year}</div>}
+                      </div>
+                    )) : <Empty text="No education listed." />}
+                  </Card>
+                )}
+                {(has.certs || tab === "education") && (
+                  <Card><Head icon="award" title="Certifications" />
+                    {p.certifications.length ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                        {p.certifications.map((c) => <div key={c} style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: GRAD, flex: "none" }} /><div style={{ fontSize: 12.5, fontWeight: 600 }}>{c}</div></div>)}
+                      </div>
+                    ) : <Empty text="No certifications listed." />}
+                  </Card>
+                )}
               </div>
             )}
           </div>
@@ -330,11 +293,6 @@ export default function PublicProfile({ p, tab }: { p: PubProfile; tab: PublicTa
                 <Row k="Remote" v={p.isRemote ? "Open to remote" : (p.remoteTypes.length ? p.remoteTypes.map(label).join(", ") : "Flexible")} />
                 <Row k="Locations" v={p.locations.length ? p.locations.join(" · ") : (p.currentLocation ?? "Flexible")} />
               </div>
-            </Card>
-
-            <Card style={{ padding: "22px 24px" }}>
-              <div style={{ display: "flex", alignItems: "baseline" }}><h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, flex: 1 }}>Languages</h2><SoonPill /></div>
-              <p style={{ fontSize: 12.5, color: C.mut, margin: "10px 0 0", lineHeight: 1.5 }}>Languages will show here soon.</p>
             </Card>
           </div>
         </div>

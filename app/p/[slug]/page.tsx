@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import PublicProfile, { getPublicProfile, profileMetadata } from "../PublicProfile";
+import PublicProfile from "../PublicProfile";
+import { getPublicProfile, profileMetadata } from "../profile-data";
 
 export const revalidate = 300; // public + cacheable; refreshes every 5 min
 
