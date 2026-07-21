@@ -11,6 +11,7 @@
  */
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { C, GRAD, Icon, Card, SoonTag, initials } from "@/app/_components/ui";
+import ShareMenu from "@/app/_components/ShareMenu";
 
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
 
@@ -44,7 +45,11 @@ export default function ProfileView() {
   // that endpoint is on the dashboard's hot path and this is only needed on
   // one tab of one page.
   const [work, setWork] = useState<{ id: string; slug: string; title: string; status: string; coverUrl: string | null }[] | null>(null);
-  const [shared, setShared] = useState(false);
+  // window doesn't exist during SSR, so the absolute URL is filled in after
+  // mount rather than branching on it during render.
+  const [origin, setOrigin] = useState("");
+
+  useEffect(() => { setOrigin(window.location.origin); }, []);
 
   useEffect(() => {
     fetch("/api/portfolio")
@@ -52,15 +57,6 @@ export default function ProfileView() {
       .then((d) => setWork(d.portfolios ?? []))
       .catch(() => setWork([]));
   }, []);
-
-  async function shareProfile() {
-    if (!p?.publicSlug) return;
-    const url = `${window.location.origin}/p/${p.publicSlug}`;
-    try {
-      if (typeof navigator !== "undefined" && navigator.share) { await navigator.share({ title: "My Topezia profile", url }); return; }
-    } catch { /* share sheet dismissed — fall through to copy */ }
-    try { await navigator.clipboard.writeText(url); setShared(true); setTimeout(() => setShared(false), 2000); } catch { /* clipboard blocked */ }
-  }
 
   useEffect(() => {
     fetch("/api/profile").then((r) => (r.ok ? r.json() : null)).then((d) => d && setP(d.profile)).catch(() => {});
@@ -152,7 +148,12 @@ export default function ProfileView() {
             <div style={{ display: "flex", gap: 9 }}>
               <a href="/profile/edit" style={S.editBtn}><Icon name="edit" size={15} />Edit profile</a>
               {p.publicSlug && (
-                <button onClick={shareProfile} title="Share your public profile" style={{ ...S.shareBtn, cursor: "pointer", fontFamily: "inherit" }}><Icon name="share" size={15} />{shared ? "Link copied!" : "Share"}</button>
+                <ShareMenu
+                  url={p.publicSlug ? `${origin}/p/${p.publicSlug}` : ""}
+                  title="My Topezia profile"
+                  tone="dark"
+                  buttonStyle={{ ...S.shareBtn, cursor: "pointer", fontFamily: "inherit" }}
+                ><Icon name="share" size={15} />Share</ShareMenu>
               )}
             </div>
           </div>

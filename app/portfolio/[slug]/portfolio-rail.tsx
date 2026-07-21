@@ -11,6 +11,7 @@
 import { useState } from "react";
 import type { CSSProperties } from "react";
 import { C, Icon } from "@/app/_components/ui";
+import ShareMenu from "@/app/_components/ShareMenu";
 
 export default function PortfolioRail({
   portfolioId,
@@ -27,7 +28,6 @@ export default function PortfolioRail({
 }) {
   const [saved, setSaved] = useState(initialSaved);
   const [busy, setBusy] = useState(false);
-  const [shared, setShared] = useState<"idle" | "copied" | "failed">("idle");
 
   async function toggleSave() {
     if (!canSave) { window.location.href = `/login?next=${encodeURIComponent(new URL(shareUrl).pathname)}`; return; }
@@ -44,36 +44,22 @@ export default function PortfolioRail({
     }
   }
 
-  async function share() {
-    // Native sheet where there is one (mobile), clipboard everywhere else.
-    if (navigator.share) {
-      try { await navigator.share({ title, url: shareUrl }); return; } catch { /* dismissed — fall through */ }
-    }
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setShared("copied");
-    } catch {
-      setShared("failed");
-    }
-    setTimeout(() => setShared("idle"), 2200);
-  }
-
   return (
     <div style={S.rail}>
       <button type="button" onClick={toggleSave} disabled={busy} style={saved ? S.btnOn : S.btn} aria-pressed={saved}>
         <Icon name="bookmark" size={16} />
         {saved ? "Saved" : "Save"}
       </button>
-      <button type="button" onClick={share} style={S.btn}>
+      <ShareMenu url={shareUrl} title={title} buttonStyle={S.btn} wrapperStyle={{ display: "block", width: "100%" }}>
         <Icon name="share" size={16} />
-        {shared === "copied" ? "Link copied" : shared === "failed" ? "Copy failed" : "Share"}
-      </button>
+        Share
+      </ShareMenu>
     </div>
   );
 }
 
 const S: Record<string, CSSProperties> = {
-  rail: { display: "flex", flexDirection: "column", gap: 10, position: "sticky", top: 90 },
+  rail: { display: "flex", flexDirection: "column", gap: 10, position: "sticky", top: 90, alignItems: "stretch" },
   btn: {
     display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
     border: `1px solid ${C.line}`, background: "#fff", color: C.slate,
