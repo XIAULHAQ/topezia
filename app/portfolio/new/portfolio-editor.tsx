@@ -8,19 +8,26 @@
  * how far along it is, and one failure would lose the lot. Each image is its own
  * request with its own state, so a failure is per-tile and retryable.
  *
- * Videos are YouTube links for now. Only the extracted id is sent; see
- * lib/portfolio/video.ts for why a pasted URL never reaches an iframe.
+ * Videos are YouTube or Vimeo links. Only a provider + extracted id is stored;
+ * see lib/portfolio/video.ts for why a pasted URL never reaches an iframe.
  */
 import { useState, useRef, type CSSProperties, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { C, GRAD, FONT, Icon } from "@/app/_components/ui";
 import { PORTFOLIO_CATEGORIES, CATEGORY_GROUPS } from "@/lib/portfolio/categories";
 import { LIMITS } from "@/lib/portfolio/save";
+import { parseVideo, videoWatchUrl, type VideoProvider } from "@/lib/portfolio/video";
+
+/** Names the host on the staged tile, so a mis-paste is visible before saving. */
+function providerLabel(url?: string): string {
+  const p: VideoProvider | undefined = url ? parseVideo(url)?.provider : undefined;
+  return p === "VIMEO" ? "Vimeo" : p === "YOUTUBE" ? "YouTube" : "Video";
+}
 
 type Tile = {
   key: string;
   kind: "IMAGE" | "VIDEO";
-  /** Storage path (image) or YouTube id (video), once it exists server-side. */
+  /** Storage path (image) or a video URL. */
   path?: string;
   /** Local object URL while uploading, so the tile shows something immediately. */
   preview?: string;
@@ -41,7 +48,11 @@ export type ExistingPortfolio = {
   coverHeight: number | null;
   skills: string[];
   technologies: string[];
-  media: { kind: string; path: string; videoId: string | null; width: number | null; height: number | null }[];
+  media: {
+    kind: string; path: string;
+    videoId: string | null; videoProvider: VideoProvider | null; videoHash: string | null;
+    width: number | null; height: number | null;
+  }[];
 };
 
 const newKey = () => Math.random().toString(36).slice(2);
@@ -62,7 +73,14 @@ export default function PortfolioEditor({ existing }: { existing?: ExistingPortf
     (existing?.media ?? []).map((m) => ({
       key: newKey(),
       kind: m.kind === "VIDEO" ? "VIDEO" : "IMAGE",
-      path: m.kind === "VIDEO" ? m.videoId ?? m.path : m.path,
+      // Videos round-trip as a canonical watch URL, not a bare id: with two
+      // providers an id alone is ambiguous, and the server only accepts URLs.
+      path:
+        m.kind === "VIDEO"
+          ? (m.videoId && m.videoProvider
+              ? videoWatchUrl({ provider: m.videoProvider, id: m.videoId, hash: m.videoHash }) ?? m.path
+              : m.path)
+          : m.path,
       width: m.width,
       height: m.height,
       state: "ready" as const,
@@ -127,8 +145,13 @@ export default function PortfolioEditor({ existing }: { existing?: ExistingPortf
     const raw = videoInput.trim();
     if (!raw) return;
     if (tiles.length >= LIMITS.media) { setError(`A portfolio can hold ${LIMITS.media} items.`); return; }
-    // The server is the authority on what counts as a valid link; this just
-    // stages it. An unrecognised URL comes back as a validation error on save.
+    // The server re-validates and remains the authority. Checking here too just
+    // means a typo is caught at paste time rather than after filling the form.
+    if (!parseVideo(raw)) {
+      setError("That doesn't look like a YouTube or Vimeo link.");
+      return;
+    }
+    setError(null);
     setTiles((t) => [...t, { key: newKey(), kind: "VIDEO", path: raw, state: "ready" }]);
     setVideoInput("");
   }
@@ -229,13 +252,13 @@ export default function PortfolioEditor({ existing }: { existing?: ExistingPortf
 
       {/* ── Gallery ── */}
       <label style={S.label}>Gallery</label>
-      <div style={S.hint}>Images upload straight away. Videos are YouTube links for now.</div>
+      <div style={S.hint}>Images upload straight away. Videos are YouTube or Vimeo links.</div>
 
       <div style={S.tileGrid}>
         {tiles.map((t, i) => (
           <div key={t.key} style={S.tile}>
             {t.kind === "VIDEO" ? (
-              <div style={S.videoTile}><Icon name="play" size={18} /><span style={S.tiny}>YouTube</span></div>
+              <div style={S.videoTile}><Icon name="play" size={18} /><span style={S.tiny}>{providerLabel(t.path)}</span></div>
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={t.preview ?? publicUrl(t.path)} alt="" style={S.tileImg} />
@@ -256,7 +279,7 @@ export default function PortfolioEditor({ existing }: { existing?: ExistingPortf
       <input ref={galleryInput} type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif" onChange={onPickGallery} style={{ display: "none" }} />
 
       <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-        <input style={{ ...S.input, flex: "1 1 260px", marginTop: 0 }} value={videoInput} onChange={(e) => setVideoInput(e.target.value)} placeholder="Paste a YouTube link" disabled={busy}
+        <input style={{ ...S.input, flex: "1 1 260px", marginTop: 0 }} value={videoInput} onChange={(e) => setVideoInput(e.target.value)} placeholder="Paste a YouTube or Vimeo link" disabled={busy}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addVideo(); } }} />
         <button type="button" onClick={addVideo} style={S.ghostBtn} disabled={busy}>Add video</button>
       </div>

@@ -23,7 +23,7 @@ import { currentIdentity } from "@/lib/identity";
 import { SiteHeader, SiteFooter } from "@/app/_components/SiteChrome";
 import { portfolioImageUrl } from "@/lib/portfolio/storage";
 import { categoryLabel, categorySlug } from "@/lib/portfolio/categories";
-import { youTubeEmbedUrl, portfolioVideoPosterUrl } from "@/lib/portfolio/video";
+import { videoEmbedUrl, videoPosterUrl } from "@/lib/portfolio/video";
 import PortfolioRail from "./portfolio-rail";
 import VideoEmbed from "./video-embed";
 
@@ -40,7 +40,7 @@ async function load(slug: string) {
       id: true, slug: true, title: true, description: true, category: true, status: true,
       coverPath: true, coverWidth: true, coverHeight: true,
       skills: true, technologies: true, publishedAt: true, profileId: true,
-      media: { orderBy: { position: "asc" }, select: { kind: true, path: true, videoId: true, width: true, height: true, caption: true } },
+      media: { orderBy: { position: "asc" }, select: { kind: true, path: true, videoId: true, videoProvider: true, videoHash: true, width: true, height: true, caption: true } },
       profile: { select: { fullName: true, photoUrl: true, publicSlug: true } },
       _count: { select: { saves: true } },
     },
@@ -181,15 +181,16 @@ export default async function PortfolioDetailPage({ params }: { params: { slug: 
 
             {p.media.map((m, i) => {
               if (m.kind === "VIDEO") {
-                if (!m.videoId) return null;
+                if (!m.videoId || !m.videoProvider) return null;
+                const ref = { provider: m.videoProvider, id: m.videoId, hash: m.videoHash };
                 // autoplay is safe here: the iframe is only mounted on click.
-                const embed = youTubeEmbedUrl(m.videoId, { autoplay: true });
+                const embed = videoEmbedUrl(ref, { autoplay: true });
                 if (!embed) return null;
                 return (
                   <figure key={i} style={S.figure}>
                     <VideoEmbed
                       embedUrl={embed}
-                      posterUrl={portfolioVideoPosterUrl(m.videoId)}
+                      posterUrl={videoPosterUrl(ref)}
                       title={m.caption ?? `${p.title} — video ${i + 1}`}
                     />
                     {m.caption && <figcaption style={S.caption}>{m.caption}</figcaption>}

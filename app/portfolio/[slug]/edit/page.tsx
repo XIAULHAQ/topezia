@@ -30,7 +30,7 @@ export default async function EditPortfolioPage({ params }: { params: { slug: st
     select: {
       id: true, title: true, description: true, category: true, status: true,
       coverPath: true, coverWidth: true, coverHeight: true, skills: true, technologies: true,
-      media: { orderBy: { position: "asc" }, select: { kind: true, path: true, videoId: true, width: true, height: true } },
+      media: { orderBy: { position: "asc" }, select: { kind: true, path: true, videoId: true, videoProvider: true, videoHash: true, width: true, height: true } },
     },
   });
   if (!p) notFound();

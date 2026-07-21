@@ -8,7 +8,7 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { parseCategory, type PortfolioCategoryValue } from "./categories";
-import { youTubeId } from "./video";
+import { parseVideo, type VideoProvider } from "./video";
 
 export const LIMITS = {
   title: 120,
@@ -22,7 +22,7 @@ export const LIMITS = {
 
 export type MediaInput = {
   kind: "IMAGE" | "VIDEO";
-  /** IMAGE: storage path from the upload route. VIDEO: a pasted YouTube URL. */
+  /** IMAGE: storage path from the upload route. VIDEO: a pasted YouTube or Vimeo URL. */
   path: string;
   width?: number | null;
   height?: number | null;
@@ -46,6 +46,8 @@ export type CleanMedia = {
   kind: "IMAGE" | "VIDEO";
   path: string;
   videoId: string | null;
+  videoProvider: VideoProvider | null;
+  videoHash: string | null;
   width: number | null;
   height: number | null;
   caption: string | null;
@@ -124,10 +126,14 @@ export function validate(input: PortfolioInput, profileId: string): ValidationRe
     const caption = typeof m.caption === "string" ? m.caption.trim().slice(0, LIMITS.caption) || null : null;
 
     if (m.kind === "VIDEO") {
-      const id = youTubeId(String(m.path ?? ""));
-      if (!id) return { ok: false, error: "One of the video links isn't a YouTube URL we recognise." };
-      // Store the id, never the pasted URL — see lib/portfolio/video.ts.
-      cleanMedia.push({ kind: "VIDEO", path: id, videoId: id, width: null, height: null, caption, position: i });
+      const ref = parseVideo(String(m.path ?? ""));
+      if (!ref) return { ok: false, error: "One of the video links isn't a YouTube or Vimeo URL we recognise." };
+      // Store provider + id, never the pasted URL — see lib/portfolio/video.ts.
+      cleanMedia.push({
+        kind: "VIDEO", path: ref.id, videoId: ref.id,
+        videoProvider: ref.provider, videoHash: ref.hash,
+        width: null, height: null, caption, position: i,
+      });
       continue;
     }
 
@@ -135,7 +141,7 @@ export function validate(input: PortfolioInput, profileId: string): ValidationRe
     if (!isOwnedPath(path, profileId)) {
       return { ok: false, error: "One of those images isn't one of your uploads." };
     }
-    cleanMedia.push({ kind: "IMAGE", path, videoId: null, width: dim(m.width), height: dim(m.height), caption, position: i });
+    cleanMedia.push({ kind: "IMAGE", path, videoId: null, videoProvider: null, videoHash: null, width: dim(m.width), height: dim(m.height), caption, position: i });
   }
 
   const publish = input.publish === true;

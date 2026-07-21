@@ -599,6 +599,13 @@ enum PortfolioMediaKind {
   VIDEO
 }
 
+/// Where an embedded video is hosted. Uploads to our own Vimeo account will
+/// reuse VIMEO — the id shape is the same, only who owns the account changes.
+enum VideoProvider {
+  YOUTUBE
+  VIMEO
+}
+
 model Portfolio {
   id          String            @id @default(uuid())
   profileId   String
@@ -646,12 +653,16 @@ model PortfolioMedia {
 
   kind        PortfolioMediaKind
 
-  // IMAGE: storage object path. VIDEO: the canonical watch URL.
+  // IMAGE: storage object path. VIDEO: the extracted id (same as videoId).
   // Never a user-supplied filename — see the upload route.
   path        String
-  // VIDEO only: the extracted id, so embeds are built by us rather than by
-  // interpolating a user-supplied URL into an iframe src.
+  // VIDEO only: provider + extracted id, so embeds are built by us rather than
+  // by interpolating a user-supplied URL into an iframe src.
   videoId     String?
+  videoProvider VideoProvider?
+  // VIDEO only: Vimeo's unlisted-video hash, which the embed needs to play.
+  // Always null for YouTube.
+  videoHash   String?
 
   width       Int?
   height      Int?
