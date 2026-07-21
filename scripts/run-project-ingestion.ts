@@ -24,17 +24,39 @@ import { prisma } from "@/lib/prisma";
 import { crawlFreelancerProjects, type CrawledProject } from "@/lib/ingestion/sources/freelancer";
 import { hashDescription } from "@/lib/ingestion/llm-extract";
 import { resolveRole, resolveSkills } from "@/lib/ingestion/resolve-taxonomy";
+import { classifyProjectVertical } from "@/lib/ingestion/project-classify";
 import { embedText, buildJobEmbeddingInput, writeJobEmbedding } from "@/lib/ingestion/embed";
 import { JobSource, JobStatus, JobKind, RemoteType, EmploymentType, SalaryPeriod, Seniority } from "@prisma/client";
 
-// Search query -> our vertical slug. The query IS the classification: a
-// project found by "logo design" is a design project. Queries are chosen for
-// verticals where freelance project work actually exists.
+/**
+ * Search queries, used for RECALL only.
+ *
+ * `vertical` here is a FALLBACK, not the answer. The old comment claimed "the
+ * query IS the classification"; measured against the live API that is false —
+ * "ai video editing" returns 46 projects of which ~5 are video work, and "logo
+ * design" shares 16% of its results with "python developer". Each project is
+ * now classified by its own skill labels, and this slug is only used when a
+ * project carries no label we recognise. See lib/ingestion/project-classify.ts.
+ *
+ * The video block is deliberately wide. Video and motion work is where demand
+ * for AI-assisted production is showing up first, and it arrives as freelance
+ * briefs long before it appears as salaried job titles — so recall matters more
+ * than tidiness here, and the skill gate absorbs the noise.
+ */
 const QUERIES: { query: string; vertical: string }[] = [
   { query: "logo design", vertical: "design-creative" },
   { query: "graphic designer", vertical: "design-creative" },
   { query: "ui ux design", vertical: "design-creative" },
+  // ── video & motion ──
   { query: "video editing", vertical: "design-creative" },
+  { query: "video production", vertical: "design-creative" },
+  { query: "motion graphics", vertical: "design-creative" },
+  { query: "animation", vertical: "design-creative" },
+  { query: "explainer video", vertical: "design-creative" },
+  { query: "ugc video", vertical: "design-creative" },
+  { query: "youtube video editing", vertical: "design-creative" },
+  { query: "ai video", vertical: "design-creative" },
+  // ── everything else ──
   { query: "website development", vertical: "tech-software" },
   { query: "mobile app development", vertical: "tech-software" },
   { query: "python developer", vertical: "tech-software" },
@@ -143,14 +165,23 @@ async function main() {
 
   let created = 0, refreshed = 0, alreadyCurrent = 0, failed = 0;
 
+  let reclassified = 0, fellBack = 0;
+
   for (const { query, vertical } of QUERIES) {
-    const verticalId = verticalBySlug.get(vertical);
-    if (!verticalId) { console.warn(`  ! unknown vertical slug ${vertical}, skipping "${query}"`); continue; }
+    if (!verticalBySlug.get(vertical)) { console.warn(`  ! unknown vertical slug ${vertical}, skipping "${query}"`); continue; }
     try {
       const projects = await crawlFreelancerProjects(query, limitPerQuery);
       console.log(`  "${query}": ${projects.length} active`);
       for (const p of projects) {
         try {
+          // The project's own skill labels decide the vertical; the query's
+          // slug is only a fallback. A loose search returns plenty of things
+          // it wasn't asked for — see project-classify.ts.
+          const c = classifyProjectVertical(p.skills, vertical);
+          if (c.basis === "query-fallback") fellBack++;
+          else if (c.vertical !== vertical) reclassified++;
+          const verticalId = verticalBySlug.get(c.vertical) ?? verticalBySlug.get(vertical)!;
+
           const r = await processProject(p, verticalId, skipEmbeddings);
           if (r === "created") created++;
           else if (r === "refreshed") refreshed++;
@@ -166,6 +197,10 @@ async function main() {
   }
 
   console.log(`\nDone. Created: ${created}, Refreshed: ${refreshed}, Already current: ${alreadyCurrent}, Failed: ${failed}`);
+  // Worth watching: a high fallback count means the skill map has gone stale
+  // against Freelancer's taxonomy, and classification is quietly degrading
+  // back to trusting the search query.
+  console.log(`Vertical from skill labels: ${reclassified} corrected the query's guess, ${fellBack} fell back to it.`);
   if (skipEmbeddings) console.log("Embeddings deferred — run: npx tsx scripts/backfill-embeddings.ts");
   await prisma.$disconnect();
 }
