@@ -153,7 +153,16 @@ export default async function Home() {
               */}
               <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=1100&h=900&fit=crop&q=75" alt="A professional at work" width={1100} height={900} decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             </div>
+            {/*
+              Labelled EXAMPLE for the same reason as the stat band below: these
+              cards assert things about the reader we cannot know — a score of
+              97, "Top 10% in your field", a "Senior Backend Engineer" match —
+              and a signed-out visitor has given us nothing. Showing invented
+              numbers as if they were someone's own results is the one thing the
+              whole product is positioned against.
+            */}
             <div style={S.floatCardL}>
+              <span style={S.floatTag}>Example</span>
               <div style={{ position: "relative", width: 46, height: 46, flex: "none" }}>
                 <svg width="46" height="46" viewBox="0 0 100 100"><defs><linearGradient id="hsc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={C.c1} /><stop offset="1" stopColor={C.c2} /></linearGradient></defs><circle cx="50" cy="50" r="41" stroke="#EEF2FF" strokeWidth="11" fill="none" /><circle cx="50" cy="50" r="41" stroke="url(#hsc)" strokeWidth="11" fill="none" strokeLinecap="round" strokeDasharray="257.6" strokeDashoffset="7.7" transform="rotate(-90 50 50)" /></svg>
                 <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontSize: 13, fontWeight: 800 }}>97</div>
@@ -161,6 +170,7 @@ export default async function Home() {
               <div><div style={{ fontSize: 12, fontWeight: 700 }}>AI Career Score</div><div style={{ fontSize: 11, color: C.mut, marginTop: 2 }}>Top 10% in your field</div></div>
             </div>
             <div style={S.floatCardR}>
+              <span style={S.floatTag}>Example</span>
               <span style={{ width: 32, height: 32, borderRadius: 9, background: "#ECFDF5", color: "#059669", display: "grid", placeItems: "center" }}><Ic n="check" s={16} /></span>
               <div><div style={{ fontSize: 12, fontWeight: 700 }}>98% match</div><div style={{ fontSize: 11, color: C.mut, marginTop: 2 }}>Senior Backend Engineer</div></div>
             </div>
@@ -402,6 +412,9 @@ const S: Record<string, CSSProperties> = {
   upload: { display: "flex", alignItems: "center", gap: 14, marginTop: 28, maxWidth: 520, border: "1px solid transparent", background: GRAD, borderRadius: 14, padding: "15px 18px", textDecoration: "none", boxShadow: "0 10px 26px rgba(99,102,241,.35)", transition: "box-shadow .2s, transform .1s, filter .2s" },
   floatCardL: { position: "absolute", left: -24, bottom: 34, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, padding: "13px 16px", boxShadow: "0 14px 34px rgba(15,23,42,.14)", display: "flex", alignItems: "center", gap: 12 },
   floatCardR: { position: "absolute", right: -14, top: 30, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 15px", boxShadow: "0 14px 34px rgba(15,23,42,.14)", display: "flex", alignItems: "center", gap: 10 },
+  // Sits on the card's top edge so it reads as a caption on the illustration
+  // rather than as part of the data it labels.
+  floatTag: { position: "absolute", top: -9, left: 14, fontSize: 9.5, fontWeight: 800, letterSpacing: ".7px", textTransform: "uppercase", color: C.mut, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 999, padding: "2px 8px" },
   trustInner: { maxWidth: 1180, margin: "0 auto", padding: "20px 24px", display: "flex", alignItems: "center", gap: 28, flexWrap: "wrap", justifyContent: "center" },
   h2: { margin: 0, fontSize: 31, fontWeight: 800, letterSpacing: "-0.9px" },
   featureCard: { border: `1px solid ${C.line}`, borderRadius: 18, padding: "28px 26px", transition: "border-color .2s, box-shadow .2s" },

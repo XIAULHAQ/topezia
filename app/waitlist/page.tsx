@@ -8,6 +8,7 @@
  */
 import { useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
+import { SiteHeader, SiteFooter } from "@/app/_components/SiteChrome";
 
 const BRAND = {
   gradientFrom: "#6366F1",
@@ -82,7 +83,9 @@ export default function WaitlistPage() {
 
   if (state.status === "success") {
     return (
-      <main style={styles.page}>
+      <>
+        <SiteHeader />
+        <main style={styles.page}>
         <div style={{ ...styles.card, textAlign: "center", maxWidth: 480 }}>
           <p style={styles.eyebrow}>
             {state.isFoundingMember ? "You're in" : "Request received"}
@@ -99,11 +102,15 @@ export default function WaitlistPage() {
           </p>
         </div>
       </main>
+        <SiteFooter />
+      </>
     );
   }
 
   return (
-    <main style={styles.page}>
+    <>
+      <SiteHeader />
+      <main style={styles.page}>
       <div style={{ maxWidth: 560, width: "100%" }}>
         <p style={styles.eyebrow}>Now accepting the first 100 founding employers</p>
         <h1 style={styles.h1}>
@@ -208,7 +215,9 @@ export default function WaitlistPage() {
           </p>
         </form>
       </div>
-    </main>
+      </main>
+      <SiteFooter />
+    </>
   );
 }
 
@@ -237,7 +246,7 @@ const styles: Record<string, CSSProperties> = {
     background: BRAND.bg,
     display: "flex",
     justifyContent: "center",
-    padding: "64px 20px",
+    padding: "48px 20px 72px",
     fontFamily: "var(--font-jakarta), system-ui, sans-serif",
     color: BRAND.ink,
   },
