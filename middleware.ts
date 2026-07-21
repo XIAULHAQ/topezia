@@ -112,5 +112,9 @@ export const config = {
    * first. Verifying the JWT locally (getClaims) is the safe version, because
    * it removes the network round-trip WITHOUT removing the refresh path.
    */
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|go/).*)"],
+  // zz404 is temporarily excluded to test, on real infrastructure, whether this
+  // middleware's own NextResponse.next() (status 200) is what overrides a page's
+  // notFound() 404. The dev server returns 200 for notFound() regardless, so
+  // this cannot be answered locally.
+  matcher: ["/((?!zz404|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|go/).*)"],
 };
