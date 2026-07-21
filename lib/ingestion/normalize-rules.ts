@@ -255,8 +255,42 @@ export function extractLocationState(locationRaw: string | null): string | null 
     if (metro) return metro;
   }
 
+  // "City ST" with NO comma — several Greenhouse boards emit this ("Hanover MD",
+  // "Walnut CA"), and it produced a null state for every one of them, which
+  // silently kept those jobs out of the /jobs/{role}/{state} lattice.
+  //
+  // This runs BEFORE the free-text scan on purpose: "Kansas City MO" must
+  // resolve by its trailing code, because scanning for state NAMES finds
+  // "kansas" first and files a Missouri job under Kansas.
+  const trailing = trailingStateAbbr(cleaned);
+  if (trailing) return trailing;
+
   // Free-text fallback: a state name anywhere in the string ("utah united states").
   return scanWholeString(cleaned, STATE_NAME_TO_ABBR) ?? scanWholeString(cleaned, US_METRO_TO_STATE);
+}
+
+/**
+ * A bare two-letter state code at the end of an un-punctuated location.
+ *
+ * Deliberately the last thing tried, because a trailing pair of capitals is
+ * genuinely ambiguous: DE, IN, CA, MD, PA and MO are all both US states and
+ * ISO country codes. "Munich DE" is Germany, not Delaware — and mislabelling
+ * it would also make extractCountry return US, so one bad guess corrupts both
+ * fields. The city dictionary we already maintain is the guard: if the leading
+ * words name a known non-US city, this refuses to answer.
+ */
+function trailingStateAbbr(s: string): string | null {
+  const m = s.match(/^(.+?)\s+([A-Z]{2})$/);
+  if (!m) return null;
+
+  const [, head, abbr] = m;
+  if (!US_STATE_ABBR.includes(abbr)) return null;
+
+  // "Remote US", "Hybrid UK" — a qualifier plus a country, not a city.
+  const city = head.trim().toLowerCase();
+  if (CITY_TO_COUNTRY[city] && CITY_TO_COUNTRY[city] !== "US") return null;
+
+  return abbr;
 }
 
 /**
