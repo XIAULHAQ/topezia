@@ -12,6 +12,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { C, GRAD, Icon, Card, SoonTag, initials } from "@/app/_components/ui";
 import ShareMenu from "@/app/_components/ShareMenu";
+import EditInPlace, { EditPencil, type SectionKey, type ProfilePatch } from "./edit-in-place";
 
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
 
@@ -48,6 +49,10 @@ export default function ProfileView() {
   // window doesn't exist during SSR, so the absolute URL is filled in after
   // mount rather than branching on it during render.
   const [origin, setOrigin] = useState("");
+  // Edit-in-place: which section's modal is open, if any. The old flow sent
+  // every edit to /profile/edit; now each section edits where it is shown.
+  const [editing, setEditing] = useState<SectionKey | null>(null);
+  const [roleGroups, setRoleGroups] = useState<{ field: string; roles: string[] }[]>([]);
 
   useEffect(() => { setOrigin(window.location.origin); }, []);
 
@@ -59,9 +64,17 @@ export default function ProfileView() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/profile").then((r) => (r.ok ? r.json() : null)).then((d) => d && setP(d.profile)).catch(() => {});
+    fetch("/api/profile").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setP(d.profile); setRoleGroups(d.roleGroups ?? []); } }).catch(() => {});
     fetch("/api/profile/insights").then((r) => (r.ok ? r.json() : null)).then((d) => d && setIns(d.insights)).catch(() => {});
   }, []);
+
+  /** Merge a saved section back into the page, then re-pull insights — a new
+      role or skill set re-scopes the stats, and stale numbers next to fresh
+      facts would read as a bug. */
+  function applyPatch(patch: ProfilePatch) {
+    setP((cur) => (cur ? { ...cur, ...patch } as typeof cur : cur));
+    fetch("/api/profile/insights").then((r) => (r.ok ? r.json() : null)).then((d) => d && setIns(d.insights)).catch(() => {});
+  }
 
   if (!p) return <div style={{ color: C.mut, padding: "40px 0" }}>Loading your profile…</div>;
 
@@ -80,12 +93,12 @@ export default function ProfileView() {
   // Real, computed completion — counts what's actually filled in.
   const filled = [!!p.headline, p.skills.length > 0, !!p.currentLocation, p.workHistory.length > 0, p.education.length > 0, p.industries.length > 0];
   const completion = Math.round((filled.filter(Boolean).length / filled.length) * 100);
-  const checklist = [
-    { label: "Role & field", done: !!p.headline },
-    { label: "Skills", done: p.skills.length > 0 },
-    { label: "Location", done: !!p.currentLocation },
-    { label: "Experience", done: p.workHistory.length > 0 },
-    { label: "Education", done: p.education.length > 0 },
+  const checklist: { label: string; done: boolean; section: SectionKey }[] = [
+    { label: "Role & field", done: !!p.headline, section: "intro" },
+    { label: "Skills", done: p.skills.length > 0, section: "skills" },
+    { label: "Location", done: !!p.currentLocation, section: "intro" },
+    { label: "Experience", done: p.workHistory.length > 0, section: "experience" },
+    { label: "Education", done: p.education.length > 0, section: "education" },
   ];
 
   const showAbout = tab === "Overview";
@@ -156,8 +169,8 @@ export default function ProfileView() {
                 <div style={{ fontSize: 11.5, color: "#94A3C0", marginTop: 3, maxWidth: 160, lineHeight: 1.45 }}>A single score for your market strength — coming soon.</div>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 9 }}>
-              <a href="/profile/edit" style={S.editBtn}><Icon name="edit" size={15} />Edit profile</a>
+            <div style={{ display: "flex", gap: 9, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setEditing("intro")} style={{ ...S.editBtn, border: "none", fontFamily: "inherit" }}><Icon name="edit" size={15} />Edit profile</button>
               {p.publicSlug && (
                 <ShareMenu
                   url={p.publicSlug ? `${origin}/p/${p.publicSlug}` : ""}
@@ -166,6 +179,9 @@ export default function ProfileView() {
                   buttonStyle={{ ...S.shareBtn, cursor: "pointer", fontFamily: "inherit" }}
                 ><Icon name="share" size={15} />Share</ShareMenu>
               )}
+              {/* Resume replacement and job preferences re-parse or aren't
+                  shown on this page, so they keep the full-form editor. */}
+              <a href="/profile/edit" style={{ fontSize: 11.5, color: "#94A3C0", textDecoration: "none", alignSelf: "center", fontWeight: 600 }}>Resume &amp; preferences →</a>
             </div>
           </div>
         </div>
@@ -192,7 +208,7 @@ export default function ProfileView() {
         <div style={{ display: "flex", flexDirection: "column", gap: 22, minWidth: 0 }}>
           {showAbout && (
             <Card>
-              <SectionHead icon="user" title="About" />
+              <SectionHead icon="user" title="About" action={<EditPencil onClick={() => setEditing("intro")} label="Edit about" />} />
               {p.headline || p.industries.length ? (
                 <p style={S.about}>
                   {p.seniority && p.seniority !== "NOT_APPLICABLE" ? `${label(p.seniority)}-level ` : ""}{p.headline ?? "professional"}
@@ -200,7 +216,7 @@ export default function ProfileView() {
                   {p.industries.length ? ` across ${p.industries.map(label).join(", ")}` : ""}.
                 </p>
               ) : (
-                <p style={{ ...S.about, color: C.mut }}>Add your role and background from <a href="/profile/edit" style={S.inlineLink}>Edit profile</a>.</p>
+                <p style={{ ...S.about, color: C.mut }}>Add your role and background — <button type="button" onClick={() => setEditing("intro")} style={{ ...S.inlineLink, border: "none", background: "none", padding: 0, cursor: "pointer", fontSize: "inherit", fontFamily: "inherit" }}>edit your intro</button>.</p>
               )}
               {p.industries.length > 0 && (
                 <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
@@ -212,7 +228,7 @@ export default function ProfileView() {
 
           {showExp && (
             <Card>
-              <SectionHead icon="briefcase" title="Experience" action={<a href="/profile/edit" style={S.headAction}><Icon name="plus" size={14} />Add</a>} />
+              <SectionHead icon="briefcase" title="Experience" action={<EditPencil onClick={() => setEditing("experience")} label="Edit experience" />} />
               {p.workHistory.length > 0 ? (
                 <div style={{ display: "flex", flexDirection: "column" }}>
                   {p.workHistory.map((ex, i) => (
@@ -233,7 +249,7 @@ export default function ProfileView() {
                   ))}
                 </div>
               ) : (
-                <EmptyRow text={p.entryPath === "QUESTIONNAIRE" ? "You joined via the quick questionnaire — add work history any time." : "No experience on file yet."} />
+                <EmptyRow text={p.entryPath === "QUESTIONNAIRE" ? "You joined via the quick questionnaire — add work history any time." : "No experience on file yet."} onEdit={() => setEditing("experience")} />
               )}
             </Card>
           )}
@@ -275,17 +291,17 @@ export default function ProfileView() {
           {showEdu && (
             <div className="pv-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
               <Card>
-                <SectionHead icon="grad" title="Education" />
+                <SectionHead icon="grad" title="Education" action={<EditPencil onClick={() => setEditing("education")} label="Edit education" />} />
                 {p.education.length > 0 ? p.education.map((e, i) => (
                   <div key={i} style={{ marginBottom: i < p.education.length - 1 ? 12 : 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 700 }}>{e.degree ?? "Degree"}</div>
                     {e.institution && <div style={{ fontSize: 12.5, color: C.c1, fontWeight: 600, marginTop: 3 }}>{e.institution}</div>}
                     {e.year && <div style={{ fontSize: 11.5, color: C.mut, marginTop: 3 }}>{e.year}</div>}
                   </div>
-                )) : <EmptyRow text="No education added." />}
+                )) : <EmptyRow text="No education added." onEdit={() => setEditing("education")} />}
               </Card>
               <Card>
-                <SectionHead icon="award" title="Certifications" />
+                <SectionHead icon="award" title="Certifications" action={<EditPencil onClick={() => setEditing("certs")} label="Edit certifications" />} />
                 {p.certifications.length > 0 ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                     {p.certifications.map((c) => (
@@ -295,14 +311,14 @@ export default function ProfileView() {
                       </div>
                     ))}
                   </div>
-                ) : <EmptyRow text="No certifications added." />}
+                ) : <EmptyRow text="No certifications added." onEdit={() => setEditing("certs")} />}
               </Card>
             </div>
           )}
 
           {showSkillsTab && (
             <Card>
-              <SectionHead icon="gauge" title="Core skills" />
+              <SectionHead icon="gauge" title="Core skills" action={<EditPencil onClick={() => setEditing("skills")} label="Edit skills" />} />
               <div className="pv-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 28px" }}>
                 {p.skills.filter((s) => s.tier !== "SECONDARY").map((s) => (
                   <div key={s.name}>
@@ -349,7 +365,7 @@ export default function ProfileView() {
                     ? <span style={{ width: 18, height: 18, borderRadius: "50%", background: GRAD, color: "#fff", display: "grid", placeItems: "center", flex: "none" }}><Icon name="check" size={11} /></span>
                     : <span style={{ width: 18, height: 18, borderRadius: "50%", border: "1.5px dashed #94A3B8", flex: "none" }} />}
                   <span style={{ flex: 1 }}>{ck.label}</span>
-                  {!ck.done && <a href="/profile/edit" style={{ fontSize: 11, color: C.c1, fontWeight: 600, textDecoration: "none" }}>Add</a>}
+                  {!ck.done && <button type="button" onClick={() => setEditing(ck.section)} style={{ fontSize: 11, color: C.c1, fontWeight: 600, border: "none", background: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>Add</button>}
                 </div>
               ))}
             </div>
@@ -357,7 +373,7 @@ export default function ProfileView() {
 
           {topSkills.length > 0 && (
             <Card>
-              <div style={{ display: "flex", alignItems: "baseline", marginBottom: 16 }}><h2 style={S.railH}>Top skills</h2><a href="/profile/edit" style={S.railLink}>Edit</a></div>
+              <div style={{ display: "flex", alignItems: "baseline", marginBottom: 16 }}><h2 style={S.railH}>Top skills</h2><button type="button" onClick={() => setEditing("skills")} style={{ ...S.railLink, border: "none", background: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>Edit</button></div>
               <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
                 {topSkills.map((s) => (
                   <div key={s.name}>
@@ -378,7 +394,7 @@ export default function ProfileView() {
                   <div key={g.skill} style={{ display: "flex", alignItems: "center", gap: 12, border: `1px solid ${C.line}`, borderRadius: 12, padding: "11px 13px" }}>
                     <div style={{ width: 34, height: 34, borderRadius: 9, background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700, flex: "none" }}>{g.skill.slice(0, 2).toUpperCase()}</div>
                     <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 700 }}>{g.skill}</div><div style={{ fontSize: 11, color: "#059669", fontWeight: 600 }}>named in {g.pct}% of your field</div></div>
-                    <a href="/profile/edit" style={S.learnBtn}>Add</a>
+                    <button type="button" onClick={() => setEditing("skills")} style={{ ...S.learnBtn, background: "none", cursor: "pointer", fontFamily: "inherit" }}>Add</button>
                   </div>
                 ))}
               </div>
@@ -421,6 +437,16 @@ export default function ProfileView() {
           </Card>
         </div>
       </div>
+
+      {editing && (
+        <EditInPlace
+          section={editing}
+          profile={p}
+          roleGroups={roleGroups}
+          onClose={() => setEditing(null)}
+          onSaved={applyPatch}
+        />
+      )}
     </div>
   );
 }
@@ -438,8 +464,13 @@ function SectionHead({ icon, title, action, tag }: { icon: string; title: string
 function Bar({ pct }: { pct: number }) {
   return <div style={{ height: 6, background: "#EEF2FF", borderRadius: 999, overflow: "hidden" }}><div style={{ height: "100%", borderRadius: 999, background: `linear-gradient(90deg, ${C.c1}, ${C.c2})`, width: `${pct}%` }} /></div>;
 }
-function EmptyRow({ text }: { text: string }) {
-  return <div style={{ fontSize: 12.5, color: C.mut, background: "#F8FAFC", border: `1px dashed ${C.line}`, borderRadius: 10, padding: "14px 16px" }}>{text} <a href="/profile/edit" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>Edit profile →</a></div>;
+function EmptyRow({ text, onEdit }: { text: string; onEdit?: () => void }) {
+  return (
+    <div style={{ fontSize: 12.5, color: C.mut, background: "#F8FAFC", border: `1px dashed ${C.line}`, borderRadius: 10, padding: "14px 16px" }}>
+      {text}{" "}
+      {onEdit && <button type="button" onClick={onEdit} style={{ color: C.c1, fontWeight: 600, border: "none", background: "none", padding: 0, cursor: "pointer", fontSize: "inherit", fontFamily: "inherit" }}>Add it here →</button>}
+    </div>
+  );
 }
 
 const S: Record<string, CSSProperties> = {

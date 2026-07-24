@@ -1,8 +1,9 @@
 /**
- * /profile — the profile VIEW (redesigned). A read-only, LinkedIn-style
- * presentation of the real profile (experience, skills, education, insights)
- * with clearly-labelled "Sample"/"Coming soon" panels for parts we don't back
- * with data yet. "Edit profile" goes to /profile/edit.
+ * /profile — the profile VIEW. LinkedIn-style presentation of the real profile
+ * (experience, skills, education, insights) with clearly-labelled
+ * "Sample"/"Coming soon" panels for parts we don't back with data yet.
+ * Sections edit IN PLACE via per-section modals (see edit-in-place.tsx);
+ * /profile/edit remains only for resume replacement and job preferences.
  */
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
