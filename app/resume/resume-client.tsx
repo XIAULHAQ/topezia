@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { C, GRAD, Icon } from "@/app/_components/ui";
 import { LIMITS, type ResumeContent, type ResumeExperience } from "@/lib/resume/doc";
+import type { AssistStatus } from "@/lib/resume/assist-quota";
 
 type Busy = null | "save" | "summary" | `bullets-${number}`;
 
@@ -27,11 +28,12 @@ export default function ResumeClient() {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [quota, setQuota] = useState<AssistStatus | null>(null);
 
   useEffect(() => {
     fetch("/api/resume")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d) => { setDoc(d.content); if (d.saved) setSavedAt(d.updatedAt); })
+      .then((d) => { setDoc(d.content); if (d.saved) setSavedAt(d.updatedAt); if (d.assist) setQuota(d.assist); })
       .catch(() => setError("Couldn't load your resume."));
   }, []);
 
@@ -43,6 +45,7 @@ export default function ResumeClient() {
   if (error && !doc) return <p style={{ color: C.mut }}>{error}</p>;
   if (!doc) return <p style={{ color: C.mut }}>Loading your resume…</p>;
 
+  const aiBlocked = quota !== null && !quota.allowed;
   const upContact = (k: keyof ResumeContent["contact"], v: string) => up({ contact: { ...doc.contact, [k]: v } });
   const upExp = (i: number, patch: Partial<ResumeExperience>) =>
     up({ experience: doc.experience.map((e, j) => (j === i ? { ...e, ...patch } : e)) });
@@ -76,6 +79,7 @@ export default function ResumeClient() {
         body: JSON.stringify({ kind, roleIndex, content: doc }),
       });
       const d = await res.json().catch(() => ({}));
+      if (d.assist) setQuota(d.assist);
       if (!res.ok) throw new Error(d.error || "Couldn't draft that.");
       if (kind === "summary" && typeof d.summary === "string") up({ summary: d.summary });
       if (kind === "bullets" && Array.isArray(d.bullets)) {
@@ -113,6 +117,7 @@ export default function ResumeClient() {
           </button>
         </div>
       </div>
+      {quota && <QuotaLine q={quota} />}
       {error && <p style={{ color: "#DC2626", fontSize: 13, fontWeight: 600, margin: "0 0 14px" }}>{error}</p>}
       {!error && savedAt && !dirty && (
         <p style={{ ...S.subtle, margin: "0 0 14px" }}>Saved {new Date(savedAt).toLocaleString()}.</p>
@@ -136,7 +141,7 @@ export default function ResumeClient() {
           <section style={S.card}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
               <div style={{ ...S.cardLabel, marginBottom: 0, flex: 1 }}>Professional summary</div>
-              <button type="button" style={S.aiBtn} disabled={busy !== null} onClick={() => assist("summary")}>
+              <button type="button" style={aiBlocked ? S.aiBtnOff : S.aiBtn} disabled={busy !== null || aiBlocked} onClick={() => assist("summary")}>
                 <Icon name="spark" size={13} />{busy === "summary" ? "Drafting…" : doc.summary ? "Redraft with AI" : "Write with AI"}
               </button>
             </div>
@@ -175,7 +180,7 @@ export default function ResumeClient() {
                   {ex.bullets.length < LIMITS.bulletsPerRole && (
                     <button type="button" style={S.addBtn} onClick={() => upExp(i, { bullets: [...ex.bullets, ""] })}>+ Add bullet</button>
                   )}
-                  <button type="button" style={S.aiBtn} disabled={busy !== null} onClick={() => assist("bullets", i)}>
+                  <button type="button" style={aiBlocked ? S.aiBtnOff : S.aiBtn} disabled={busy !== null || aiBlocked} onClick={() => assist("bullets", i)}>
                     <Icon name="spark" size={13} />{busy === `bullets-${i}` ? "Drafting…" : "Draft bullets with AI"}
                   </button>
                   <div style={{ flex: 1 }} />
@@ -276,6 +281,20 @@ export default function ResumeClient() {
   );
 }
 
+/**
+ * One honest line about the AI allowance. States exactly one of three
+ * situations — window open, updates available, or blocked until a date —
+ * never a generic "upgrade for more".
+ */
+function QuotaLine({ q }: { q: AssistStatus }) {
+  const fmt = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  let text: string;
+  if (q.activeUntil) text = `AI drafting is open until ${fmt(q.activeUntil)} — unlimited drafts until then. Your plan: ${q.planLabel}.`;
+  else if (q.allowed) text = `Your plan includes ${q.planLabel}. Your first drafting click starts a 24-hour window of unlimited drafts.`;
+  else text = `Your plan includes ${q.planLabel}, and you've used it${q.nextAt ? ` — the next unlocks ${fmt(q.nextAt)}` : ""}. Editing and PDF download stay unlimited.`;
+  return <p style={{ fontSize: 12, color: q.allowed ? "#6D28D9" : "#9A3412", background: q.allowed ? "#F5F3FF" : "#FFF7ED", border: `1px solid ${q.allowed ? "#DDD6FE" : "#FED7AA"}`, borderRadius: 10, padding: "8px 12px", margin: "0 0 14px", lineHeight: 1.5 }}>{text}</p>;
+}
+
 function PSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section style={{ marginBottom: 14 }}>
@@ -345,6 +364,7 @@ const S: Record<string, CSSProperties> = {
   input: { width: "100%", padding: "9px 11px", borderRadius: 9, border: "1px solid #D4D4D8", fontSize: 13.5, fontFamily: "inherit", background: "#fff", boxSizing: "border-box" },
   textarea: { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1px solid #D4D4D8", fontSize: 13.5, fontFamily: "inherit", background: "#fff", boxSizing: "border-box", resize: "vertical", lineHeight: 1.6 },
   aiBtn: { display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid #DDD6FE", background: "#F5F3FF", color: "#7C3AED", borderRadius: 9, padding: "7px 13px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  aiBtnOff: { display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid #E5E7EB", background: "#F9FAFB", color: "#9CA3AF", borderRadius: 9, padding: "7px 13px", fontSize: 12, fontWeight: 700, cursor: "default", fontFamily: "inherit" },
   addBtn: { background: "#EEF2FF", color: C.c1, border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   removeRole: { background: "none", border: "none", color: C.mut, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" },
   x: { border: "none", background: "none", color: C.mut, fontSize: 19, cursor: "pointer", lineHeight: 1, padding: "0 4px", flex: "none" },

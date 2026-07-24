@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { sanitizeContent, type ResumeContent } from "@/lib/resume/doc";
+import { consumeAssist, blockedMessage } from "@/lib/resume/assist-quota";
 
 export const maxDuration = 60;
 
@@ -58,7 +59,7 @@ async function callModel(user: string, maxTokens: number): Promise<Record<string
 export async function POST(req: NextRequest) {
   const { userId } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "No profile." }, { status: 401 });
-  const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true, resumeText: true } });
+  const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true, resumeText: true, tier: true } });
   if (!profile) return NextResponse.json({ error: "No profile." }, { status: 404 });
   if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "Writing help isn't available right now." }, { status: 503 });
 
@@ -74,6 +75,27 @@ export async function POST(req: NextRequest) {
   const draft: ResumeContent = sanitizeContent(body.content);
   const source = profile.resumeText ? `\n\nORIGINAL RESUME TEXT:\n${profile.resumeText.slice(0, 8000)}` : "";
 
+  // Validate the request FULLY before touching the quota — consuming a
+  // window on a request that 400s would spend a free month's allowance on
+  // a malformed click.
+  const roleIdx = Number(body.roleIndex);
+  if (body.kind !== "summary" && body.kind !== "bullets") {
+    return NextResponse.json({ error: "Unknown assist kind." }, { status: 400 });
+  }
+  if (body.kind === "bullets" && (!Number.isInteger(roleIdx) || !draft.experience[roleIdx])) {
+    return NextResponse.json({ error: "That role wasn't found in your draft." }, { status: 400 });
+  }
+
+  // Quota gate — the model call is the thing being metered. consumeAssist
+  // opens a window only when needed; every call inside an open window rides
+  // free, so one "update" covers a whole editing session. A failed model
+  // call after this point is retryable inside the same 24h window, so
+  // nothing is lost to a transient 502.
+  const quota = await consumeAssist(profile.id, profile.tier);
+  if (!quota.allowed) {
+    return NextResponse.json({ error: blockedMessage(quota), assist: quota }, { status: 429 });
+  }
+
   try {
     if (body.kind === "summary") {
       const out = await callModel(
@@ -82,22 +104,21 @@ export async function POST(req: NextRequest) {
       );
       const summary = typeof out.summary === "string" ? out.summary.trim() : null;
       if (!summary) throw new Error("no summary in response");
-      return NextResponse.json({ summary });
+      return NextResponse.json({ summary, assist: quota });
     }
 
     if (body.kind === "bullets") {
-      const i = Number(body.roleIndex);
-      const role = Number.isInteger(i) ? draft.experience[i] : undefined;
-      if (!role) return NextResponse.json({ error: "That role wasn't found in your draft." }, { status: 400 });
+      const role = draft.experience[roleIdx];
       const out = await callModel(
         `Write 3–4 achievement bullets for this role: ${JSON.stringify(role)}. Use the draft and original text for context. Return {"bullets": string[]}.\n\nCURRENT DRAFT:\n${JSON.stringify(draft)}${source}`,
         600
       );
       const bullets = Array.isArray(out.bullets) ? out.bullets.filter((b): b is string => typeof b === "string" && !!b.trim()).slice(0, 4) : [];
       if (bullets.length === 0) throw new Error("no bullets in response");
-      return NextResponse.json({ bullets });
+      return NextResponse.json({ bullets, assist: quota });
     }
 
+    // Unreachable — kind was validated above — but TypeScript can't see that.
     return NextResponse.json({ error: "Unknown assist kind." }, { status: 400 });
   } catch (err) {
     console.error("resume assist failed:", err);

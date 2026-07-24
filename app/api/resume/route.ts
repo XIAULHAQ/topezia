@@ -12,9 +12,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { sanitizeContent, seedFromProfile, asJson } from "@/lib/resume/doc";
+import { peekAssistStatus } from "@/lib/resume/assist-quota";
 
 const PROFILE_SELECT = {
-  id: true, fullName: true, headlineRoleId: true, currentLocation: true,
+  id: true, tier: true, fullName: true, headlineRoleId: true, currentLocation: true,
   workHistory: true, education: true, certifications: true,
   skills: { select: { tier: true, skill: { select: { name: true } } } },
 } as const;
@@ -29,9 +30,11 @@ export async function GET() {
   const profile = await loadProfile(userId);
   if (!profile) return NextResponse.json({ error: "No profile." }, { status: 404 });
 
+  const assist = await peekAssistStatus(profile.id, profile.tier);
+
   const doc = await prisma.resumeDoc.findUnique({ where: { profileId: profile.id }, select: { content: true, updatedAt: true } });
   if (doc) {
-    return NextResponse.json({ content: sanitizeContent(doc.content), saved: true, updatedAt: doc.updatedAt });
+    return NextResponse.json({ content: sanitizeContent(doc.content), saved: true, updatedAt: doc.updatedAt, assist });
   }
 
   const headlineName = profile.headlineRoleId
@@ -47,7 +50,7 @@ export async function GET() {
     certifications: profile.certifications,
     skills: profile.skills.map((s) => ({ name: s.skill.name, tier: s.tier })),
   });
-  return NextResponse.json({ content, saved: false, updatedAt: null });
+  return NextResponse.json({ content, saved: false, updatedAt: null, assist });
 }
 
 export async function PUT(req: NextRequest) {

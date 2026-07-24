@@ -328,6 +328,7 @@ model Profile {
 
   skills           ProfileSkill[]
   resumeDoc        ResumeDoc?
+  assistWindows    ResumeAssistWindow[]
 
   // preferences (§3.4)
   employmentTypes  EmploymentType[]
@@ -436,6 +437,20 @@ model ResumeDoc {
   content   Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// One row = one "AI resume update": a 24h window of unlimited assist calls,
+/// opened by the first drafting click. The QUOTA counts these rows — free
+/// tier gets 1 per rolling 30 days, premium 3 per rolling 7 (enforced in
+/// lib/resume/assist-quota.ts, which is the only writer). Hand-editing and
+/// PDF download are never metered; only the model calls are.
+model ResumeAssistWindow {
+  id        String   @id @default(uuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  startedAt DateTime @default(now())
+
+  @@index([profileId, startedAt])
 }
 
 enum SkillSource {
