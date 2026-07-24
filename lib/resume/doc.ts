@@ -31,6 +31,10 @@ export interface ResumeContent {
     link: string;
   };
   summary: string;
+  /** Whether the profile photo (never stored here — always read live from the
+   *  profile) appears on the resume. Defaults true; photo-less resumes are a
+   *  deliberate choice in many markets, so the preference persists. */
+  showPhoto: boolean;
   experience: ResumeExperience[];
   education: ResumeEducation[];
   skills: string[];
@@ -145,6 +149,8 @@ export function sanitizeContent(raw: unknown): ResumeContent {
       link: str(contact.link, LIMITS.contactField),
     },
     summary: text(r.summary, LIMITS.summary),
+    // Absent on docs saved before the field existed — default to shown.
+    showPhoto: r.showPhoto !== false,
     experience,
     education,
     skills: strList(r.skills, 60, LIMITS.skills),

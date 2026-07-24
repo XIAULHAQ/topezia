@@ -75,6 +75,10 @@ const PATHS: Record<string, string[]> = {
   sliders: ["M4 7h10", "M18 7h2", "M14 4.5v5", "M4 17h2", "M10 17h10", "M10 14.5v5"],
   panel: ["M4 4h16v16H4z", "M9.5 4v16"],
   arrowR: ["M5 12h14", "M13 6l6 6-6 6"],
+  phone: ["M5 3h4l2 5-3 2a13 13 0 0 0 6 6l2-3 5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2z"],
+  quote: ["M9 7H5v6h4c0 2-1 3-3 3v2c3 0 5-2 5-5V7z", "M19 7h-4v6h4c0 2-1 3-3 3v2c3 0 5-2 5-5V7z"],
+  grid: ["M4 4h7v7H4z", "M13 4h7v7h-7z", "M4 13h7v7H4z", "M13 13h7v7h-7z"],
+  eye: ["M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"],
 };
 
 export function Icon({ name, size = 17, color }: { name: keyof typeof PATHS | string; size?: number; color?: string }) {

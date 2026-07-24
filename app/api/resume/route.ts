@@ -20,6 +20,7 @@ const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com").rep
 const PROFILE_SELECT = {
   id: true, tier: true, fullName: true, headlineRoleId: true, currentLocation: true,
   workHistory: true, education: true, certifications: true, languages: true, recommendations: true,
+  photoUrl: true, publicSlug: true,
   skills: { select: { tier: true, skill: { select: { name: true } } } },
 } as const;
 
@@ -47,6 +48,12 @@ export async function GET() {
 
   const assist = await peekAssistStatus(profile.id, profile.tier);
 
+  // The photo is never stored in the ResumeDoc — the profile is its single
+  // source (a data-URI photo copied into every resume row would bloat each
+  // one by up to 1MB). The doc only stores whether to SHOW it.
+  const photo = profile.photoUrl ?? null;
+  const publicUrl = profile.publicSlug ? `${SITE}/p/${profile.publicSlug}` : null;
+
   const doc = await prisma.resumeDoc.findUnique({ where: { profileId: profile.id }, select: { content: true, updatedAt: true } });
   if (doc) {
     const content = sanitizeContent(doc.content);
@@ -59,7 +66,7 @@ export async function GET() {
     if (!("projects" in raw)) fill.projects = await loadProjects(profile.id);
     if (!("languages" in raw)) fill.languages = sanitizeContent({ languages: profile.languages }).languages;
     if (!("recommendations" in raw)) fill.recommendations = sanitizeContent({ recommendations: profile.recommendations }).recommendations;
-    return NextResponse.json({ content: { ...content, ...fill }, saved: true, updatedAt: doc.updatedAt, assist });
+    return NextResponse.json({ content: { ...content, ...fill }, saved: true, updatedAt: doc.updatedAt, assist, photo, publicUrl });
   }
 
   const headlineName = profile.headlineRoleId
@@ -78,7 +85,7 @@ export async function GET() {
     recommendations: profile.recommendations,
     projects: await loadProjects(profile.id),
   });
-  return NextResponse.json({ content, saved: false, updatedAt: null, assist });
+  return NextResponse.json({ content, saved: false, updatedAt: null, assist, photo, publicUrl });
 }
 
 export async function PUT(req: NextRequest) {
