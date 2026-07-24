@@ -20,5 +20,17 @@ export default async function OnboardPage({ searchParams }: { searchParams: { ed
       if (profile) redirect("/feed");
     }
   }
-  return <OnboardClient />;
+
+  // The role taxonomy for the no-resume path's picker — same grouping the
+  // profile editor uses, so a picked role always resolves to a real Role.
+  const verticals = await prisma.vertical.findMany({
+    where: { slug: { not: "unsorted" } },
+    select: { name: true, roles: { select: { name: true }, orderBy: { name: "asc" } } },
+    orderBy: { name: "asc" },
+  });
+  const roleGroups = verticals
+    .filter((v) => v.roles.length > 0)
+    .map((v) => ({ field: v.name, roles: v.roles.map((r) => r.name) }));
+
+  return <OnboardClient roleGroups={roleGroups} />;
 }

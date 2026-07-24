@@ -1,19 +1,54 @@
 /**
- * POST /api/questionnaire — spec §3.4 (alternate entry path, trucking)
+ * POST /api/questionnaire — spec §3.4 (alternate entry path)
  *
- * The no-resume path for drivers. Takes the 8 answers, maps them to the same
- * Profile shape the resume flow produces (deterministically — no LLM), commits
- * it via createOrUpdateProfile with entryPath=QUESTIONNAIRE, and drops the same
- * anonymous-session cookie so /feed finds the profile. Returns { profileId }.
+ * The no-resume path. Two shapes share it, split on `kind`:
+ *  - default (no kind): the trucking questionnaire, 8 answers — the original.
+ *  - kind "GENERAL": role + seniority + years + location + typed skills, for
+ *    anyone without a resume. See buildGeneralProfile for why it stays small.
+ *
+ * Both map DETERMINISTICALLY to the same Profile shape the resume flow
+ * produces (no LLM), commit via createOrUpdateProfile with
+ * entryPath=QUESTIONNAIRE, and drop the same anonymous-session cookie so
+ * /feed finds the profile. Returns { profileId }.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { createOrUpdateProfile } from "@/lib/matching/profile";
-import { buildTruckingProfile, type TruckingAnswers } from "@/lib/matching/questionnaire";
+import { buildGeneralProfile, buildTruckingProfile, type GeneralAnswers, type TruckingAnswers } from "@/lib/matching/questionnaire";
 import { ANON_COOKIE, ANON_COOKIE_MAX_AGE } from "@/lib/anon-session";
 import { currentIdentity } from "@/lib/identity";
 
 export const maxDuration = 60;
+
+const SENIORITY = new Set(["INTERN", "JUNIOR", "MID", "SENIOR", "LEAD", "EXEC", "NOT_APPLICABLE"]);
+
+/** Validate + coerce the GENERAL shape. Caps mirror the profile editor's. */
+function parseGeneral(raw: Record<string, unknown>): { answers: GeneralAnswers } | { error: string } {
+  const role = typeof raw.role === "string" ? raw.role.trim().slice(0, 80) : "";
+  if (!role) return { error: "Pick your role." };
+
+  const seniority = typeof raw.seniority === "string" && SENIORITY.has(raw.seniority) ? raw.seniority : null;
+  if (!seniority) return { error: "Pick your seniority." };
+
+  const years = Number(raw.yearsExperience);
+  if (!Number.isFinite(years) || years < 0 || years > 60) return { error: "Enter your years of experience." };
+
+  const skills = Array.isArray(raw.skills)
+    ? [...new Set(raw.skills.filter((x): x is string => typeof x === "string").map((x) => x.trim().replace(/\s+/g, " ").slice(0, 40)).filter(Boolean))].slice(0, 15)
+    : [];
+  if (skills.length === 0) return { error: "Add at least one skill — it's what we match on." };
+
+  return {
+    answers: {
+      fullName: typeof raw.fullName === "string" ? raw.fullName.trim().slice(0, 120) || null : null,
+      location: typeof raw.location === "string" ? raw.location.trim().slice(0, 120) || null : null,
+      role,
+      seniority: seniority as GeneralAnswers["seniority"],
+      yearsExperience: Math.round(years),
+      skills,
+    },
+  };
+}
 
 const CDL = new Set(["A", "B", "C", "NONE"]);
 const ROUTES = new Set(["OTR", "REGIONAL", "LOCAL"]);
@@ -74,10 +109,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const parsed = parseAnswers(raw);
-  if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  // The GENERAL shape carries kind explicitly; the trucking form predates the
+  // split and stays the unmarked default so /drive needs no change.
+  const isGeneral = !!raw && typeof raw === "object" && (raw as Record<string, unknown>).kind === "GENERAL";
 
-  const { parsed: parsedProfile, preferences, resumeText } = buildTruckingProfile(parsed.answers);
+  let built: { parsed: ReturnType<typeof buildTruckingProfile>["parsed"]; preferences: ReturnType<typeof buildTruckingProfile>["preferences"]; resumeText: string };
+  if (isGeneral) {
+    const g = parseGeneral(raw as Record<string, unknown>);
+    if ("error" in g) return NextResponse.json({ error: g.error }, { status: 400 });
+    built = buildGeneralProfile(g.answers);
+  } else {
+    const parsed = parseAnswers(raw);
+    if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    built = buildTruckingProfile(parsed.answers);
+  }
+  const { parsed: parsedProfile, preferences, resumeText } = built;
 
   // Signed-in users key to the auth id; anonymous visitors get a one-off id in a
   // cookie (migrated to the account on later sign-in) — identical to /api/profile.

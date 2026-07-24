@@ -83,9 +83,20 @@ const OB_CSS = `
 }
 `;
 
-export default function OnboardClient() {
+export default function OnboardClient({ roleGroups = [] }: { roleGroups?: { field: string; roles: string[] }[] }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"upload" | "paste">("upload");
+  const [mode, setMode] = useState<"upload" | "paste" | "manual">("upload");
+  // The no-resume form. Small on purpose: this is a SEED, not a signup
+  // interrogation — everything else is added later through the profile's
+  // edit-in-place modals, which are a better form than a long first screen.
+  const [mName, setMName] = useState("");
+  const [mRole, setMRole] = useState("");
+  const [mSen, setMSen] = useState("MID");
+  const [mYears, setMYears] = useState("");
+  const [mLoc, setMLoc] = useState("");
+  const [mSkills, setMSkills] = useState<string[]>([]);
+  const [mSkillInput, setMSkillInput] = useState("");
+  const [mBusy, setMBusy] = useState(false);
   const [armed, setArmed] = useState(false); // dropzone stays greyed until clicked / armed
   const [resumeText, setResumeText] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -144,6 +155,47 @@ export default function OnboardClient() {
       setLoading(false);
     }
   }
+
+  function addManualSkill() {
+    const v = mSkillInput.trim();
+    if (!v || mSkills.length >= 15) return;
+    if (!mSkills.some((x) => x.toLowerCase() === v.toLowerCase())) setMSkills([...mSkills, v]);
+    setMSkillInput("");
+  }
+
+  async function submitManual() {
+    setError(null); setMBusy(true);
+    try {
+      const res = await fetch("/api/questionnaire", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "GENERAL",
+          fullName: mName || null,
+          location: mLoc || null,
+          role: mRole,
+          seniority: mSen,
+          yearsExperience: Number(mYears || 0),
+          skills: mSkills,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Couldn't create your profile.");
+      let authed = false;
+      try {
+        const { data: sd } = await createClient().auth.getSession();
+        authed = Boolean(sd.session);
+      } catch { /* supabase not reachable — treat as anon */ }
+      // Land on the PROFILE, not the review step: nothing was inferred, so
+      // there is nothing to review — just sections to fill in, in place.
+      router.push(authed ? "/profile" : "/login?next=/profile");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+      setMBusy(false);
+    }
+  }
+
+  const manualReady = mRole && mSkills.length > 0 && !mBusy;
 
   const doParseText = () => runParse(JSON.stringify({ resumeText }), { "Content-Type": "application/json" });
   function doParseFile(file: File) {
@@ -206,9 +258,75 @@ export default function OnboardClient() {
             <div className="ob-tabs" style={{ display: "flex", gap: 8, marginTop: 28 }}>
               <button onClick={() => { setMode("upload"); setArmed(true); }} className="ob-tab" style={mode === "upload" ? S.tabOn : S.tabOff}><Ic n="upload" s={14} />Upload a file</button>
               <button onClick={() => setMode("paste")} className="ob-tab" style={mode === "paste" ? S.tabOn : S.tabOff}><Ic n="paste" s={14} />Paste the text</button>
+              <button onClick={() => setMode("manual")} className="ob-tab" style={mode === "manual" ? S.tabOn : S.tabOff}><Ic n="spark" s={14} />No resume? Start here</button>
             </div>
 
-            {mode === "upload" ? (
+            {mode === "manual" ? (
+              <div style={S.pasteCard}>
+                <div style={{ fontSize: 13.5, color: C.slate, lineHeight: 1.6, marginBottom: 16 }}>
+                  No resume needed — tell us five things and you have a live profile. You can add experience, education and a photo any time from your profile page.
+                </div>
+
+                <div style={S.mGrid}>
+                  <div>
+                    <div style={S.mLabel}>Your name <span style={{ color: C.mut, fontWeight: 500 }}>(optional)</span></div>
+                    <input style={S.mInput} value={mName} onChange={(e) => setMName(e.target.value)} placeholder="Jane Doe" />
+                  </div>
+                  <div>
+                    <div style={S.mLabel}>Where you are</div>
+                    <input style={S.mInput} value={mLoc} onChange={(e) => setMLoc(e.target.value)} placeholder="City, Country" />
+                  </div>
+                </div>
+
+                <div style={S.mLabel}>Your role</div>
+                <select style={{ ...S.mInput, cursor: "pointer" }} value={mRole} onChange={(e) => setMRole(e.target.value)}>
+                  <option value="">Choose the closest…</option>
+                  {roleGroups.map((g) => (
+                    <optgroup key={g.field} label={g.field}>
+                      {g.roles.map((r) => <option key={r} value={r}>{r}</option>)}
+                    </optgroup>
+                  ))}
+                </select>
+
+                <div style={S.mGrid}>
+                  <div>
+                    <div style={S.mLabel}>Seniority</div>
+                    <select style={{ ...S.mInput, cursor: "pointer" }} value={mSen} onChange={(e) => setMSen(e.target.value)}>
+                      {["INTERN", "JUNIOR", "MID", "SENIOR", "LEAD", "EXEC"].map((x) => (
+                        <option key={x} value={x}>{x.charAt(0) + x.slice(1).toLowerCase()}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={S.mLabel}>Years of experience</div>
+                    <input style={S.mInput} type="number" min={0} max={60} value={mYears} onChange={(e) => setMYears(e.target.value)} placeholder="0" />
+                  </div>
+                </div>
+
+                <div style={S.mLabel}>Your skills <span style={{ color: C.mut, fontWeight: 500 }}>— this is what we match on</span></div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: mSkills.length ? 10 : 0 }}>
+                  {mSkills.map((sk) => (
+                    <span key={sk} style={S.mChip}>{sk}<button type="button" aria-label={`Remove ${sk}`} onClick={() => setMSkills(mSkills.filter((x) => x !== sk))} style={S.mChipX}>×</button></span>
+                  ))}
+                </div>
+                <input
+                  style={S.mInput}
+                  value={mSkillInput}
+                  placeholder="Type a skill, then Enter — e.g. Customer service"
+                  onChange={(e) => setMSkillInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addManualSkill(); } }}
+                  onBlur={addManualSkill}
+                />
+
+                <div style={{ display: "flex", alignItems: "center", marginTop: 16, gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 11.5, color: C.mut }}>Everything here is editable on your profile afterwards.</div>
+                  <div style={{ flex: 1 }} />
+                  <button onClick={submitManual} disabled={!manualReady} style={manualReady ? S.analyze : S.analyzeOff}>
+                    {mBusy ? "Building your profile…" : "Create my profile"}
+                  </button>
+                </div>
+              </div>
+            ) : mode === "upload" ? (
               // Greyed until the person clicks the box (or the "Upload a file" tab),
               // then it lights up as the active dropzone.
               <label
@@ -288,6 +406,11 @@ const S: Record<string, CSSProperties> = {
   chooseBtnGrey: { display: "inline-block", marginTop: 22, background: "#E2E8F0", color: "#64748B", borderRadius: 11, padding: "12px 26px", fontSize: 13.5, fontWeight: 600 },
   pasteCard: { marginTop: 16, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 20, padding: 20, boxShadow: "0 8px 24px rgba(15,23,42,.06)" },
   textarea: { width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 12, minHeight: 200, padding: "14px 16px", fontSize: 13, color: C.ink, lineHeight: 1.6, fontFamily: FONT, resize: "vertical" },
+  mGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 },
+  mLabel: { fontSize: 13, fontWeight: 600, color: C.ink, margin: "14px 0 6px", textAlign: "left" },
+  mInput: { width: "100%", padding: "11px 13px", borderRadius: 10, border: `1px solid ${C.line}`, fontSize: 14.5, fontFamily: FONT, background: "#fff", boxSizing: "border-box", textAlign: "left" },
+  mChip: { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", background: "#EEF2FF", color: "#4F46E5", borderRadius: 999, fontSize: 12.5, fontWeight: 600 },
+  mChipX: { background: "transparent", border: "none", color: "inherit", cursor: "pointer", fontSize: 15, lineHeight: 1, padding: 0 },
   analyze: { background: GRAD, color: "#fff", borderRadius: 10, padding: "11px 24px", fontSize: 13, fontWeight: 600, cursor: "pointer", boxShadow: "0 6px 16px rgba(99,102,241,.3)", border: "none", fontFamily: FONT },
   analyzeOff: { background: "#c7c7d1", color: "#fff", borderRadius: 10, padding: "11px 24px", fontSize: 13, fontWeight: 600, cursor: "default", border: "none", fontFamily: FONT },
   badge: { display: "inline-flex", alignItems: "center", gap: 8, marginTop: 20, background: "#EEF2FF", border: "1px solid #C7D2FE", color: "#4F46E5", fontSize: 12, fontWeight: 600, borderRadius: 999, padding: "7px 16px" },

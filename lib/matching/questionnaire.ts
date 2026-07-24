@@ -159,3 +159,82 @@ export function buildTruckingProfile(a: TruckingAnswers): {
 
   return { parsed, preferences, resumeText };
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * General (no-resume) entry — the same pattern, without the vertical.
+ *
+ * The trucking questionnaire proved the shape: a handful of asserted answers
+ * map deterministically into the exact Profile the resume flow produces, no
+ * LLM call, same feed, same matcher. This generalises it for everyone else
+ * who simply doesn't have a resume — students, career changers, people whose
+ * work never needed one.
+ *
+ * It stays deliberately SMALL. The seed is role + seniority + years +
+ * location + a few skills; everything else (experience, education,
+ * certifications, photo) is added afterwards through the profile's
+ * edit-in-place modals, which are a better form than any long signup page.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+export interface GeneralAnswers {
+  fullName?: string | null;
+  location?: string | null;
+  /** From the role picker (taxonomy names), so it resolves to a real Role. */
+  role: string;
+  seniority: Seniority;
+  yearsExperience: number;
+  /** Typed by the person. Each is asserted directly — confidence 1, CORE. */
+  skills: string[];
+}
+
+export function buildGeneralProfile(a: GeneralAnswers): {
+  parsed: ParsedResume;
+  preferences: ProfilePreferences;
+  resumeText: string;
+} {
+  const skills: ParsedResume["skills"] = a.skills.map((name) => ({
+    name,
+    confidence: 1,
+    // Proficiency is left NULL, not derived: years-overall says how long
+    // someone has worked, not how good they are at each individual skill they
+    // typed. The trucking path derives it because driving IS the one skill —
+    // that logic doesn't transfer. Levels are one tap away in edit-in-place.
+    proficiency: null,
+    tier: "CORE" as const,
+  }));
+
+  const parsed: ParsedResume = {
+    fullName: a.fullName?.trim() || null,
+    headlineRole: a.role,
+    seniority: a.seniority,
+    yearsExperience: a.yearsExperience,
+    currentLocation: a.location?.trim() || null,
+    industries: [],
+    skills,
+    workHistory: [],
+    education: [],
+    certifications: [],
+  };
+
+  // Same reasoning as the trucking path: employmentTypes and remoteTypes are
+  // HARD filters the person never chose — leaving them empty hides nothing.
+  const preferences: ProfilePreferences = {
+    employmentTypes: [],
+    remoteTypes: [],
+    locations: a.location?.trim() ? [a.location.trim()] : [],
+    salaryFloor: null,
+    salaryTarget: null,
+    salaryPeriod: null,
+    workAuthorization: "NOT_SPECIFIED",
+    verticalsOptIn: [],
+  };
+
+  const resumeText = [
+    `${a.role} with ${a.yearsExperience} year${a.yearsExperience === 1 ? "" : "s"} of experience.`,
+    a.skills.length ? `Skills: ${a.skills.join(", ")}.` : "",
+    a.location?.trim() ? `Based in ${a.location.trim()}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return { parsed, preferences, resumeText };
+}

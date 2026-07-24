@@ -47,7 +47,20 @@ export async function resolveRole(rawTitle: string, roleGuessFromLlm: string | n
   });
   if (exact) return exact.roleId;
 
-  // 2. Try the LLM's normalized guess against role slugs directly.
+  // 2. The taxonomy's own display name. The profile role picker submits
+  //    exactly this string, and 4 of 49 role names don't slugify to their
+  //    seed slug ("Customer Support Representative" → customer-support-
+  //    representative vs slug customer-support-rep) — so without this rung,
+  //    picking those roles from OUR OWN dropdown silently left the headline
+  //    null. Names aren't unique in the schema, but the seed keeps them so;
+  //    findFirst is deliberate.
+  const byName = await prisma.role.findFirst({
+    where: { name: { equals: rawTitle, mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (byName) return byName.id;
+
+  // 3. Try the LLM's normalized guess against role slugs directly.
   if (roleGuessFromLlm) {
     const slug = slugify(roleGuessFromLlm);
     const bySlug = await prisma.role.findUnique({ where: { slug }, select: { id: true } });
@@ -63,7 +76,7 @@ export async function resolveRole(rawTitle: string, roleGuessFromLlm: string | n
     }
   }
 
-  // 3. No match — leave roleId null rather than force a bad mapping. A
+  // 4. No match — leave roleId null rather than force a bad mapping. A
   // nightly review job (not built here) can surface unresolved titles
   // for a human to add to the taxonomy.
   return null;
