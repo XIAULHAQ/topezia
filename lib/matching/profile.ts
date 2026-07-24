@@ -213,6 +213,7 @@ export async function ensurePublicSlug(profileId: string, fullName: string | nul
 
 
 export interface ProfileFieldEdit {
+  fullName?: string | null;
   headline?: string | null;
   seniority?: import("@prisma/client").Seniority;
   yearsExperience?: number | null;
@@ -232,6 +233,8 @@ export interface ProfileFieldEdit {
   workHistory?: { title?: string; company?: string; years?: string }[];
   education?: { degree?: string; institution?: string; year?: string }[];
   certifications?: string[];
+  languages?: { name: string; level?: string }[];
+  recommendations?: { text: string; author?: string; role?: string }[];
   photoUrl?: string | null; // set a new photo, or null to remove
 }
 
@@ -257,6 +260,7 @@ export async function updateProfileFields(
 
   const data: Prisma.ProfileUpdateInput = { matchVersion: randomUUID() };
 
+  if (edit.fullName !== undefined) data.fullName = edit.fullName;
   if (edit.headline !== undefined) {
     data.headlineRoleId = edit.headline ? await resolveRole(edit.headline, edit.headline) : null;
   }
@@ -277,6 +281,8 @@ export async function updateProfileFields(
   if (edit.workHistory !== undefined) data.workHistory = edit.workHistory as unknown as Prisma.InputJsonValue;
   if (edit.education !== undefined) data.education = edit.education as unknown as Prisma.InputJsonValue;
   if (edit.certifications !== undefined) data.certifications = edit.certifications;
+  if (edit.languages !== undefined) data.languages = edit.languages as unknown as Prisma.InputJsonValue;
+  if (edit.recommendations !== undefined) data.recommendations = edit.recommendations as unknown as Prisma.InputJsonValue;
   if (edit.photoUrl !== undefined) data.photoUrl = edit.photoUrl;
 
   await prisma.profile.update({ where: { id: existing.id }, data });

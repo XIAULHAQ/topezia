@@ -14,6 +14,11 @@ import type { Prisma } from "@prisma/client";
 
 export type ResumeExperience = { title: string; company: string; years: string; bullets: string[] };
 export type ResumeEducation = { degree: string; institution: string; year: string };
+/** A portfolio piece: url/thumb are BUILT server-side from the slug/cover —
+ *  never member-typed, so the printed link can't be pointed anywhere else. */
+export type ResumeProject = { title: string; url: string; thumb: string | null };
+export type ResumeLanguage = { name: string; level: string };
+export type ResumeRecommendation = { text: string; author: string; role: string };
 
 export interface ResumeContent {
   contact: {
@@ -30,6 +35,9 @@ export interface ResumeContent {
   education: ResumeEducation[];
   skills: string[];
   certifications: string[];
+  projects: ResumeProject[];
+  languages: ResumeLanguage[];
+  recommendations: ResumeRecommendation[];
 }
 
 export const LIMITS = {
@@ -41,6 +49,10 @@ export const LIMITS = {
   education: 6,
   skills: 30,
   certifications: 15,
+  projects: 8,
+  languages: 8,
+  recommendations: 4,
+  recommendationText: 500,
 } as const;
 
 const str = (v: unknown, max: number) =>
@@ -83,6 +95,43 @@ export function sanitizeContent(raw: unknown): ResumeContent {
     })
     .filter((e) => e.degree || e.institution);
 
+  // Only OUR portfolio URLs and OUR storage thumbs survive. The rows come
+  // from the seed originally, but the saved doc round-trips through the
+  // client, so re-checking on every write keeps a tampered payload from
+  // planting an arbitrary link or image in a printed document.
+  const site = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com").replace(/\/$/, "");
+  const storagePrefix = process.env.NEXT_PUBLIC_SUPABASE_URL ? `${process.env.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, "")}/storage/` : null;
+  const projects = (Array.isArray(r.projects) ? r.projects : [])
+    .slice(0, LIMITS.projects)
+    .map((e) => {
+      const x = (e ?? {}) as Record<string, unknown>;
+      const url = typeof x.url === "string" ? x.url.trim() : "";
+      const thumb = typeof x.thumb === "string" ? x.thumb.trim() : "";
+      const urlOk = url.startsWith(`${site}/portfolio/`) && /^[a-z0-9-]+$/i.test(url.slice(`${site}/portfolio/`.length));
+      return {
+        title: str(x.title, LIMITS.contactField),
+        url: urlOk ? url : "",
+        thumb: storagePrefix && thumb.startsWith(storagePrefix) ? thumb : null,
+      };
+    })
+    .filter((e) => e.title && e.url);
+
+  const languages = (Array.isArray(r.languages) ? r.languages : [])
+    .slice(0, LIMITS.languages)
+    .map((e) => {
+      const x = (e ?? {}) as Record<string, unknown>;
+      return { name: str(x.name, 60), level: str(x.level, 60) };
+    })
+    .filter((e) => e.name);
+
+  const recommendations = (Array.isArray(r.recommendations) ? r.recommendations : [])
+    .slice(0, LIMITS.recommendations)
+    .map((e) => {
+      const x = (e ?? {}) as Record<string, unknown>;
+      return { text: str(x.text, LIMITS.recommendationText), author: str(x.author, LIMITS.contactField), role: str(x.role, LIMITS.contactField) };
+    })
+    .filter((e) => e.text);
+
   const strList = (v: unknown, max: number, cap: number) =>
     [...new Set((Array.isArray(v) ? v : []).map((s) => str(s, max)).filter(Boolean))].slice(0, cap);
 
@@ -100,6 +149,9 @@ export function sanitizeContent(raw: unknown): ResumeContent {
     education,
     skills: strList(r.skills, 60, LIMITS.skills),
     certifications: strList(r.certifications, LIMITS.contactField, LIMITS.certifications),
+    projects,
+    languages,
+    recommendations,
   };
 }
 
@@ -112,6 +164,10 @@ export interface SeedProfile {
   education: unknown;
   certifications: string[];
   skills: { name: string; tier: string }[];
+  languages: unknown;
+  recommendations: unknown;
+  /** Published portfolio pieces, with url/thumb already built by the caller. */
+  projects: { title: string; url: string; thumb: string | null }[];
 }
 
 /**
@@ -148,6 +204,9 @@ export function seedFromProfile(p: SeedProfile): ResumeContent {
     }),
     skills: [...core, ...secondary],
     certifications: p.certifications,
+    projects: p.projects,
+    languages: p.languages,
+    recommendations: p.recommendations,
   });
 }
 

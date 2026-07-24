@@ -11,14 +11,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
-import { sanitizeContent, seedFromProfile, asJson } from "@/lib/resume/doc";
+import { sanitizeContent, seedFromProfile, asJson, type ResumeContent } from "@/lib/resume/doc";
 import { peekAssistStatus } from "@/lib/resume/assist-quota";
+import { portfolioImageUrl } from "@/lib/portfolio/storage";
+
+const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com").replace(/\/$/, "");
 
 const PROFILE_SELECT = {
   id: true, tier: true, fullName: true, headlineRoleId: true, currentLocation: true,
-  workHistory: true, education: true, certifications: true,
+  workHistory: true, education: true, certifications: true, languages: true, recommendations: true,
   skills: { select: { tier: true, skill: { select: { name: true } } } },
 } as const;
+
+/** Published portfolio pieces as resume-project rows — absolute URLs, since
+ *  the printed PDF's links must work from anyone's machine. */
+async function loadProjects(profileId: string) {
+  const rows = await prisma.portfolio.findMany({
+    where: { profileId, status: "PUBLISHED" },
+    orderBy: { publishedAt: "desc" },
+    take: 8,
+    select: { title: true, slug: true, coverPath: true },
+  });
+  return rows.map((r) => ({ title: r.title, url: `${SITE}/portfolio/${r.slug}`, thumb: portfolioImageUrl(r.coverPath) }));
+}
 
 async function loadProfile(userId: string) {
   return prisma.profile.findUnique({ where: { userId }, select: PROFILE_SELECT });
@@ -34,7 +49,17 @@ export async function GET() {
 
   const doc = await prisma.resumeDoc.findUnique({ where: { profileId: profile.id }, select: { content: true, updatedAt: true } });
   if (doc) {
-    return NextResponse.json({ content: sanitizeContent(doc.content), saved: true, updatedAt: doc.updatedAt, assist });
+    const content = sanitizeContent(doc.content);
+    // Docs saved before projects/languages/recommendations existed have no
+    // such keys. Fill those sections from the profile ON READ — but only when
+    // the key is genuinely absent. A saved `projects: []` means the person
+    // deleted them from their resume, and refilling would override that.
+    const raw = (doc.content ?? {}) as Record<string, unknown>;
+    const fill: Partial<ResumeContent> = {};
+    if (!("projects" in raw)) fill.projects = await loadProjects(profile.id);
+    if (!("languages" in raw)) fill.languages = sanitizeContent({ languages: profile.languages }).languages;
+    if (!("recommendations" in raw)) fill.recommendations = sanitizeContent({ recommendations: profile.recommendations }).recommendations;
+    return NextResponse.json({ content: { ...content, ...fill }, saved: true, updatedAt: doc.updatedAt, assist });
   }
 
   const headlineName = profile.headlineRoleId
@@ -49,6 +74,9 @@ export async function GET() {
     education: profile.education,
     certifications: profile.certifications,
     skills: profile.skills.map((s) => ({ name: s.skill.name, tier: s.tier })),
+    languages: profile.languages,
+    recommendations: profile.recommendations,
+    projects: await loadProjects(profile.id),
   });
   return NextResponse.json({ content, saved: false, updatedAt: null, assist });
 }

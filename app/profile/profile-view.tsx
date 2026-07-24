@@ -24,6 +24,8 @@ interface Profile {
   workHistory: { title?: string; company?: string; years?: string }[];
   education: { degree?: string; institution?: string; year?: string }[];
   certifications: string[];
+  languages: { name: string; level?: string }[];
+  recommendations: { text: string; author?: string; role?: string }[];
 }
 interface Insights {
   fieldLabel: string | null; coveragePct: number | null; reliable: boolean;
@@ -417,10 +419,43 @@ export default function ProfileView() {
             </div>
           </section>
 
-          {/* COMING SOON: languages */}
+          {/* REAL: languages */}
           <Card>
-            <div style={{ display: "flex", alignItems: "baseline", marginBottom: 10 }}><h2 style={S.railH}>Languages</h2><SoonTag label="Coming soon" /></div>
-            <p style={{ fontSize: 12.5, color: C.mut, margin: 0, lineHeight: 1.5 }}>Add the languages you work in to widen your matches. Coming soon.</p>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}><h2 style={S.railH}>Languages</h2><EditPencil onClick={() => setEditing("languages")} label="Edit languages" /></div>
+            {(p.languages ?? []).length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {(p.languages ?? []).map((l) => (
+                  <div key={l.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
+                    <span style={{ fontWeight: 600 }}>{l.name}</span>
+                    {l.level && <span style={{ color: C.mut }}>{l.level}</span>}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ fontSize: 12.5, color: C.mut, margin: 0, lineHeight: 1.5 }}>
+                Add the languages you work in — <button type="button" onClick={() => setEditing("languages")} style={{ color: C.c1, fontWeight: 600, border: "none", background: "none", padding: 0, cursor: "pointer", fontSize: "inherit", fontFamily: "inherit" }}>add them here</button>.
+              </p>
+            )}
+          </Card>
+
+          {/* REAL: recommendations — member-entered quotes, labelled as such */}
+          <Card>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}><h2 style={S.railH}>Recommendations</h2><EditPencil onClick={() => setEditing("recommendations")} label="Edit recommendations" /></div>
+            {(p.recommendations ?? []).length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {(p.recommendations ?? []).map((r, i) => (
+                  <blockquote key={i} style={{ margin: 0, borderLeft: `3px solid #C7D2FE`, paddingLeft: 12 }}>
+                    <p style={{ fontSize: 12.5, color: C.slate, lineHeight: 1.6, margin: 0, fontStyle: "italic" }}>&ldquo;{r.text}&rdquo;</p>
+                    {(r.author || r.role) && <div style={{ fontSize: 11.5, color: C.mut, marginTop: 5, fontWeight: 600 }}>— {[r.author, r.role].filter(Boolean).join(", ")}</div>}
+                  </blockquote>
+                ))}
+                <div style={{ fontSize: 10.5, color: C.mut }}>Quotes added by the member.</div>
+              </div>
+            ) : (
+              <p style={{ fontSize: 12.5, color: C.mut, margin: 0, lineHeight: 1.5 }}>
+                Quotes from managers or clients you&apos;d like to show — <button type="button" onClick={() => setEditing("recommendations")} style={{ color: C.c1, fontWeight: 600, border: "none", background: "none", padding: 0, cursor: "pointer", fontSize: "inherit", fontFamily: "inherit" }}>add one</button>.
+              </p>
+            )}
           </Card>
 
           {/* SAMPLE: top companies */}

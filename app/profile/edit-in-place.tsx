@@ -24,9 +24,11 @@ const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g,
 const SENIORITIES = ["INTERN", "JUNIOR", "MID", "SENIOR", "LEAD", "EXEC", "NOT_APPLICABLE"];
 const PROFICIENCIES = ["FAMILIAR", "PROFICIENT", "ADVANCED", "EXPERT"];
 
-export type SectionKey = "intro" | "skills" | "experience" | "education" | "certs";
+export type SectionKey = "intro" | "skills" | "experience" | "education" | "certs" | "languages" | "recommendations";
 
 export type EditSkill = { name: string; proficiency: string | null; source: string; tier?: "CORE" | "SECONDARY" };
+export type EditLanguage = { name: string; level?: string };
+export type EditRecommendation = { text: string; author?: string; role?: string };
 export type EditableProfile = {
   fullName: string | null;
   headline: string | null;
@@ -39,6 +41,8 @@ export type EditableProfile = {
   workHistory: { title?: string; company?: string; years?: string }[];
   education: { degree?: string; institution?: string; year?: string }[];
   certifications: string[];
+  languages: EditLanguage[];
+  recommendations: EditRecommendation[];
 };
 
 /** What a completed save hands back for the view to merge into its state. */
@@ -50,6 +54,8 @@ const TITLES: Record<SectionKey, string> = {
   experience: "Edit experience",
   education: "Edit education",
   certs: "Edit certifications",
+  languages: "Edit languages",
+  recommendations: "Edit recommendations",
 };
 
 export default function EditInPlace({
@@ -80,6 +86,8 @@ export default function EditInPlace({
       case "experience": return { workHistory: profile.workHistory.map((w) => ({ ...w })) };
       case "education": return { education: profile.education.map((e) => ({ ...e })) };
       case "certs": return { certifications: [...profile.certifications] };
+      case "languages": return { languages: (profile.languages ?? []).map((l) => ({ ...l })) };
+      case "recommendations": return { recommendations: (profile.recommendations ?? []).map((r) => ({ ...r })) };
     }
   });
   const [saving, setSaving] = useState(false);
@@ -107,6 +115,8 @@ export default function EditInPlace({
     if (section === "intro") patch.industries = industriesText.split(",").map((s) => s.trim()).filter(Boolean);
     if (section === "experience") patch.workHistory = (draft.workHistory ?? []).filter((w) => w.title || w.company);
     if (section === "education") patch.education = (draft.education ?? []).filter((e) => e.degree || e.institution);
+    if (section === "languages") patch.languages = (draft.languages ?? []).map((l) => ({ name: l.name.trim(), level: l.level?.trim() || undefined })).filter((l) => l.name);
+    if (section === "recommendations") patch.recommendations = (draft.recommendations ?? []).map((r) => ({ text: r.text.trim(), author: r.author?.trim() || undefined, role: r.role?.trim() || undefined })).filter((r) => r.text);
     try {
       const res = await fetch("/api/profile", {
         method: "PATCH",
@@ -308,6 +318,45 @@ export default function EditInPlace({
             }
           }}
         />
+      </>
+    );
+  }
+
+  if (section === "languages") {
+    const rows = draft.languages ?? [];
+    body = (
+      <>
+        <div style={S.hint}>The languages you can work in. Level is your own words — &quot;Native&quot;, &quot;Fluent&quot;, &quot;Conversational&quot;.</div>
+        {rows.map((l, i) => (
+          <div key={i} style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <input style={{ ...S.wide, flex: 2 }} placeholder="Language — e.g. Urdu" value={l.name} onChange={(e) => set("languages", rows.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
+            <input style={{ ...S.wide, flex: 1 }} placeholder="Level" value={l.level ?? ""} onChange={(e) => set("languages", rows.map((x, j) => (j === i ? { ...x, level: e.target.value } : x)))} />
+            <button type="button" aria-label="Remove" style={S.x} onClick={() => set("languages", rows.filter((_, j) => j !== i))}>×</button>
+          </div>
+        ))}
+        <button type="button" style={{ ...S.ghostBtn, marginTop: 12 }} onClick={() => set("languages", [...rows, { name: "", level: "" }])}>+ Add language</button>
+      </>
+    );
+  }
+
+  if (section === "recommendations") {
+    const rows = draft.recommendations ?? [];
+    body = (
+      <>
+        <div style={S.hint}>
+          Quotes you&apos;ve received — from a manager, client or colleague — that you choose to show. They appear labelled as added by you, because honesty about the source is the whole point.
+        </div>
+        {rows.map((r, i) => (
+          <div key={i} style={{ borderTop: i > 0 ? `1px solid ${C.line}` : "none", paddingTop: i > 0 ? 12 : 0, marginTop: 10 }}>
+            <textarea style={{ ...S.wide, resize: "vertical", lineHeight: 1.5 }} rows={3} placeholder="What they said…" value={r.text} onChange={(e) => set("recommendations", rows.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <input style={{ ...S.wide, flex: 1 }} placeholder="Who said it" value={r.author ?? ""} onChange={(e) => set("recommendations", rows.map((x, j) => (j === i ? { ...x, author: e.target.value } : x)))} />
+              <input style={{ ...S.wide, flex: 1 }} placeholder="Their role — e.g. Client, CEO at Acme" value={r.role ?? ""} onChange={(e) => set("recommendations", rows.map((x, j) => (j === i ? { ...x, role: e.target.value } : x)))} />
+              <button type="button" aria-label="Remove" style={S.x} onClick={() => set("recommendations", rows.filter((_, j) => j !== i))}>×</button>
+            </div>
+          </div>
+        ))}
+        <button type="button" style={{ ...S.ghostBtn, marginTop: 12 }} onClick={() => set("recommendations", [...rows, { text: "", author: "", role: "" }])}>+ Add recommendation</button>
       </>
     );
   }

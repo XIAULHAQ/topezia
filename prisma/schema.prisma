@@ -325,6 +325,14 @@ model Profile {
   workHistory      Json?    // structured, LLM-parsed
   education        Json?
   certifications   String[]
+  // Languages the member works in: [{ name, level }]. Level is free text
+  // ("Native", "Fluent", "Conversational") — a dropdown taxonomy adds nothing.
+  languages        Json?
+  // Recommendations the member chooses to show: [{ text, author, role }].
+  // Member-entered and member-owned — there is no request/endorse graph yet,
+  // and pretending these are third-party attestations would be dishonest;
+  // the UI labels them as quotes the member added.
+  recommendations  Json?
 
   skills           ProfileSkill[]
   resumeDoc        ResumeDoc?

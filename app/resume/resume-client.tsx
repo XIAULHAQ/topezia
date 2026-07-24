@@ -20,7 +20,7 @@ import { C, GRAD, Icon } from "@/app/_components/ui";
 import { LIMITS, type ResumeContent, type ResumeExperience } from "@/lib/resume/doc";
 import type { AssistStatus } from "@/lib/resume/assist-quota";
 
-type Busy = null | "save" | "summary" | `bullets-${number}`;
+type Busy = null | "save" | "sync" | "summary" | `bullets-${number}`;
 
 export default function ResumeClient() {
   const [doc, setDoc] = useState<ResumeContent | null>(null);
@@ -29,6 +29,7 @@ export default function ResumeClient() {
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [quota, setQuota] = useState<AssistStatus | null>(null);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/resume")
@@ -64,6 +65,40 @@ export default function ResumeClient() {
       setSavedAt(d.updatedAt ?? new Date().toISOString());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't save.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /**
+   * Save the resume AND push its facts back to the profile — one click, both
+   * directions consistent. The server decides what syncs (see
+   * /api/resume/sync-profile); the note it returns is shown when the headline
+   * was deliberately left alone.
+   */
+  async function saveAndSync() {
+    setBusy("sync"); setError(null); setSyncNote(null);
+    try {
+      const saveRes = await fetch("/api/resume", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: doc }),
+      });
+      const saveData = await saveRes.json().catch(() => ({}));
+      if (!saveRes.ok) throw new Error(saveData.error || "Couldn't save.");
+      setDirty(false);
+      setSavedAt(saveData.updatedAt ?? new Date().toISOString());
+
+      const res = await fetch("/api/resume/sync-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: doc }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "Couldn't update your profile.");
+      setSyncNote(d.note ?? "Profile updated from this resume.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't update your profile.");
     } finally {
       setBusy(null);
     }
@@ -111,14 +146,18 @@ export default function ResumeClient() {
           <button type="button" style={S.ghostBtn} onClick={() => window.print()}>
             <Icon name="doc" size={15} />Download PDF
           </button>
-          <button type="button" style={dirty ? S.saveBtn : S.saveBtnIdle} onClick={save} disabled={busy === "save" || !dirty}>
+          <button type="button" style={dirty ? S.saveBtn : S.saveBtnIdle} onClick={save} disabled={busy !== null || !dirty}>
             {/* A fresh seed has never been saved — don't claim it has. */}
             {busy === "save" ? "Saving…" : dirty ? "Save" : savedAt ? "Saved ✓" : "Save"}
+          </button>
+          <button type="button" style={S.syncBtn} onClick={saveAndSync} disabled={busy !== null} title="Saves this resume, then updates your Topezia profile to match it">
+            {busy === "sync" ? "Updating profile…" : "Save & update profile"}
           </button>
         </div>
       </div>
       {quota && <QuotaLine q={quota} />}
       {error && <p style={{ color: "#DC2626", fontSize: 13, fontWeight: 600, margin: "0 0 14px" }}>{error}</p>}
+      {syncNote && <p style={{ color: "#0F6E56", fontSize: 12.5, fontWeight: 600, background: "#E7F6EE", border: "1px solid #A7F3D0", borderRadius: 10, padding: "8px 12px", margin: "0 0 14px", lineHeight: 1.5 }}>{syncNote}</p>}
       {!error && savedAt && !dirty && (
         <p style={{ ...S.subtle, margin: "0 0 14px" }}>Saved {new Date(savedAt).toLocaleString()}.</p>
       )}
@@ -218,6 +257,64 @@ export default function ResumeClient() {
             <div style={{ height: 12 }} />
             <ChipEditor values={doc.certifications} placeholder="Add a certification, then Enter" max={LIMITS.certifications} onChange={(v) => up({ certifications: v })} />
           </section>
+
+          <section style={S.card}>
+            <div style={S.cardLabel}>Projects — from your portfolio</div>
+            {doc.projects.length === 0 ? (
+              <p style={{ fontSize: 12.5, color: C.mut, margin: 0, lineHeight: 1.6 }}>
+                Published portfolio work appears here with a thumbnail, linked to its page.{" "}
+                <a href="/portfolio/new" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>Add a piece →</a>
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {doc.projects.map((pr, i) => (
+                  <div key={pr.url} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 44, height: 33, borderRadius: 6, overflow: "hidden", background: "#F1F5F9", flex: "none", display: "grid", placeItems: "center", color: C.mut }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {pr.thumb ? <img src={pr.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Icon name="image" size={13} />}
+                    </div>
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pr.title}</span>
+                    <button type="button" aria-label={`Remove ${pr.title}`} style={S.x} onClick={() => up({ projects: doc.projects.filter((_, j) => j !== i) })}>×</button>
+                  </div>
+                ))}
+                <p style={{ fontSize: 11, color: C.mut, margin: "4px 0 0", lineHeight: 1.5 }}>
+                  Removing here only takes it off the resume. Titles and images come from the portfolio itself — <a href="/portfolio/mine" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>manage there</a>.
+                </p>
+              </div>
+            )}
+          </section>
+
+          <section style={S.card}>
+            <div style={S.cardLabel}>Languages</div>
+            {doc.languages.map((l, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <input style={{ ...S.input, flex: 2 }} placeholder="Language" value={l.name} onChange={(e) => up({ languages: doc.languages.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} />
+                <input style={{ ...S.input, flex: 1 }} placeholder="Level — e.g. Fluent" value={l.level} onChange={(e) => up({ languages: doc.languages.map((x, j) => (j === i ? { ...x, level: e.target.value } : x)) })} />
+                <button type="button" aria-label="Remove" style={S.x} onClick={() => up({ languages: doc.languages.filter((_, j) => j !== i) })}>×</button>
+              </div>
+            ))}
+            {doc.languages.length < LIMITS.languages && (
+              <button type="button" style={S.addBtn} onClick={() => up({ languages: [...doc.languages, { name: "", level: "" }] })}>+ Add language</button>
+            )}
+          </section>
+
+          <section style={S.card}>
+            <div style={S.cardLabel}>Recommendations</div>
+            <p style={{ fontSize: 11.5, color: C.mut, margin: "0 0 10px", lineHeight: 1.5 }}>Quotes you&apos;ve received and choose to show — with who said it.</p>
+            {doc.recommendations.map((r, i) => (
+              <div key={i} style={{ borderTop: i > 0 ? "1px solid #F2F2F5" : "none", paddingTop: i > 0 ? 10 : 0, marginBottom: 10 }}>
+                <textarea style={S.textarea} rows={2} placeholder="What they said…" value={r.text} onChange={(e) => up({ recommendations: doc.recommendations.map((x, j) => (j === i ? { ...x, text: e.target.value.slice(0, LIMITS.recommendationText) } : x)) })} />
+                <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                  <input style={{ ...S.input, flex: 1 }} placeholder="Who" value={r.author} onChange={(e) => up({ recommendations: doc.recommendations.map((x, j) => (j === i ? { ...x, author: e.target.value } : x)) })} />
+                  <input style={{ ...S.input, flex: 1 }} placeholder="Their role" value={r.role} onChange={(e) => up({ recommendations: doc.recommendations.map((x, j) => (j === i ? { ...x, role: e.target.value } : x)) })} />
+                  <button type="button" aria-label="Remove" style={S.x} onClick={() => up({ recommendations: doc.recommendations.filter((_, j) => j !== i) })}>×</button>
+                </div>
+              </div>
+            ))}
+            {doc.recommendations.length < LIMITS.recommendations && (
+              <button type="button" style={S.addBtn} onClick={() => up({ recommendations: [...doc.recommendations, { text: "", author: "", role: "" }] })}>+ Add recommendation</button>
+            )}
+          </section>
         </div>
 
         {/* ── Preview column — this exact node is what prints ── */}
@@ -268,8 +365,46 @@ export default function ResumeClient() {
               <PSection title="Skills"><p style={S.pBody}>{doc.skills.join("  ·  ")}</p></PSection>
             )}
 
+            {doc.projects.length > 0 && (
+              <PSection title="Selected Projects">
+                {/* Real <a> hyperlinks: browsers preserve them in Save-as-PDF,
+                    and the visible short URL keeps a paper copy useful too. */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  {doc.projects.map((pr) => (
+                    <a key={pr.url} href={pr.url} style={{ textDecoration: "none", color: "inherit", display: "flex", gap: 8, alignItems: "center" }}>
+                      {pr.thumb && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={pr.thumb} alt="" style={{ width: 52, height: 39, objectFit: "cover", borderRadius: 3, border: "1px solid #D1D5DB", flex: "none" }} />
+                      )}
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ ...S.pRole, display: "block", fontSize: 11.5 }}>{pr.title}</span>
+                        <span style={{ fontSize: 9, color: "#2563EB", wordBreak: "break-all", display: "block", marginTop: 1 }}>{pr.url.replace(/^https?:\/\/(www\.)?/, "")}</span>
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </PSection>
+            )}
+
             {doc.certifications.length > 0 && (
               <PSection title="Certifications"><p style={S.pBody}>{doc.certifications.join("  ·  ")}</p></PSection>
+            )}
+
+            {doc.languages.length > 0 && (
+              <PSection title="Languages">
+                <p style={S.pBody}>{doc.languages.filter((l) => l.name).map((l) => (l.level ? `${l.name} (${l.level})` : l.name)).join("  ·  ")}</p>
+              </PSection>
+            )}
+
+            {doc.recommendations.length > 0 && (
+              <PSection title="Recommendations">
+                {doc.recommendations.filter((r) => r.text).map((r, i) => (
+                  <div key={i} style={{ marginBottom: 8 }}>
+                    <p style={{ ...S.pBody, fontStyle: "italic" }}>&ldquo;{r.text}&rdquo;</p>
+                    {(r.author || r.role) && <div style={{ fontSize: 10.5, color: "#4B5563", marginTop: 2 }}>— {[r.author, r.role].filter(Boolean).join(", ")}</div>}
+                  </div>
+                ))}
+              </PSection>
             )}
           </div>
           <p className="rb-hint" style={{ ...S.subtle, textAlign: "center", marginTop: 10 }}>
@@ -356,6 +491,7 @@ const S: Record<string, CSSProperties> = {
   subtle: { fontSize: 12.5, color: C.mut, margin: "6px 0 0", lineHeight: 1.5, maxWidth: 520 },
   ghostBtn: { display: "inline-flex", alignItems: "center", gap: 7, border: `1px solid ${C.line}`, background: "#fff", color: C.slate, borderRadius: 10, padding: "10px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
   saveBtn: { border: "none", background: GRAD, color: "#fff", borderRadius: 10, padding: "10px 22px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 6px 16px rgba(99,102,241,.3)" },
+  syncBtn: { border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#4F46E5", borderRadius: 10, padding: "10px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   saveBtnIdle: { border: `1px solid ${C.line}`, background: "#F8FAFC", color: C.mut, borderRadius: 10, padding: "10px 22px", fontSize: 13, fontWeight: 700, cursor: "default", fontFamily: "inherit" },
   grid: { display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 20, alignItems: "start" },
   card: { background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, padding: 18 },
