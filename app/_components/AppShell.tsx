@@ -6,7 +6,7 @@
  *
  * Honesty: only destinations that actually work are links (Job Feed, My
  * Profile, Career Coach, Settings, Log out). Everything else in the designed
- * nav — Overview, Search Jobs, Applications, Resume Builder, Skill Assessment —
+ * nav — Overview, Search Jobs, Applications, Skill Assessment —
  * is shown but marked "Soon" and is non-navigable, so the nav conveys the
  * roadmap without pretending those pages exist.
  */
@@ -55,7 +55,7 @@ const NAV: NavItem[] = [
   { icon: "zap", label: "Saved Projects", href: "/saved/projects" },
   { icon: "image", label: "My Work", href: "/portfolio/mine" },
   { icon: "briefcase", label: "Applications", soon: true },
-  { icon: "doc", label: "Resume Builder", soon: true },
+  { icon: "doc", label: "Resume Builder", href: "/resume" },
   { icon: "gauge", label: "Skill Assessment", soon: true },
   { icon: "spark", label: "Career Coach", href: "/coach" },
 ];

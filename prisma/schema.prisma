@@ -327,6 +327,7 @@ model Profile {
   certifications   String[]
 
   skills           ProfileSkill[]
+  resumeDoc        ResumeDoc?
 
   // preferences (§3.4)
   employmentTypes  EmploymentType[]
@@ -420,6 +421,21 @@ model ProfileSkill {
   tier       SkillTier @default(CORE)
 
   @@id([profileId, skillId])
+}
+
+/// The Resume Builder document — one per profile (versions come later).
+/// The profile stores FACTS (roles, skills, dates); this stores the WRITTEN
+/// resume built on them: a summary and per-role achievement bullets, which
+/// exist nowhere else. Content is one JSON doc — the shape is enforced in
+/// lib/resume/doc.ts, not the schema, so iterating on sections never needs
+/// a migration.
+model ResumeDoc {
+  id        String   @id @default(uuid())
+  profileId String   @unique
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  content   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum SkillSource {
