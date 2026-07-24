@@ -28,6 +28,9 @@ export interface PubProfile {
   workHistory: { title?: string; company?: string; years?: string }[];
   education: { degree?: string; institution?: string; year?: string }[];
   certifications: string[];
+  languages: { name: string; level?: string }[];
+  /** Member-entered quotes — the UI labels them as added by the member. */
+  recommendations: { text: string; author?: string; role?: string }[];
   employmentTypes: string[];
   remoteTypes: string[];
   locations: string[];
@@ -42,7 +45,7 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     select: {
       publicSlug: true, fullName: true, photoUrl: true, headlineRoleId: true, yearsExperience: true,
       currentLocation: true, industries: true, employmentTypes: true, remoteTypes: true, locations: true,
-      workHistory: true, education: true, certifications: true,
+      workHistory: true, education: true, certifications: true, languages: true, recommendations: true,
       skills: { select: { proficiency: true, tier: true, skill: { select: { name: true } } } },
       // PUBLISHED only. A draft is private to its author and must never leak
       // onto their public page.
@@ -70,6 +73,8 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     workHistory: (p.workHistory as PubProfile["workHistory"]) ?? [],
     education: (p.education as PubProfile["education"]) ?? [],
     certifications: p.certifications,
+    languages: Array.isArray(p.languages) ? (p.languages as PubProfile["languages"]) : [],
+    recommendations: Array.isArray(p.recommendations) ? (p.recommendations as PubProfile["recommendations"]) : [],
     employmentTypes: p.employmentTypes,
     remoteTypes: p.remoteTypes,
     locations: p.locations,

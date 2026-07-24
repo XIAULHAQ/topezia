@@ -6,7 +6,7 @@
  * design. A client component, but still server-rendered on first load so the
  * content is crawlable (data + metadata live in profile-data.ts); tab clicks
  * switch instantly in the client and only rewrite the URL. Only what's backed by
- * real data is shown; unbuilt bits (projects, languages, messaging) are honest
+ * real data is shown; unbuilt bits (messaging, social links) are honest
  * "coming soon". No private data (salary) is exposed.
  */
 import Link from "next/link";
@@ -32,6 +32,7 @@ const PATHS: Record<string, string[]> = {
   linkedin: ["M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4V8h4v2", "M2 9h4v12H2z", "M4 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"],
   github: ["M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-.9-2.6c3.1-.4 6.4-1.5 6.4-7A5.4 5.4 0 0 0 20 4.8 5 5 0 0 0 19.9 1S18.7.7 16 2.5a13.4 13.4 0 0 0-7 0C6.3.7 5.1 1 5.1 1A5 5 0 0 0 5 4.8a5.4 5.4 0 0 0-1.5 3.7c0 5.5 3.3 6.6 6.4 7A3.4 3.4 0 0 0 9 18.1V22"],
   mail: ["M3 6h18v12H3z", "M3 7l9 6 9-6"],
+  chat: ["M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5z"],
 };
 function Ic({ n, s = 16, color }: { n: string; s?: number; color?: string }) {
   return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color ?? "currentColor"} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none" }}>{(PATHS[n] ?? []).map((d, i) => <path key={i} d={d} />)}</svg>;
@@ -268,6 +269,23 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
                 )}
               </div>
             )}
+
+            {tab === "overview" && p.recommendations.length > 0 && (
+              <Card><Head icon="chat" title="Recommendations" />
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  {p.recommendations.map((r, i) => (
+                    <blockquote key={i} style={{ margin: 0, borderLeft: "3px solid #C7D2FE", paddingLeft: 14 }}>
+                      <p style={{ fontSize: 13, color: C.slate, lineHeight: 1.65, margin: 0, fontStyle: "italic" }}>&ldquo;{r.text}&rdquo;</p>
+                      {(r.author || r.role) && <div style={{ fontSize: 12, color: C.mut, marginTop: 6, fontWeight: 600 }}>— {[r.author, r.role].filter(Boolean).join(", ")}</div>}
+                    </blockquote>
+                  ))}
+                  {/* Honesty on a PUBLIC page matters double: these are quotes
+                      the member chose to display, not platform-verified
+                      endorsements, and a visitor must be able to tell. */}
+                  <div style={{ fontSize: 10.5, color: C.mut }}>Quotes added by {p.fullName ?? "the member"}.</div>
+                </div>
+              </Card>
+            )}
           </div>
 
           {/* right column */}
@@ -280,6 +298,20 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
                     <div key={s.name}>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}><span>{s.name}</span><span style={{ color: C.c1 }}>{s.proficiency ? label(s.proficiency) : "—"}</span></div>
                       <div style={S.barTrack}><div style={{ ...S.barFill, width: `${PROF_PCT[s.proficiency ?? ""] ?? 65}%` }} /></div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {p.languages.length > 0 && (
+              <Card style={{ padding: "22px 24px" }}>
+                <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>Languages</h2>
+                <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                  {p.languages.map((l) => (
+                    <div key={l.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
+                      <span style={{ fontWeight: 600 }}>{l.name}</span>
+                      {l.level && <span style={{ color: C.mut }}>{l.level}</span>}
                     </div>
                   ))}
                 </div>
