@@ -35,10 +35,10 @@ export interface ResumeContent {
    *  profile) appears on the resume. Defaults true; photo-less resumes are a
    *  deliberate choice in many markets, so the preference persists. */
   showPhoto: boolean;
-  /** "styled" = the designed navy-header sheet; "ats" = plain single-column
-   *  serif with no photo/graphics, for parsers that choke on layout. Same
-   *  content either way — this only picks the rendering. */
-  template: "styled" | "ats";
+  /** Which export design renders the sheet. See app/resume/templates.tsx —
+   *  the id list lives there, this only stores the choice. Same content in
+   *  every one; a template is a layout decision, never a data one. */
+  template: "signal" | "ledger" | "grid" | "prism" | "atlas" | "ats";
   /** Focus Check: the direction this resume leads with. `core` is the skill
    *  names rendered as "Core skills"; everything else steps back to
    *  "Additional skills". Null = no focus chosen (single Skills section).
@@ -52,6 +52,10 @@ export interface ResumeContent {
   languages: ResumeLanguage[];
   recommendations: ResumeRecommendation[];
 }
+
+/** Valid template ids. Kept here (not imported from the client component)
+ *  so sanitisation never drags a React module into a server route. */
+const TEMPLATE_IDS = ["signal", "ledger", "grid", "prism", "atlas", "ats"];
 
 export const LIMITS = {
   contactField: 120,
@@ -164,7 +168,10 @@ export function sanitizeContent(raw: unknown): ResumeContent {
     summary: text(r.summary, LIMITS.summary),
     // Absent on docs saved before the field existed — default to shown.
     showPhoto: r.showPhoto !== false,
-    template: r.template === "ats" ? "ats" : "styled",
+    // "styled" was the only designed layout before the template set existed;
+    // it is what Signal grew out of, so old docs land there rather than on a
+    // stranger's idea of a default.
+    template: TEMPLATE_IDS.includes(r.template as string) ? (r.template as ResumeContent["template"]) : "signal",
     focus: focusLabel && focusCore.length ? { label: focusLabel, core: focusCore } : null,
     experience,
     education,

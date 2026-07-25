@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Sora, Plus_Jakarta_Sans } from "next/font/google";
+import { Sora, Plus_Jakarta_Sans, EB_Garamond, Instrument_Serif, Archivo, IBM_Plex_Mono } from "next/font/google";
 
 /**
  * Fonts are SELF-HOSTED, not pulled from Google's CDN at runtime.
@@ -38,6 +38,18 @@ const jakarta = Plus_Jakarta_Sans({
   variable: "--font-jakarta",
 });
 
+/**
+ * Resume template faces. Only the /resume export designs use these, and each
+ * design is built around its own typography — swapping them for Sora would
+ * make five templates look like one. Self-hosted by next/font like the rest,
+ * so choosing a template never costs a round-trip to Google, and the files
+ * only download on pages that actually paint them.
+ */
+const garamond = EB_Garamond({ subsets: ["latin"], display: "swap", variable: "--font-garamond", style: ["normal", "italic"] });
+const instrument = Instrument_Serif({ subsets: ["latin"], display: "swap", variable: "--font-instrument", weight: "400" });
+const archivo = Archivo({ subsets: ["latin"], display: "swap", variable: "--font-archivo" });
+const plexMono = IBM_Plex_Mono({ subsets: ["latin"], display: "swap", variable: "--font-plex-mono", weight: ["400", "500", "600"] });
+
 export const metadata: Metadata = {
   // Resolves relative canonical/OG URLs in child pages to absolute ones —
   // without this, canonicals emit as "/jobs/foo", which search engines
@@ -49,7 +61,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${sora.variable} ${jakarta.variable}`}>
+    <html lang="en" className={`${sora.variable} ${jakarta.variable} ${garamond.variable} ${instrument.variable} ${archivo.variable} ${plexMono.variable}`}>
       <head>
         {/*
           Global border-box, which every design file assumed and the app never

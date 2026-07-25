@@ -29,6 +29,28 @@ type Row = {
 };
 type Work = { id: string; title: string; slug: string; thumb: string | null };
 
+/**
+ * Starter notes. Asking someone for a recommendation is a small social
+ * ordeal, and a blank box is where most requests die — so we hand over a
+ * sentence that is already polite and specific enough to send, and let people
+ * edit it. Written as prompts a real person would actually type, not
+ * marketing copy: the recommender sees this line, and it should sound like
+ * the member wrote it, because they can.
+ */
+const NOTE_SUGGESTIONS: Record<"RECOMMENDATION" | "REVIEW", string[]> = {
+  RECOMMENDATION: [
+    "We worked together for a while and I'd really value a few words from you — whatever you honestly remember is perfect.",
+    "You saw my work up close. Would you mind writing a couple of lines about what I was like to work with?",
+    "I'm putting my profile together and would love your perspective on how we worked together.",
+  ],
+  REVIEW: [
+    "Thanks again for the project — would you mind leaving a short review of how it went?",
+    "You hired me for this one. A couple of honest lines about the result would mean a lot.",
+    "Would you write a short review of this work? What you needed, and whether it landed.",
+  ],
+};
+
+
 export default function EndorsementsPanel() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [works, setWorks] = useState<Work[]>([]);
@@ -37,6 +59,10 @@ export default function EndorsementsPanel() {
   const [workId, setWorkId] = useState("");
   const [sentTo, setSentTo] = useState("");
   const [note, setNote] = useState("");
+  const [noteIdx, setNoteIdx] = useState(0);
+  // True once the member types their own words — after that we never
+  // overwrite them, not even when they switch kind.
+  const [noteTouched, setNoteTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -54,6 +80,14 @@ export default function EndorsementsPanel() {
     fetch("/api/endorsements/works").then((r) => (r.ok ? r.json() : null)).then((d) => setWorks(d?.works ?? [])).catch(() => {});
   }, [open]);
 
+  // Seed the note with a suggestion — a blank box is where most requests die.
+  // Only while it is untouched, so switching kind refreshes the suggestion but
+  // never eats something the member wrote.
+  useEffect(() => {
+    if (!open || noteTouched) return;
+    setNote(NOTE_SUGGESTIONS[kind][noteIdx % NOTE_SUGGESTIONS[kind].length]);
+  }, [open, kind, noteIdx, noteTouched]);
+
   async function create() {
     setBusy(true); setError(null);
     try {
@@ -64,7 +98,7 @@ export default function EndorsementsPanel() {
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || "Couldn't create that request.");
-      setOpen(false); setSentTo(""); setNote(""); setWorkId("");
+      setOpen(false); setSentTo(""); setNote(""); setWorkId(""); setNoteTouched(false); setNoteIdx((i) => i + 1);
       load();
       copy(d.link);
     } catch (e) {
@@ -132,8 +166,23 @@ export default function EndorsementsPanel() {
             )
           )}
 
-          <input style={{ ...S.input, marginBottom: 10 }} placeholder="Who's it for? (just a note to yourself)" value={sentTo} onChange={(e) => setSentTo(e.target.value.slice(0, ENDORSEMENT_LIMITS.sentToLabel))} />
-          <textarea style={{ ...S.input, resize: "vertical", lineHeight: 1.6 }} rows={2} placeholder="A line to them — optional, shown on the page they land on" value={note} onChange={(e) => setNote(e.target.value.slice(0, ENDORSEMENT_LIMITS.requestNote))} />
+          <input style={{ ...S.input, marginBottom: 10 }} placeholder="Who's it for? e.g. Sara at Acme (only you see this)" value={sentTo} onChange={(e) => setSentTo(e.target.value.slice(0, ENDORSEMENT_LIMITS.sentToLabel))} />
+
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.slate }}>Your note to them</span>
+            <span style={{ fontSize: 11, color: C.mut }}>— we&apos;ve written one, edit it freely</span>
+            <div style={{ flex: 1 }} />
+            <button type="button" onClick={() => { setNoteTouched(false); setNoteIdx((i) => i + 1); }} style={S.linkBtn}>
+              Suggest another
+            </button>
+          </div>
+          <textarea
+            style={{ ...S.input, resize: "vertical", lineHeight: 1.6 }}
+            rows={3}
+            placeholder="A line to them — shown on the page they land on"
+            value={note}
+            onChange={(e) => { setNoteTouched(true); setNote(e.target.value.slice(0, ENDORSEMENT_LIMITS.requestNote)); }}
+          />
 
           {error && <p style={{ color: "#DC2626", fontSize: 12.5, fontWeight: 600, margin: "10px 0 0" }}>{error}</p>}
           <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>

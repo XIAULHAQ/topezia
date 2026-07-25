@@ -18,13 +18,14 @@
  *    worse than no number. The hero stats show only real counts.
  *  - AI drafting is per-section and OPT-IN; saving is explicit, not auto.
  */
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { C, GRAD, Icon, BrandMark, MatchRing, SoonTag } from "@/app/_components/ui";
 import { LIMITS, type ResumeContent, type ResumeExperience } from "@/lib/resume/doc";
 import { scoreResume } from "@/lib/resume/score";
 import type { AssistStatus } from "@/lib/resume/assist-quota";
 import type { DemandSkill } from "@/lib/matching/insights";
 import type { FocusDirection } from "@/app/api/resume/focus/route";
+import { TEMPLATES, BLEEDS, ResumeSheet, sheetData, SHEET_W } from "./templates";
 
 type Busy = null | "save" | "sync" | "summary" | `bullets-${number}`;
 
@@ -52,6 +53,16 @@ export default function ResumeClient() {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [quota, setQuota] = useState<AssistStatus | null>(null);
   const [syncNote, setSyncNote] = useState<string | null>(null);
+
+  // Preview scaling. The sheet is built at true A4 width (794px) so the print
+  // output is the design at its intended size; on screen it is scaled to
+  // whatever the column happens to be. Measuring both means the wrapper can
+  // reserve the right height and the page never jumps when a template changes.
+  const previewBox = useRef<HTMLDivElement | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const [scale, setScale] = useState(0);
+  const [sheetH, setSheetH] = useState(1123);
+  const ready = doc !== null;
 
   useEffect(() => {
     fetch("/api/resume")
@@ -100,6 +111,31 @@ export default function ResumeClient() {
       unmark();
     };
   }, []);
+
+  // Keep the scale in step with the column width AND the sheet's own height,
+  // which changes with content and with the chosen template.
+  useLayoutEffect(() => {
+    const box = previewBox.current, sh = sheetRef.current;
+    if (!box || !sh) return;
+    // offsetHeight, NOT getBoundingClientRect: the sheet sits inside the
+    // transformed node, so the rect is already scaled. Dividing a scaled rect
+    // by the scale we are simultaneously setting is a feedback loop — it
+    // oscillated hard enough to peg the tab. offsetHeight is layout height and
+    // ignores transforms, so the measurement never depends on its own output.
+    const measure = () => {
+      const w = box.clientWidth;
+      if (w > 0) setScale(Math.min(1, w / SHEET_W));
+      if (sh.offsetHeight > 0) setSheetH(sh.offsetHeight);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(box);
+    ro.observe(sh);
+    return () => ro.disconnect();
+    // Runs once the preview actually exists: on first mount `doc` is still
+    // loading, the refs are null, and an empty dep list would mean the effect
+    // never gets a second chance — leaving the sheet unscaled at 794px.
+  }, [ready]);
 
   // Focus Check — re-classify the LIVE skill list (debounced) whenever it
   // changes. The key encodes the list so the effect closure is never stale.
@@ -211,14 +247,6 @@ export default function ResumeClient() {
   // (lib/resume/score.ts) and recomputes live on every edit.
   const strength = scoreResume(doc);
 
-  // Focus split: core skills lead, the rest step back to "Additional". Falls
-  // back to a single list when the chosen core no longer intersects the
-  // skill list (e.g. every core skill was removed after focusing).
-  const coreSet = new Set((doc.focus?.core ?? []).map((s) => s.toLowerCase()));
-  const coreSkills = doc.focus ? doc.skills.filter((s) => coreSet.has(s.toLowerCase())) : doc.skills;
-  const extraSkills = doc.focus ? doc.skills.filter((s) => !coreSet.has(s.toLowerCase())) : [];
-  const focusActive = !!doc.focus && coreSkills.length > 0;
-
   const shortTime = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const shortDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   const quotaStat = !quota
@@ -240,6 +268,7 @@ export default function ResumeClient() {
   return (
     <div>
       <style dangerouslySetInnerHTML={{ __html: PAGE_CSS }} />
+      <style dangerouslySetInnerHTML={{ __html: pageRule(BLEEDS[doc.template]) }} />
 
       {/* ── Hero header ── */}
       <section style={S.hero}>
@@ -484,206 +513,49 @@ export default function ResumeClient() {
         <div className="rb-preview-wrap" style={{ position: "sticky", top: 20, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.7, textTransform: "uppercase", color: C.mut, flex: 1 }}>Live preview</div>
-            {/* Template picker — same content, different rendering. ATS-safe is
-                plain single-column text: no photo, no QR, no graphics. */}
-            <div style={{ display: "inline-flex", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 999, padding: 3, gap: 2 }}>
-              {(["styled", "ats"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => up({ template: t })}
-                  title={t === "ats" ? "Plain single-column text — for employers whose software parses resumes" : "The designed Topezia look"}
-                  style={{
-                    border: "none", borderRadius: 999, padding: "5px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-                    background: doc.template === t ? GRAD : "transparent",
-                    color: doc.template === t ? "#fff" : C.mut,
-                  }}
-                >
-                  {t === "ats" ? "ATS-safe" : "Styled"}
-                </button>
-              ))}
-            </div>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 999, padding: "5px 12px", fontSize: 11.5, fontWeight: 600, color: C.slate }}>
               <Icon name="eye" size={13} />A4
             </div>
           </div>
 
-          <div id="resume-print" style={doc.template === "ats" ? A.sheet : S.sheet}>
-            {doc.template === "ats" ? <AtsSheet doc={doc} publicUrl={publicUrl} /> : (<>
-            {/* Navy header band */}
-            <header style={S.pHead}>
-              <div style={S.pHeadGlow1} />
-              <div style={S.pHeadGlow2} />
-              <div style={S.pHeadLines} />
-              <div style={{ position: "relative", display: "flex", gap: 18, alignItems: "center" }}>
-                {showPhoto && (
-                  <div style={{ flex: "none", padding: 3, borderRadius: "50%", background: GRAD }}>
-                    <div style={{ padding: 3, background: C.navy, borderRadius: "50%" }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={photo!} alt="" style={{ width: 92, height: 92, borderRadius: "50%", objectFit: "cover", objectPosition: "center top", display: "block" }} />
-                    </div>
-                  </div>
-                )}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: "-0.6px", lineHeight: 1.2 }}>{doc.contact.name || "Your Name"}</h2>
-                  {doc.contact.headline && (
-                    <div style={{ fontSize: 13, marginTop: 5, fontWeight: 600, background: "linear-gradient(135deg,#A5B4FC,#C4B5FD)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
-                      {doc.contact.headline}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div style={{ position: "relative", display: "flex", flexWrap: "wrap", gap: 6, marginTop: 14 }}>
-                {([["pin", doc.contact.location], ["mail", doc.contact.email], ["phone", doc.contact.phone], ["link", doc.contact.link]] as const)
-                  .filter(([, v]) => v)
-                  .map(([ic, v]) => (
-                    <span key={ic} style={S.pChip}><Icon name={ic} size={11} />{v}</span>
-                  ))}
-              </div>
-              {doc.summary && (
-                <p style={{ position: "relative", margin: "14px 0 0", fontSize: 11.8, lineHeight: 1.7, color: "#B9C0D4" }}>{doc.summary}</p>
-              )}
-            </header>
+          {/* Design picker. Same content in every one — only the layout
+              changes, so switching is free and never loses anything. */}
+          <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 13, padding: "11px 13px", marginBottom: 12 }}>
+            <label htmlFor="rb-template" style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: C.ink, marginBottom: 6 }}>Design template</label>
+            <select
+              id="rb-template"
+              value={doc.template}
+              onChange={(e) => up({ template: e.target.value as ResumeContent["template"] })}
+              style={{ width: "100%", padding: "9px 11px", borderRadius: 9, border: `1px solid ${C.line}`, fontSize: 13, fontFamily: "inherit", background: "#fff", cursor: "pointer", boxSizing: "border-box" }}
+            >
+              {TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <p style={{ fontSize: 11.5, color: C.mut, margin: "7px 0 0", lineHeight: 1.5 }}>
+              {TEMPLATES.find((t) => t.id === doc.template)?.blurb}
+            </p>
+          </div>
 
-            <div style={{ padding: "24px 26px 24px", display: "flex", flexDirection: "column", gap: 22 }}>
-              {doc.experience.length > 0 && (
-                <PSection icon="briefcase" title="Experience">
-                  <div style={{ display: "grid", gap: 13 }}>
-                    {doc.experience.map((ex, i) => (
-                      <div key={i} className="rb-keep" style={{ display: "flex", gap: 12 }}>
-                        <div style={{ width: 2, borderRadius: 2, background: GRAD, flex: "none" }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
-                            <div style={{ fontSize: 13, fontWeight: 700, flex: 1, lineHeight: 1.35, color: C.ink }}>{ex.title || ex.company}</div>
-                            {ex.years && <div style={{ fontSize: 10.5, color: C.mut, fontWeight: 600, flex: "none" }}>{ex.years}</div>}
-                          </div>
-                          {ex.title && ex.company && <div style={{ fontSize: 11.5, color: C.c1, fontWeight: 600, marginTop: 3 }}>{ex.company}</div>}
-                          {ex.bullets.filter(Boolean).length > 0 && (
-                            <ul style={{ margin: "7px 0 0", paddingLeft: 15, display: "grid", gap: 4 }}>
-                              {ex.bullets.filter(Boolean).map((b, bi) => (
-                                <li key={bi} style={{ fontSize: 11.3, lineHeight: 1.6, color: C.slate }}>{b}</li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </PSection>
-              )}
-
-              {doc.education.length > 0 && (
-                <PSection icon="grad" title="Education">
-                  <div style={{ display: "grid", gap: 9 }}>
-                    {doc.education.map((ed, i) => (
-                      <div key={i} style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}>{ed.degree}</div>
-                          {ed.institution && <div style={{ fontSize: 11.5, color: C.mut, marginTop: 2 }}>{ed.institution}</div>}
-                        </div>
-                        {ed.year && <div style={{ fontSize: 10.5, color: C.mut, fontWeight: 600, flex: "none" }}>{ed.year}</div>}
-                      </div>
-                    ))}
-                  </div>
-                </PSection>
-              )}
-
-              {doc.skills.length > 0 && (
-                <PSection icon="spark" title={focusActive ? "Core skills" : "Skills"}>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {(focusActive ? coreSkills : doc.skills).map((sk) => <span key={sk} style={S.pSkill}>{sk}</span>)}
-                  </div>
-                  {focusActive && extraSkills.length > 0 && (
-                    <>
-                      <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: C.mut, margin: "10px 0 6px" }}>Additional skills</div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {extraSkills.map((sk) => <span key={sk} style={{ ...S.pSkill, background: "#F8FAFC", border: `1px solid ${C.line}`, color: C.mut }}>{sk}</span>)}
-                      </div>
-                    </>
-                  )}
-                </PSection>
-              )}
-
-              {doc.certifications.length > 0 && (
-                <PSection icon="award" title="Certifications">
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {doc.certifications.map((ct) => <span key={ct} style={{ ...S.pSkill, background: "#F1F5F9", border: `1px solid ${C.line}`, color: C.slate }}>{ct}</span>)}
-                  </div>
-                </PSection>
-              )}
-
-              {doc.projects.length > 0 && (
-                <PSection icon="grid" title="Selected projects">
-                  {/* Real <a> hyperlinks: browsers preserve them in Save-as-PDF,
-                      and the visible short URL keeps a paper copy useful too. */}
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10 }}>
-                    {doc.projects.map((pr) => (
-                      <a key={pr.url} href={pr.url} className="rb-keep" style={{ textDecoration: "none", color: "inherit", border: `1px solid ${C.line}`, borderRadius: 11, overflow: "hidden", display: "block" }}>
-                        <div style={{ aspectRatio: "16/10", background: "#EEF2FF" }}>
-                          {pr.thumb && (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={pr.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                          )}
-                        </div>
-                        <div style={{ padding: "9px 10px" }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, lineHeight: 1.3, color: C.ink }}>{pr.title}</div>
-                          <div style={{ fontSize: 9.5, color: C.c1, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pr.url.replace(/^https?:\/\/(www\.)?/, "")}</div>
-                        </div>
-                      </a>
-                    ))}
-                  </div>
-                </PSection>
-              )}
-
-              {doc.languages.filter((l) => l.name).length > 0 && (
-                <PSection icon="globe" title="Languages">
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {doc.languages.filter((l) => l.name).map((l) => (
-                      <span key={l.name} style={{ ...S.pSkill, background: "#F1F5F9", border: `1px solid ${C.line}`, color: C.slate }}>
-                        {l.level ? `${l.name} — ${l.level}` : l.name}
-                      </span>
-                    ))}
-                  </div>
-                </PSection>
-              )}
-
-              {doc.recommendations.filter((r) => r.text).length > 0 && (
-                <PSection icon="quote" title="Recommendations">
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {doc.recommendations.filter((r) => r.text).map((r, i) => (
-                      <div key={i} className="rb-keep">
-                        <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.65, color: C.slate, fontStyle: "italic" }}>&ldquo;{r.text}&rdquo;</p>
-                        {(r.author || r.role) && <div style={{ fontSize: 10.5, color: C.mut, marginTop: 3, fontWeight: 600 }}>— {[r.author, r.role].filter(Boolean).join(", ")}</div>}
-                      </div>
-                    ))}
-                  </div>
-                </PSection>
-              )}
-
-              <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 14, display: "flex", alignItems: "center", gap: 10 }}>
-                <BrandMark size={16} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  {publicUrl ? (
-                    <a href={publicUrl} style={{ fontSize: 10, color: C.mut, lineHeight: 1.5, textDecoration: "none", display: "block" }}>
-                      Full profile & portfolio on {publicUrl.replace(/^https?:\/\/(www\.)?/, "")}
-                    </a>
-                  ) : (
-                    <span style={{ fontSize: 10, color: C.mut, lineHeight: 1.5 }}>Built on topezia.com</span>
-                  )}
-                  {qr && publicUrl && (
-                    <div style={{ fontSize: 9, color: "#94A3B8", marginTop: 2 }}>Scan the code for the live portfolio.</div>
-                  )}
-                </div>
-                {/* The paper resume's escape hatch to the living one: printed
-                    QR → /p/{slug} with real work, videos, recommendations. */}
-                {qr && publicUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={qr} alt="QR code linking to the live Topezia profile" style={{ width: 54, height: 54, flex: "none" }} />
-                )}
+          {/* The sheet is drawn at true A4 width and scaled down to fit the
+              column, so the preview is the printed page rather than an
+              approximation of it. Print removes the transform. */}
+          <div ref={previewBox} className="rb-scale-box" style={{ width: "100%", overflow: "hidden", height: scale ? sheetH * scale : undefined }}>
+            <div
+              id="resume-print"
+              className="rb-scale-inner"
+              style={{
+                width: SHEET_W,
+                transform: scale ? `scale(${scale})` : undefined,
+                transformOrigin: "top left",
+                boxShadow: "0 18px 44px rgba(15,23,42,.09)",
+                border: `1px solid ${C.line}`,
+              }}
+            >
+              <div ref={sheetRef}>
+                <ResumeSheet id={doc.template} d={sheetData(doc, photo, publicUrl, qr)} />
               </div>
             </div>
-            </>)}
           </div>
+
           <p style={{ fontSize: 11.5, color: C.mut, textAlign: "center", lineHeight: 1.6, marginTop: 12 }}>
             Download PDF opens your browser&apos;s print dialog — choose &quot;Save as PDF&quot;.
           </p>
@@ -703,21 +575,6 @@ function CardHead({ icon, title, children }: { icon: string; title: string; chil
       <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, flex: 1, letterSpacing: "-0.2px" }}>{title}</h2>
       {children}
     </div>
-  );
-}
-
-/** Preview section header: small icon chip + uppercase title. */
-function PSection({ icon, title, children }: { icon: string; title: string; children: ReactNode }) {
-  return (
-    <section>
-      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
-        <span style={{ width: 26, height: 26, borderRadius: 8, background: "#EEF2FF", color: C.c1, display: "grid", placeItems: "center", flex: "none" }}>
-          <Icon name={icon} size={13} />
-        </span>
-        <h3 style={{ margin: 0, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.slate }}>{title}</h3>
-      </div>
-      {children}
-    </section>
   );
 }
 
@@ -896,112 +753,6 @@ function FocusCard({ directions, focus, onFocus, onClear }: {
 }
 
 /**
- * The ATS-safe rendering: single column, serif, black on white, no photo, no
- * QR, no graphics — plain text a parser can't misread. Same ResumeContent.
- */
-function AtsSheet({ doc, publicUrl }: { doc: ResumeContent; publicUrl: string | null }) {
-  const coreSet = new Set((doc.focus?.core ?? []).map((s) => s.toLowerCase()));
-  const core = doc.focus ? doc.skills.filter((s) => coreSet.has(s.toLowerCase())) : doc.skills;
-  const extra = doc.focus ? doc.skills.filter((s) => !coreSet.has(s.toLowerCase())) : [];
-  const focusActive = !!doc.focus && core.length > 0;
-  return (
-    <div>
-      <header style={{ borderBottom: "2px solid #111827", paddingBottom: 12, marginBottom: 14 }}>
-        <div style={A.name}>{doc.contact.name || "Your Name"}</div>
-        {doc.contact.headline && <div style={A.headline}>{doc.contact.headline}</div>}
-        <div style={A.meta}>
-          {[doc.contact.location, doc.contact.email, doc.contact.phone, doc.contact.link].filter(Boolean).join("  ·  ")}
-        </div>
-      </header>
-
-      {doc.summary && <AtsSection title="Summary"><p style={A.body}>{doc.summary}</p></AtsSection>}
-
-      {doc.experience.length > 0 && (
-        <AtsSection title="Experience">
-          {doc.experience.map((ex, i) => (
-            <div key={i} className="rb-keep" style={{ marginBottom: i < doc.experience.length - 1 ? 12 : 0 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
-                <span style={A.role}>{[ex.title, ex.company].filter(Boolean).join(" — ")}</span>
-                {ex.years && <span style={A.years}>{ex.years}</span>}
-              </div>
-              {ex.bullets.filter(Boolean).length > 0 && (
-                <ul style={{ margin: "5px 0 0", paddingLeft: 18 }}>
-                  {ex.bullets.filter(Boolean).map((b, bi) => <li key={bi} style={A.li}>{b}</li>)}
-                </ul>
-              )}
-            </div>
-          ))}
-        </AtsSection>
-      )}
-
-      {doc.education.length > 0 && (
-        <AtsSection title="Education">
-          {doc.education.map((ed, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 4 }}>
-              <span style={A.body}>{[ed.degree, ed.institution].filter(Boolean).join(" — ")}</span>
-              {ed.year && <span style={A.years}>{ed.year}</span>}
-            </div>
-          ))}
-        </AtsSection>
-      )}
-
-      {doc.skills.length > 0 && (
-        <AtsSection title={focusActive ? "Core Skills" : "Skills"}>
-          <p style={A.body}>{(focusActive ? core : doc.skills).join("  ·  ")}</p>
-          {focusActive && extra.length > 0 && (
-            <p style={{ ...A.body, fontSize: 10.5, color: "#4B5563", marginTop: 4 }}>Additional: {extra.join("  ·  ")}</p>
-          )}
-        </AtsSection>
-      )}
-      {doc.certifications.length > 0 && <AtsSection title="Certifications"><p style={A.body}>{doc.certifications.join("  ·  ")}</p></AtsSection>}
-
-      {doc.projects.length > 0 && (
-        <AtsSection title="Selected Projects">
-          {doc.projects.map((pr) => (
-            <div key={pr.url} style={{ marginBottom: 4 }}>
-              <span style={{ ...A.role, fontSize: 11.5 }}>{pr.title}</span>
-              <span style={{ fontSize: 10, color: "#374151" }}> — {pr.url.replace(/^https?:\/\/(www\.)?/, "")}</span>
-            </div>
-          ))}
-        </AtsSection>
-      )}
-
-      {doc.languages.filter((l) => l.name).length > 0 && (
-        <AtsSection title="Languages">
-          <p style={A.body}>{doc.languages.filter((l) => l.name).map((l) => (l.level ? `${l.name} (${l.level})` : l.name)).join("  ·  ")}</p>
-        </AtsSection>
-      )}
-
-      {doc.recommendations.filter((r) => r.text).length > 0 && (
-        <AtsSection title="Recommendations">
-          {doc.recommendations.filter((r) => r.text).map((r, i) => (
-            <div key={i} style={{ marginBottom: 8 }}>
-              <p style={{ ...A.body, fontStyle: "italic" }}>&ldquo;{r.text}&rdquo;</p>
-              {(r.author || r.role) && <div style={{ fontSize: 10.5, color: "#4B5563", marginTop: 2 }}>— {[r.author, r.role].filter(Boolean).join(", ")}</div>}
-            </div>
-          ))}
-        </AtsSection>
-      )}
-
-      {publicUrl && (
-        <div style={{ borderTop: "1px solid #D1D5DB", paddingTop: 10, marginTop: 4, fontSize: 10, color: "#4B5563" }}>
-          Full profile &amp; portfolio: {publicUrl.replace(/^https?:\/\/(www\.)?/, "")}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AtsSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section style={{ marginBottom: 14 }}>
-      <div style={A.sectionTitle}>{title}</div>
-      {children}
-    </section>
-  );
-}
-
-/**
  * One honest line about the AI allowance. States exactly one of three
  * situations — window open, updates available, or blocked until a date —
  * never a generic "upgrade for more".
@@ -1087,8 +838,12 @@ const PAGE_CSS = `
     margin: 0 !important; padding: 0 !important;
     overflow: visible !important; background: none !important; gap: 0 !important;
   }
+  /* The preview is scaled down to fit the column; paper is the real size, so
+     the transform comes off and the sheet prints at its designed width. */
+  .rb-scale-box { height: auto !important; overflow: visible !important; }
   #resume-print {
     position: static !important; width: 100% !important; overflow: visible !important;
+    transform: none !important;
     box-shadow: none !important; border: none !important; border-radius: 0 !important;
     margin: 0 !important;
   }
@@ -1098,8 +853,15 @@ const PAGE_CSS = `
      which would push an over-long one onto a fresh page and leave a gap. */
   .rb-keep { break-inside: avoid; page-break-inside: avoid; }
 }
-@page { margin: 12mm; }
 `;
+
+/**
+ * Page margin depends on the design. The five export templates carry their own
+ * generous padding and bleed colour to the paper edge, so a printer margin on
+ * top of that would leave a white frame around a full-bleed masthead. ATS-safe
+ * is plain text and wants a normal document margin.
+ */
+const pageRule = (bleed: boolean) => `@page { margin: ${bleed ? "0" : "12mm"}; }`;
 
 const S: Record<string, CSSProperties> = {
   // ── Hero ──
@@ -1136,18 +898,4 @@ const S: Record<string, CSSProperties> = {
   pHeadLines: { position: "absolute", inset: 0, background: "repeating-linear-gradient(90deg, rgba(255,255,255,.025) 0 1px, transparent 1px 56px)" },
   pChip: { display: "inline-flex", alignItems: "center", gap: 5, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.13)", color: "#C7CEE4", borderRadius: 999, padding: "4px 11px", fontSize: 10.5, fontWeight: 500, whiteSpace: "nowrap", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" },
   pSkill: { background: "#F5F3FF", border: "1px solid #E9E5FF", color: "#4C1D95", borderRadius: 7, padding: "5px 10px", fontSize: 10.8, fontWeight: 600 },
-};
-
-// ── ATS-safe template. Times-adjacent serif on purpose: it prints crisply,
-// reads as a document rather than a web page, and parsers have no opinion.
-const A: Record<string, CSSProperties> = {
-  sheet: { background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, boxShadow: "0 10px 30px rgba(15,23,42,.08)", padding: "34px 38px", fontFamily: "Georgia, 'Times New Roman', serif", color: "#111827" },
-  name: { fontSize: 24, fontWeight: 700, letterSpacing: "-0.3px" },
-  headline: { fontSize: 13.5, marginTop: 3, color: "#374151" },
-  meta: { fontSize: 11, color: "#4B5563", marginTop: 6 },
-  sectionTitle: { fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.2, borderBottom: "1px solid #D1D5DB", paddingBottom: 3, marginBottom: 8, color: "#111827" },
-  body: { fontSize: 12, lineHeight: 1.55, margin: 0, color: "#1F2937" },
-  role: { fontSize: 12.5, fontWeight: 700, color: "#111827" },
-  years: { fontSize: 11, color: "#4B5563", flex: "none" },
-  li: { fontSize: 11.5, lineHeight: 1.5, color: "#1F2937", marginBottom: 3 },
 };
