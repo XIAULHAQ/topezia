@@ -85,12 +85,23 @@ export interface Momentum {
   medianLifetimeDays: number | null; // unlocks at >=20 observed in-field expirations
 }
 
+// A demanded skill concept, coverage-agnostic: what share of the field's
+// postings name it, and whether the PROFILE lists something that covers it.
+// The Resume Builder diffs this against the resume's own skill list.
+export interface DemandSkill {
+  skill: string;
+  jobsWanting: number;
+  pct: number; // of the field's eligible postings
+  youHave: string | null; // best covering proficiency on the profile, or null
+}
+
 export interface ProfileInsights {
   fieldLabel: string | null; // "backend engineer roles", or null if we can't scope
   targetJobs: number; // eligible postings in your field
   seniority: { level: string; atOrAbove: number; below: number } | null;
   coveragePct: number | null; // share of skills your field asks for that you have
   skillGaps: SkillGap[]; // most-wanted skills you lack or are only familiar with
+  topDemand: DemandSkill[]; // the field's most-named skills, covered or not
   nextSkills: NextSkill[]; // gaps that co-occur with skills you already have
   momentum: Momentum | null; // null when the field is too thin or nothing is dated
   ladder: {
@@ -245,7 +256,7 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
   // silently showing nothing.
   if (ids.length < 5) {
     return { fieldLabel, targetJobs: ids.length, seniority: null, coveragePct: null,
-      skillGaps: [], nextSkills: [], momentum: null, ladder: null, certs: [], premiumFrom: 2, inferred, reliable: false };
+      skillGaps: [], topDemand: [], nextSkills: [], momentum: null, ladder: null, certs: [], premiumFrom: 2, inferred, reliable: false };
   }
 
   // Skill demand across your field. One scan of the per-job rows (~8 skills/job)
@@ -372,6 +383,21 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
       jobsWanting: d.jobsWanting,
       pct: Math.round((d.jobsWanting / ids.length) * 100),
       youHave: d.lvl,
+    }));
+
+  // The field's most-named concepts, covered or not — the Resume Builder's
+  // market card diffs these against the resume's own skill list, so it needs
+  // demand for skills the person HAS too, which the gap list excludes.
+  const topDemand: DemandSkill[] = groups
+    .map((d, i) => ({ d, i }))
+    .filter(({ d }) => common(d.jobs))
+    .sort((a, b) => b.d.jobs - a.d.jobs)
+    .slice(0, 10)
+    .map(({ d, i }) => ({
+      skill: d.name,
+      jobsWanting: d.jobs,
+      pct: Math.round((d.jobs / ids.length) * 100),
+      youHave: conceptLvl[i],
     }));
 
   // Coverage: of the distinct concepts your field asks for (that matter), how
@@ -561,6 +587,7 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
     seniority,
     coveragePct,
     skillGaps: gaps,
+    topDemand,
     nextSkills,
     momentum,
     ladder,

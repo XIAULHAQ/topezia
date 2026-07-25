@@ -35,6 +35,10 @@ export interface ResumeContent {
    *  profile) appears on the resume. Defaults true; photo-less resumes are a
    *  deliberate choice in many markets, so the preference persists. */
   showPhoto: boolean;
+  /** "styled" = the designed navy-header sheet; "ats" = plain single-column
+   *  serif with no photo/graphics, for parsers that choke on layout. Same
+   *  content either way — this only picks the rendering. */
+  template: "styled" | "ats";
   experience: ResumeExperience[];
   education: ResumeEducation[];
   skills: string[];
@@ -151,6 +155,7 @@ export function sanitizeContent(raw: unknown): ResumeContent {
     summary: text(r.summary, LIMITS.summary),
     // Absent on docs saved before the field existed — default to shown.
     showPhoto: r.showPhoto !== false,
+    template: r.template === "ats" ? "ats" : "styled",
     experience,
     education,
     skills: strList(r.skills, 60, LIMITS.skills),

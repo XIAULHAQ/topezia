@@ -9,6 +9,7 @@
  * as one thing and is small; per-field patching would buy nothing but bugs.
  */
 import { NextRequest, NextResponse } from "next/server";
+import QRCode from "qrcode";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { sanitizeContent, seedFromProfile, asJson, type ResumeContent } from "@/lib/resume/doc";
@@ -53,6 +54,12 @@ export async function GET() {
   // one by up to 1MB). The doc only stores whether to SHOW it.
   const photo = profile.photoUrl ?? null;
   const publicUrl = profile.publicSlug ? `${SITE}/p/${profile.publicSlug}` : null;
+  // QR of the public profile, for the printed resume's footer: paper resume →
+  // one scan → live portfolio. Data URI so it prints with no network fetch.
+  // Best-effort: a QR failure must never block loading the resume.
+  const qr = publicUrl
+    ? await QRCode.toDataURL(publicUrl, { margin: 0, width: 160, color: { dark: "#0F172A", light: "#FFFFFF" } }).catch(() => null)
+    : null;
 
   const doc = await prisma.resumeDoc.findUnique({ where: { profileId: profile.id }, select: { content: true, updatedAt: true } });
   if (doc) {
@@ -66,7 +73,7 @@ export async function GET() {
     if (!("projects" in raw)) fill.projects = await loadProjects(profile.id);
     if (!("languages" in raw)) fill.languages = sanitizeContent({ languages: profile.languages }).languages;
     if (!("recommendations" in raw)) fill.recommendations = sanitizeContent({ recommendations: profile.recommendations }).recommendations;
-    return NextResponse.json({ content: { ...content, ...fill }, saved: true, updatedAt: doc.updatedAt, assist, photo, publicUrl });
+    return NextResponse.json({ content: { ...content, ...fill }, saved: true, updatedAt: doc.updatedAt, assist, photo, publicUrl, qr });
   }
 
   const headlineName = profile.headlineRoleId
@@ -85,7 +92,7 @@ export async function GET() {
     recommendations: profile.recommendations,
     projects: await loadProjects(profile.id),
   });
-  return NextResponse.json({ content, saved: false, updatedAt: null, assist, photo, publicUrl });
+  return NextResponse.json({ content, saved: false, updatedAt: null, assist, photo, publicUrl, qr });
 }
 
 export async function PUT(req: NextRequest) {

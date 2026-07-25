@@ -19,16 +19,28 @@
  *  - AI drafting is per-section and OPT-IN; saving is explicit, not auto.
  */
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { C, GRAD, Icon, BrandMark } from "@/app/_components/ui";
+import { C, GRAD, Icon, BrandMark, MatchRing } from "@/app/_components/ui";
 import { LIMITS, type ResumeContent, type ResumeExperience } from "@/lib/resume/doc";
+import { scoreResume } from "@/lib/resume/score";
 import type { AssistStatus } from "@/lib/resume/assist-quota";
+import type { DemandSkill } from "@/lib/matching/insights";
 
 type Busy = null | "save" | "sync" | "summary" | `bullets-${number}`;
+
+/** GET /api/resume/market — DB-counted demand for the person's field. */
+interface MarketStats {
+  fieldLabel: string | null;
+  targetJobs: number;
+  reliable: boolean;
+  topDemand: DemandSkill[];
+}
 
 export default function ResumeClient() {
   const [doc, setDoc] = useState<ResumeContent | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [publicUrl, setPublicUrl] = useState<string | null>(null);
+  const [qr, setQr] = useState<string | null>(null);
+  const [market, setMarket] = useState<MarketStats | null>(null);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,10 +55,17 @@ export default function ResumeClient() {
         setDoc(d.content);
         setPhoto(d.photo ?? null);
         setPublicUrl(d.publicUrl ?? null);
+        setQr(d.qr ?? null);
         if (d.saved) setSavedAt(d.updatedAt);
         if (d.assist) setQuota(d.assist);
       })
       .catch(() => setError("Couldn't load your resume."));
+    // Market stats load separately and lazily — the heavy insight queries must
+    // never delay the editor. A failure just means no card.
+    fetch("/api/resume/market")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && Array.isArray(d.topDemand)) setMarket(d); })
+      .catch(() => {});
   }, []);
 
   const up = useCallback((patch: Partial<ResumeContent>) => {
@@ -141,18 +160,9 @@ export default function ResumeClient() {
     }
   }
 
-  // Hero stats — real counts only (see header comment on the missing score).
-  const sectionsFilled = [
-    doc.contact.name || doc.contact.headline || doc.contact.email,
-    doc.summary,
-    doc.experience.length,
-    doc.education.length,
-    doc.skills.length,
-    doc.certifications.length,
-    doc.projects.length,
-    doc.languages.length,
-    doc.recommendations.length,
-  ].filter(Boolean).length;
+  // Hero stats — real counts only. The strength score is checklist-based
+  // (lib/resume/score.ts) and recomputes live on every edit.
+  const strength = scoreResume(doc);
   const shortTime = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const shortDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   const quotaStat = !quota
@@ -163,7 +173,7 @@ export default function ResumeClient() {
         ? { value: String(quota.remaining), label: quota.remaining === 1 ? "AI update available" : "AI updates available" }
         : { value: "0", label: `AI updates — next unlocks ${quota.nextAt ? shortDate(quota.nextAt) : "later"}` };
   const stats: { value: string; label: string }[] = [
-    { value: `${sectionsFilled}/9`, label: "Sections filled" },
+    { value: String(strength.score), label: `Resume strength — ${strength.metCount} of ${strength.checks.length} checks` },
     { value: String(doc.skills.length), label: "Skills on this resume" },
     { value: String(doc.projects.length), label: "Portfolio projects attached" },
     quotaStat,
@@ -220,6 +230,17 @@ export default function ResumeClient() {
       <div className="rb-grid" style={S.grid}>
         {/* ── Editor column ── */}
         <div style={{ display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>
+          <StrengthCard strength={strength} />
+          {market && market.topDemand.length > 0 && (
+            <MarketCard
+              market={market}
+              resumeSkills={doc.skills}
+              onAdd={(name) => {
+                if (doc.skills.length >= LIMITS.skills) return;
+                if (!doc.skills.some((s) => s.toLowerCase() === name.toLowerCase())) up({ skills: [...doc.skills, name] });
+              }}
+            />
+          )}
           <section style={S.card}>
             <CardHead icon="user" title="Contact" />
             {photo && (
@@ -391,14 +412,34 @@ export default function ResumeClient() {
 
         {/* ── Preview column — the sheet is exactly what prints ── */}
         <div className="rb-preview-wrap" style={{ position: "sticky", top: 20, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.7, textTransform: "uppercase", color: C.mut, flex: 1 }}>Live preview</div>
+            {/* Template picker — same content, different rendering. ATS-safe is
+                plain single-column text: no photo, no QR, no graphics. */}
+            <div style={{ display: "inline-flex", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 999, padding: 3, gap: 2 }}>
+              {(["styled", "ats"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => up({ template: t })}
+                  title={t === "ats" ? "Plain single-column text — for employers whose software parses resumes" : "The designed Topezia look"}
+                  style={{
+                    border: "none", borderRadius: 999, padding: "5px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                    background: doc.template === t ? GRAD : "transparent",
+                    color: doc.template === t ? "#fff" : C.mut,
+                  }}
+                >
+                  {t === "ats" ? "ATS-safe" : "Styled"}
+                </button>
+              ))}
+            </div>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 999, padding: "5px 12px", fontSize: 11.5, fontWeight: 600, color: C.slate }}>
               <Icon name="eye" size={13} />A4
             </div>
           </div>
 
-          <div id="resume-print" style={S.sheet}>
+          <div id="resume-print" style={doc.template === "ats" ? A.sheet : S.sheet}>
+            {doc.template === "ats" ? <AtsSheet doc={doc} publicUrl={publicUrl} /> : (<>
             {/* Navy header band */}
             <header style={S.pHead}>
               <div style={S.pHeadGlow1} />
@@ -541,17 +582,29 @@ export default function ResumeClient() {
                 </PSection>
               )}
 
-              <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 14, display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 14, display: "flex", alignItems: "center", gap: 10 }}>
                 <BrandMark size={16} />
-                {publicUrl ? (
-                  <a href={publicUrl} style={{ fontSize: 10, color: C.mut, lineHeight: 1.5, textDecoration: "none" }}>
-                    Full profile on {publicUrl.replace(/^https?:\/\/(www\.)?/, "")}
-                  </a>
-                ) : (
-                  <span style={{ fontSize: 10, color: C.mut, lineHeight: 1.5 }}>Built on topezia.com</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {publicUrl ? (
+                    <a href={publicUrl} style={{ fontSize: 10, color: C.mut, lineHeight: 1.5, textDecoration: "none", display: "block" }}>
+                      Full profile & portfolio on {publicUrl.replace(/^https?:\/\/(www\.)?/, "")}
+                    </a>
+                  ) : (
+                    <span style={{ fontSize: 10, color: C.mut, lineHeight: 1.5 }}>Built on topezia.com</span>
+                  )}
+                  {qr && publicUrl && (
+                    <div style={{ fontSize: 9, color: "#94A3B8", marginTop: 2 }}>Scan the code for the live portfolio.</div>
+                  )}
+                </div>
+                {/* The paper resume's escape hatch to the living one: printed
+                    QR → /p/{slug} with real work, videos, recommendations. */}
+                {qr && publicUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={qr} alt="QR code linking to the live Topezia profile" style={{ width: 54, height: 54, flex: "none" }} />
                 )}
               </div>
             </div>
+            </>)}
           </div>
           <p style={{ fontSize: 11.5, color: C.mut, textAlign: "center", lineHeight: 1.6, marginTop: 12 }}>
             Download PDF opens your browser&apos;s print dialog — choose &quot;Save as PDF&quot;.
@@ -585,6 +638,199 @@ function PSection({ icon, title, children }: { icon: string; title: string; chil
         </span>
         <h3 style={{ margin: 0, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.slate }}>{title}</h3>
       </div>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * The strength card: the score as a ring plus the checklist behind it. Every
+ * unmet item is the exact edit that earns its points — the score is never a
+ * verdict without a to-do list attached.
+ */
+function StrengthCard({ strength }: { strength: ReturnType<typeof scoreResume> }) {
+  const [open, setOpen] = useState(false);
+  const unmet = strength.checks.filter((ch) => !ch.met);
+  const shown = open ? unmet : unmet.slice(0, 3);
+  return (
+    <section style={S.card}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <MatchRing value={strength.score} size={54} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, letterSpacing: "-0.2px" }}>Resume strength</h2>
+          <p style={{ margin: "3px 0 0", fontSize: 12, color: C.mut, lineHeight: 1.5 }}>
+            {strength.metCount} of {strength.checks.length} checks passed — a transparent checklist, not an AI judgment.
+          </p>
+        </div>
+      </div>
+      {unmet.length > 0 ? (
+        <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
+          {shown.map((ch) => (
+            <div key={ch.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 11, padding: "10px 13px" }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: "#B45309", flex: "none", background: "#FEF3C7", borderRadius: 999, padding: "2px 8px" }}>+{ch.points}</span>
+              <span style={{ fontSize: 12.5, color: "#78350F", lineHeight: 1.55 }}>{ch.hint}</span>
+            </div>
+          ))}
+          {unmet.length > 3 && (
+            <button type="button" onClick={() => setOpen((o) => !o)} style={{ background: "none", border: "none", color: C.c1, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "left", padding: 0 }}>
+              {open ? "Show fewer" : `Show ${unmet.length - 3} more ways to earn points`}
+            </button>
+          )}
+        </div>
+      ) : (
+        <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "#0F6E56", fontWeight: 600 }}>
+          All {strength.checks.length} checks passed — as complete as the checklist gets.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Market card — counted from live postings, no AI involved. Three honest
+ * states per skill: on this resume (done), on your profile but not this
+ * resume (one-click add — we KNOW you have it), or not on your profile at
+ * all (a Career Coach question, never an "add it anyway" temptation).
+ */
+function MarketCard({ market, resumeSkills, onAdd }: { market: MarketStats; resumeSkills: string[]; onAdd: (name: string) => void }) {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const onResume = (skill: string) => {
+    const n = norm(skill);
+    return resumeSkills.some((s) => { const m = norm(s); return m === n || m.includes(n) || n.includes(m); });
+  };
+  if (!market.reliable) {
+    return (
+      <section style={S.card}>
+        <CardHead icon="trend" title="Your market" />
+        <p style={{ fontSize: 12.5, color: C.mut, margin: 0, lineHeight: 1.6 }}>
+          Only {market.targetJobs} live {market.fieldLabel ?? "matching"} posting{market.targetJobs === 1 ? "" : "s"} open to you right now — too few for percentages to mean much. This fills in as inventory grows.
+        </p>
+      </section>
+    );
+  }
+  const rows = market.topDemand.slice(0, 6);
+  const missing = rows.filter((d) => !onResume(d.skill) && !d.youHave).length;
+  return (
+    <section style={S.card}>
+      <CardHead icon="trend" title="What your market asks for" />
+      <div style={{ display: "grid", gap: 7 }}>
+        {rows.map((d) => {
+          const have = onResume(d.skill);
+          return (
+            <div key={d.skill} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: C.ink, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.skill}</span>
+              <span style={{ fontSize: 11.5, color: C.mut, flex: "none" }}>{d.pct}% of postings</span>
+              {have ? (
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#0F6E56", background: "#E7F6EE", borderRadius: 999, padding: "3px 9px", flex: "none" }}>✓ on resume</span>
+              ) : d.youHave ? (
+                <button type="button" onClick={() => onAdd(d.skill)} style={{ fontSize: 11, fontWeight: 700, color: C.c1, background: "#EEF2FF", border: "none", borderRadius: 999, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", flex: "none" }} title="It's on your profile but not this resume">
+                  + Add
+                </button>
+              ) : (
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#94A3B8", flex: "none" }}>not on your profile</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p style={{ fontSize: 11, color: C.mut, margin: "12px 0 0", lineHeight: 1.55 }}>
+        Counted from {market.targetJobs} live {market.fieldLabel ?? ""} postings open to you — no AI involved.
+        {missing > 0 && <> Skills you don&apos;t have yet are a <a href="/coach" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>Career Coach</a> conversation, not a resume edit.</>}
+      </p>
+    </section>
+  );
+}
+
+/**
+ * The ATS-safe rendering: single column, serif, black on white, no photo, no
+ * QR, no graphics — plain text a parser can't misread. Same ResumeContent.
+ */
+function AtsSheet({ doc, publicUrl }: { doc: ResumeContent; publicUrl: string | null }) {
+  return (
+    <div>
+      <header style={{ borderBottom: "2px solid #111827", paddingBottom: 12, marginBottom: 14 }}>
+        <div style={A.name}>{doc.contact.name || "Your Name"}</div>
+        {doc.contact.headline && <div style={A.headline}>{doc.contact.headline}</div>}
+        <div style={A.meta}>
+          {[doc.contact.location, doc.contact.email, doc.contact.phone, doc.contact.link].filter(Boolean).join("  ·  ")}
+        </div>
+      </header>
+
+      {doc.summary && <AtsSection title="Summary"><p style={A.body}>{doc.summary}</p></AtsSection>}
+
+      {doc.experience.length > 0 && (
+        <AtsSection title="Experience">
+          {doc.experience.map((ex, i) => (
+            <div key={i} style={{ marginBottom: i < doc.experience.length - 1 ? 12 : 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
+                <span style={A.role}>{[ex.title, ex.company].filter(Boolean).join(" — ")}</span>
+                {ex.years && <span style={A.years}>{ex.years}</span>}
+              </div>
+              {ex.bullets.filter(Boolean).length > 0 && (
+                <ul style={{ margin: "5px 0 0", paddingLeft: 18 }}>
+                  {ex.bullets.filter(Boolean).map((b, bi) => <li key={bi} style={A.li}>{b}</li>)}
+                </ul>
+              )}
+            </div>
+          ))}
+        </AtsSection>
+      )}
+
+      {doc.education.length > 0 && (
+        <AtsSection title="Education">
+          {doc.education.map((ed, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 4 }}>
+              <span style={A.body}>{[ed.degree, ed.institution].filter(Boolean).join(" — ")}</span>
+              {ed.year && <span style={A.years}>{ed.year}</span>}
+            </div>
+          ))}
+        </AtsSection>
+      )}
+
+      {doc.skills.length > 0 && <AtsSection title="Skills"><p style={A.body}>{doc.skills.join("  ·  ")}</p></AtsSection>}
+      {doc.certifications.length > 0 && <AtsSection title="Certifications"><p style={A.body}>{doc.certifications.join("  ·  ")}</p></AtsSection>}
+
+      {doc.projects.length > 0 && (
+        <AtsSection title="Selected Projects">
+          {doc.projects.map((pr) => (
+            <div key={pr.url} style={{ marginBottom: 4 }}>
+              <span style={{ ...A.role, fontSize: 11.5 }}>{pr.title}</span>
+              <span style={{ fontSize: 10, color: "#374151" }}> — {pr.url.replace(/^https?:\/\/(www\.)?/, "")}</span>
+            </div>
+          ))}
+        </AtsSection>
+      )}
+
+      {doc.languages.filter((l) => l.name).length > 0 && (
+        <AtsSection title="Languages">
+          <p style={A.body}>{doc.languages.filter((l) => l.name).map((l) => (l.level ? `${l.name} (${l.level})` : l.name)).join("  ·  ")}</p>
+        </AtsSection>
+      )}
+
+      {doc.recommendations.filter((r) => r.text).length > 0 && (
+        <AtsSection title="Recommendations">
+          {doc.recommendations.filter((r) => r.text).map((r, i) => (
+            <div key={i} style={{ marginBottom: 8 }}>
+              <p style={{ ...A.body, fontStyle: "italic" }}>&ldquo;{r.text}&rdquo;</p>
+              {(r.author || r.role) && <div style={{ fontSize: 10.5, color: "#4B5563", marginTop: 2 }}>— {[r.author, r.role].filter(Boolean).join(", ")}</div>}
+            </div>
+          ))}
+        </AtsSection>
+      )}
+
+      {publicUrl && (
+        <div style={{ borderTop: "1px solid #D1D5DB", paddingTop: 10, marginTop: 4, fontSize: 10, color: "#4B5563" }}>
+          Full profile &amp; portfolio: {publicUrl.replace(/^https?:\/\/(www\.)?/, "")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AtsSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section style={{ marginBottom: 14 }}>
+      <div style={A.sectionTitle}>{title}</div>
       {children}
     </section>
   );
@@ -702,4 +948,18 @@ const S: Record<string, CSSProperties> = {
   pHeadLines: { position: "absolute", inset: 0, background: "repeating-linear-gradient(90deg, rgba(255,255,255,.025) 0 1px, transparent 1px 56px)" },
   pChip: { display: "inline-flex", alignItems: "center", gap: 5, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.13)", color: "#C7CEE4", borderRadius: 999, padding: "4px 11px", fontSize: 10.5, fontWeight: 500, whiteSpace: "nowrap", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" },
   pSkill: { background: "#F5F3FF", border: "1px solid #E9E5FF", color: "#4C1D95", borderRadius: 7, padding: "5px 10px", fontSize: 10.8, fontWeight: 600 },
+};
+
+// ── ATS-safe template. Times-adjacent serif on purpose: it prints crisply,
+// reads as a document rather than a web page, and parsers have no opinion.
+const A: Record<string, CSSProperties> = {
+  sheet: { background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, boxShadow: "0 10px 30px rgba(15,23,42,.08)", padding: "34px 38px", fontFamily: "Georgia, 'Times New Roman', serif", color: "#111827" },
+  name: { fontSize: 24, fontWeight: 700, letterSpacing: "-0.3px" },
+  headline: { fontSize: 13.5, marginTop: 3, color: "#374151" },
+  meta: { fontSize: 11, color: "#4B5563", marginTop: 6 },
+  sectionTitle: { fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.2, borderBottom: "1px solid #D1D5DB", paddingBottom: 3, marginBottom: 8, color: "#111827" },
+  body: { fontSize: 12, lineHeight: 1.55, margin: 0, color: "#1F2937" },
+  role: { fontSize: 12.5, fontWeight: 700, color: "#111827" },
+  years: { fontSize: 11, color: "#4B5563", flex: "none" },
+  li: { fontSize: 11.5, lineHeight: 1.5, color: "#1F2937", marginBottom: 3 },
 };
