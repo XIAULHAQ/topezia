@@ -4,10 +4,11 @@
  * /profile view — LinkedIn-style presentation of the REAL profile, ported from
  * the Topezia design. Real data drives the hero identity, About, Experience,
  * Education, Certifications, Top skills, "Improve your match" (from insights)
- * and Profile completion. Panels we can't back with data yet — AI Career Score,
- * the recruiter/views hero metrics, Projects, AI insights, Languages, Top
- * companies — render the design's shape but carry a clear "Sample"/"Coming
- * soon" badge so nothing reads as a real number about this person.
+ * and Profile completion. The AI Career Score in the hero is real and counted
+ * (lib/career/score.ts) with a "what's in it" breakdown. Panels we can't back
+ * with data yet — the recruiter/views hero metrics — render the design's shape
+ * but carry a clear "Sample" badge so nothing reads as a real number about
+ * this person.
  */
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { C, GRAD, Icon, Card, SoonTag, initials } from "@/app/_components/ui";
@@ -36,6 +37,13 @@ interface Insights {
   skillGaps: { skill: string; pct: number; youHave: string | null }[];
   seniority: { level: string; atOrAbove: number; below: number } | null;
 }
+interface CareerScore {
+  score: number | null; // null = market too thin to score honestly
+  components: { id: string; label: string; points: number | null; max: number; detail: string }[];
+  moves: { label: string; href: string }[];
+  fieldLabel: string | null;
+  targetJobs: number;
+}
 
 const PROF_PCT: Record<string, number> = { EXPERT: 96, ADVANCED: 86, PROFICIENT: 72, FAMILIAR: 55 };
 const profPct = (p: string | null) => (p ? PROF_PCT[p] ?? 65 : 65);
@@ -47,6 +55,8 @@ const HERO_LOGO_BG = ["linear-gradient(135deg,#334155,#0F172A)", "linear-gradien
 export default function ProfileView() {
   const [p, setP] = useState<Profile | null>(null);
   const [ins, setIns] = useState<Insights | null>(null);
+  const [cs, setCs] = useState<CareerScore | null>(null);
+  const [csOpen, setCsOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("Overview");
   // Own work, drafts included. Deliberately NOT folded into /api/profile:
   // that endpoint is on the dashboard's hot path and this is only needed on
@@ -72,6 +82,7 @@ export default function ProfileView() {
   useEffect(() => {
     fetch("/api/profile").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setP(d.profile); setRoleGroups(d.roleGroups ?? []); } }).catch(() => {});
     fetch("/api/profile/insights").then((r) => (r.ok ? r.json() : null)).then((d) => d && setIns(d.insights)).catch(() => {});
+    fetch("/api/career-score").then((r) => (r.ok ? r.json() : null)).then((d) => d && setCs(d.careerScore)).catch(() => {});
   }, []);
 
   /** Merge a saved section back into the page, then re-pull insights — a new
@@ -80,6 +91,7 @@ export default function ProfileView() {
   function applyPatch(patch: ProfilePatch) {
     setP((cur) => (cur ? { ...cur, ...patch } as typeof cur : cur));
     fetch("/api/profile/insights").then((r) => (r.ok ? r.json() : null)).then((d) => d && setIns(d.insights)).catch(() => {});
+    fetch("/api/career-score").then((r) => (r.ok ? r.json() : null)).then((d) => d && setCs(d.careerScore)).catch(() => {});
   }
 
   if (!p) return <div style={{ color: C.mut, padding: "40px 0" }}>Loading your profile…</div>;
@@ -166,13 +178,26 @@ export default function ProfileView() {
                 <svg width="66" height="66" viewBox="0 0 100 100">
                   <defs><linearGradient id="pvsc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={C.c1} /><stop offset="1" stopColor="#22D3EE" /></linearGradient></defs>
                   <circle cx="50" cy="50" r="42" stroke="rgba(255,255,255,.12)" strokeWidth="9" fill="none" />
-                  <circle cx="50" cy="50" r="42" stroke="url(#pvsc)" strokeWidth="9" fill="none" strokeLinecap="round" strokeDasharray="263.9" strokeDashoffset="60" transform="rotate(-90 50 50)" />
+                  <circle cx="50" cy="50" r="42" stroke="url(#pvsc)" strokeWidth="9" fill="none" strokeLinecap="round" strokeDasharray="263.9" strokeDashoffset={cs?.score != null ? 263.9 * (1 - cs.score / 100) : 263.9} transform="rotate(-90 50 50)" style={{ transition: "stroke-dashoffset .6s ease" }} />
                 </svg>
-                <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontSize: 19, fontWeight: 800 }}>—</div>
+                <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontSize: 19, fontWeight: 800 }}>{cs?.score ?? "—"}</div>
               </div>
               <div>
-                <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".4px", color: "#A5B4FC", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>AI Career Score <SoonTag label="Soon" style={{ background: "rgba(255,255,255,.1)", color: "#A5B4FC", borderColor: "transparent" }} /></div>
-                <div style={{ fontSize: 11.5, color: "#94A3C0", marginTop: 3, maxWidth: 160, lineHeight: 1.45 }}>A single score for your market strength — coming soon.</div>
+                <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".4px", color: "#A5B4FC", textTransform: "uppercase" }}>AI Career Score</div>
+                {cs ? (
+                  <>
+                    <div style={{ fontSize: 11.5, color: "#94A3C0", marginTop: 3, maxWidth: 170, lineHeight: 1.45 }}>
+                      {cs.score != null
+                        ? "Counted from your resume, your field's live postings, and your proof of work."
+                        : "Your market is too thin to score honestly yet."}
+                    </div>
+                    <button type="button" onClick={() => setCsOpen((o) => !o)} style={{ background: "none", border: "none", padding: 0, marginTop: 5, fontSize: 11.5, fontWeight: 700, color: "#A5B4FC", cursor: "pointer", fontFamily: "inherit" }}>
+                      {csOpen ? "Hide the math ↑" : "See what's counted ↓"}
+                    </button>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11.5, color: "#94A3C0", marginTop: 3, maxWidth: 160, lineHeight: 1.45 }}>Counting from live postings…</div>
+                )}
               </div>
             </div>
             <div style={{ display: "flex", gap: 9, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -201,6 +226,48 @@ export default function ProfileView() {
           ))}
         </div>
       </section>
+
+      {/* ── Career Score breakdown — every point audited, nothing oracular ── */}
+      {cs && csOpen && (
+        <div style={{ marginTop: 20 }}>
+          <Card>
+            <SectionHead icon="gauge" title="What's in your Career Score" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {cs.components.map((co) => (
+                <div key={co.id}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 700 }}>{co.label}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: co.points != null ? C.c1 : C.mut, marginLeft: "auto" }}>
+                      {co.points != null ? `${co.points} / ${co.max}` : `— / ${co.max}`}
+                    </span>
+                  </div>
+                  <div style={{ height: 7, borderRadius: 999, background: "#EEF2F7", marginTop: 6, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${co.points != null ? Math.round((co.points / co.max) * 100) : 0}%`, background: GRAD, borderRadius: 999 }} />
+                  </div>
+                  <div style={{ fontSize: 12.5, color: C.mut, marginTop: 6, lineHeight: 1.55 }}>{co.detail}</div>
+                </div>
+              ))}
+            </div>
+            {cs.moves.length > 0 && (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".4px", textTransform: "uppercase", color: C.mut, margin: "18px 0 8px" }}>What would move it</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {cs.moves.map((m, i) => (
+                    <a key={i} href={m.href} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, color: C.ink, textDecoration: "none", lineHeight: 1.5 }}>
+                      <span style={{ color: C.c1, flex: "none", marginTop: 1 }}><Icon name="arrowR" size={13} /></span>
+                      <span>{m.label}</span>
+                    </a>
+                  ))}
+                </div>
+              </>
+            )}
+            <div style={{ fontSize: 12, color: C.mut, marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.line}`, lineHeight: 1.6 }}>
+              Every point above is counted from your profile and live postings — nothing is a model&apos;s guess, and only you can see it.
+              Want a plan to raise it? <a href="/coach" style={{ color: C.c1, fontWeight: 700, textDecoration: "none" }}>Career Coach →</a>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* ── Tabs — only the ones with something behind them ── */}
       <div style={{ display: "flex", gap: 8, margin: "20px 0", flexWrap: "wrap" }}>
