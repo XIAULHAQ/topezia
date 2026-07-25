@@ -15,6 +15,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { currentIdentity } from "@/lib/identity";
 import { portfolioImageUrl } from "@/lib/portfolio/storage";
 import {
   ENDORSEMENT_LIMITS, clean, cleanText, cleanRating, type RequestContext,
@@ -29,6 +30,7 @@ async function load(token: string) {
     where: { token },
     select: {
       id: true, kind: true, status: true, requestNote: true, expiresAt: true,
+      profileId: true,
       profile: { select: { fullName: true, photoUrl: true, headlineRoleId: true } },
       portfolio: { select: { title: true, slug: true, coverPath: true } },
     },
@@ -66,6 +68,22 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
   if (row.status === "SUBMITTED") return NextResponse.json({ error: "This has already been answered — thank you." }, { status: 409 });
   if (row.expiresAt < new Date()) return NextResponse.json({ error: "This link has expired. Ask them for a fresh one." }, { status: 410 });
 
+  // A real account, not an anonymous cookie. This is what lets the profile
+  // say the words came from someone who authenticated with an email they
+  // control, instead of merely "someone with the link".
+  const { userId, authed } = await currentIdentity();
+  if (!authed || !userId) {
+    return NextResponse.json({ error: "Please sign in so your name means something here." }, { status: 401 });
+  }
+
+  // …and it must not be the member reviewing themselves. Without this the
+  // sign-in requirement would be theatre: whoever holds the link is usually
+  // signed in as the person the link is about.
+  const mine = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
+  if (mine?.id === row.profileId) {
+    return NextResponse.json({ error: "This is your own request — it needs to be written by someone else." }, { status: 403 });
+  }
+
   let body: { authorName?: unknown; authorRole?: unknown; text?: unknown; rating?: unknown };
   try {
     body = await req.json();
@@ -84,6 +102,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     where: { id: row.id, status: "PENDING" },
     data: {
       status: "SUBMITTED",
+      authorUserId: userId,
       authorName,
       authorRole: clean(body.authorRole, ENDORSEMENT_LIMITS.authorRole) || null,
       text,

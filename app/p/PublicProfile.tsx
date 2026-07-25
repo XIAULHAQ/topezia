@@ -284,15 +284,20 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
                         <span style={{ fontSize: 12, color: C.mut, fontWeight: 600 }}>— {[e.authorName, e.authorRole].filter(Boolean).join(", ")}</span>
                         {e.rating && <span style={{ fontSize: 12, color: C.c1, fontWeight: 700 }}>{"★".repeat(e.rating)}</span>}
                         {e.work && <span style={{ fontSize: 11, color: C.mut }}>on <a href={`/portfolio/${e.work.slug}`} style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>{e.work.title}</a></span>}
-                        <span style={{ fontSize: 10, fontWeight: 700, color: "#0F6E56", background: "#E7F6EE", borderRadius: 999, padding: "2px 8px" }}>written by them</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "#0F6E56", background: "#E7F6EE", borderRadius: 999, padding: "2px 8px" }}>{e.signedIn ? "written by them, signed in" : "written by them"}</span>
                       </div>
                     </blockquote>
                   ))}
-                  {/* The exact claim, and its exact limit. We know these came
-                      through a request link rather than the member's keyboard;
-                      we do NOT know the author is who they say they are. */}
+                  {/* The exact claim, and its exact limit. Authors now sign
+                      in with an account of their own that cannot be the
+                      member's — but signing in proves a mailbox, not a person,
+                      so we never say "verified". The wording adapts because
+                      endorsements written before sign-in was required carry no
+                      account, and describing those as signed-in would be a
+                      false claim on somebody's public profile. */}
                   <div style={{ fontSize: 10.5, color: C.mut, lineHeight: 1.5 }}>
-                    Written by people {p.fullName ?? "the member"} invited, in their own words — {p.fullName ?? "the member"} can hide one but cannot edit it. Topezia doesn&apos;t verify identities.
+                    Written by people {p.fullName ?? "the member"} invited, in their own words — {p.fullName ?? "the member"} can hide one but cannot edit it.
+                    {p.endorsements.some((e) => e.signedIn) && " Those marked \u201csigned in\u201d came from someone with their own Topezia account, which can never be the member\u2019s; that confirms an email, not an identity."}
                   </div>
                 </div>
               </Card>

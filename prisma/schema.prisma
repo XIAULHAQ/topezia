@@ -766,6 +766,9 @@ model Endorsement {
   portfolio   Portfolio?        @relation(fields: [portfolioId], references: [id], onDelete: SetNull)
 
   // Filled in by the AUTHOR through the public form; null while PENDING.
+  // The author must be signed in — their Supabase user id, which is what
+  // makes "someone else wrote this" enforceable rather than merely claimed.
+  authorUserId String?
   authorName  String?
   authorRole  String?
   text        String?

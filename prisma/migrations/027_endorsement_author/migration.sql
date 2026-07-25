@@ -1,0 +1,11 @@
+-- The author's own account.
+--
+-- Until now the only thing standing behind an endorsement was "it arrived
+-- through a link". The member holds that link, so they could open it and
+-- write their own praise — which is why the profile could only ever claim
+-- the mechanism, never the identity.
+--
+-- Requiring the author to sign in changes what we can honestly say: the words
+-- came from someone who authenticated with an email they control, and it is
+-- no longer the member's own account (enforced in /api/r/[token]).
+ALTER TABLE "Endorsement" ADD COLUMN "authorUserId" TEXT;
