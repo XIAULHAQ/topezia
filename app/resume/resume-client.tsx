@@ -28,6 +28,9 @@ import type { FocusDirection } from "@/app/api/resume/focus/route";
 
 type Busy = null | "save" | "sync" | "summary" | `bullets-${number}`;
 
+/** Class marking the print sheet's ancestors — see the effect and PAGE_CSS. */
+const PRINT_CHAIN = "rb-print-chain";
+
 /** GET /api/resume/market — DB-counted demand for the person's field. */
 interface MarketStats {
   fieldLabel: string | null;
@@ -73,6 +76,29 @@ export default function ResumeClient() {
   const up = useCallback((patch: Partial<ResumeContent>) => {
     setDoc((d) => (d ? { ...d, ...patch } : d));
     setDirty(true);
+  }, []);
+
+  /**
+   * Mark the sheet's ancestor chain for the print stylesheet (see PAGE_CSS):
+   * CSS can hide "everything except this subtree", but it cannot express
+   * "the ancestors of this subtree", and those ancestors must survive for the
+   * sheet to render at all. Runs on beforeprint so it covers Ctrl+P exactly
+   * like our own Download PDF button, and unwinds on afterprint so the screen
+   * layout is never left altered.
+   */
+  useEffect(() => {
+    const mark = () => {
+      let el = document.getElementById("resume-print")?.parentElement ?? null;
+      while (el && el !== document.body) { el.classList.add(PRINT_CHAIN); el = el.parentElement; }
+    };
+    const unmark = () => document.querySelectorAll(`.${PRINT_CHAIN}`).forEach((e) => e.classList.remove(PRINT_CHAIN));
+    window.addEventListener("beforeprint", mark);
+    window.addEventListener("afterprint", unmark);
+    return () => {
+      window.removeEventListener("beforeprint", mark);
+      window.removeEventListener("afterprint", unmark);
+      unmark();
+    };
   }, []);
 
   // Focus Check — re-classify the LIVE skill list (debounced) whenever it
@@ -524,7 +550,7 @@ export default function ResumeClient() {
                 <PSection icon="briefcase" title="Experience">
                   <div style={{ display: "grid", gap: 13 }}>
                     {doc.experience.map((ex, i) => (
-                      <div key={i} style={{ display: "flex", gap: 12 }}>
+                      <div key={i} className="rb-keep" style={{ display: "flex", gap: 12 }}>
                         <div style={{ width: 2, borderRadius: 2, background: GRAD, flex: "none" }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
@@ -592,7 +618,7 @@ export default function ResumeClient() {
                       and the visible short URL keeps a paper copy useful too. */}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10 }}>
                     {doc.projects.map((pr) => (
-                      <a key={pr.url} href={pr.url} style={{ textDecoration: "none", color: "inherit", border: `1px solid ${C.line}`, borderRadius: 11, overflow: "hidden", display: "block" }}>
+                      <a key={pr.url} href={pr.url} className="rb-keep" style={{ textDecoration: "none", color: "inherit", border: `1px solid ${C.line}`, borderRadius: 11, overflow: "hidden", display: "block" }}>
                         <div style={{ aspectRatio: "16/10", background: "#EEF2FF" }}>
                           {pr.thumb && (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -625,7 +651,7 @@ export default function ResumeClient() {
                 <PSection icon="quote" title="Recommendations">
                   <div style={{ display: "grid", gap: 10 }}>
                     {doc.recommendations.filter((r) => r.text).map((r, i) => (
-                      <div key={i}>
+                      <div key={i} className="rb-keep">
                         <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.65, color: C.slate, fontStyle: "italic" }}>&ldquo;{r.text}&rdquo;</p>
                         {(r.author || r.role) && <div style={{ fontSize: 10.5, color: C.mut, marginTop: 3, fontWeight: 600 }}>— {[r.author, r.role].filter(Boolean).join(", ")}</div>}
                       </div>
@@ -893,7 +919,7 @@ function AtsSheet({ doc, publicUrl }: { doc: ResumeContent; publicUrl: string | 
       {doc.experience.length > 0 && (
         <AtsSection title="Experience">
           {doc.experience.map((ex, i) => (
-            <div key={i} style={{ marginBottom: i < doc.experience.length - 1 ? 12 : 0 }}>
+            <div key={i} className="rb-keep" style={{ marginBottom: i < doc.experience.length - 1 ? 12 : 0 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
                 <span style={A.role}>{[ex.title, ex.company].filter(Boolean).join(" — ")}</span>
                 {ex.years && <span style={A.years}>{ex.years}</span>}
@@ -1024,12 +1050,24 @@ function ChipEditor({ values, placeholder, max, onChange }: { values: string[]; 
 }
 
 /**
- * Page CSS. Print: only the resume sheet exists on paper. The visibility trick
- * (rather than display:none on ancestors) keeps the sheet's own layout intact,
- * and position:absolute re-anchors it to the page origin. print-color-adjust:
- * exact is what keeps the navy header band and gradient accents on paper —
- * without it most browsers strip backgrounds and the white-on-navy header
- * would print as a blank block.
+ * Page CSS.
+ *
+ * Print scoping is the subtle part. The obvious approach — `visibility:
+ * hidden` on everything but the sheet — is wrong: hidden elements still
+ * OCCUPY their layout space, so the editor column's several thousand pixels
+ * printed as page after page of blank paper (a 2-page resume came out 6
+ * pages), with the sheet offset by the sidebar on top of it.
+ *
+ * So hidden things must be `display: none` — they then take no space at all.
+ * But the sheet's own ancestors have to survive, and CSS cannot select
+ * "ancestors of X". The component marks that chain with .rb-print-chain on
+ * beforeprint; here we hide every non-marked sibling and strip the marked
+ * ancestors of anything that would constrain or offset the sheet (grid
+ * tracks, sticky offsets, padding, 100vh heights, overflow clipping).
+ *
+ * print-color-adjust: exact keeps the navy header band and gradient accents
+ * on paper — without it most browsers strip backgrounds and the white-on-navy
+ * header prints as a blank block.
  */
 const PAGE_CSS = `
 .rb-grid { grid-template-columns: minmax(0,1fr) 470px; }
@@ -1040,14 +1078,25 @@ const PAGE_CSS = `
 @media (max-width: 640px) { .rb-edu { grid-template-columns: 1fr !important; } }
 .rb-in:focus { border-color: #A5B4FC !important; box-shadow: 0 0 0 3px rgba(99,102,241,.12); outline: none; }
 @media print {
-  body * { visibility: hidden; }
-  #resume-print, #resume-print * { visibility: visible; }
-  #resume-print, #resume-print * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body > *:not(.rb-print-chain),
+  .rb-print-chain > *:not(.rb-print-chain):not(#resume-print) { display: none !important; }
+  .rb-print-chain {
+    display: block !important; position: static !important;
+    width: auto !important; max-width: none !important; min-width: 0 !important;
+    height: auto !important; min-height: 0 !important; max-height: none !important;
+    margin: 0 !important; padding: 0 !important;
+    overflow: visible !important; background: none !important; gap: 0 !important;
+  }
   #resume-print {
-    position: absolute; left: 0; top: 0; width: 100%;
+    position: static !important; width: 100% !important; overflow: visible !important;
     box-shadow: none !important; border: none !important; border-radius: 0 !important;
     margin: 0 !important;
   }
+  #resume-print, #resume-print * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* Short blocks shouldn't be split across the page break. Only applied to
+     items that are always well under a page tall — never whole sections,
+     which would push an over-long one onto a fresh page and leave a gap. */
+  .rb-keep { break-inside: avoid; page-break-inside: avoid; }
 }
 @page { margin: 12mm; }
 `;
