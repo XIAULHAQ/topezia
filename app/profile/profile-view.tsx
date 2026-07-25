@@ -15,6 +15,7 @@ import { COUNTRY_NAMES } from "@/lib/countries";
 import ShareMenu from "@/app/_components/ShareMenu";
 import EditInPlace, { EditPencil, type SectionKey, type ProfilePatch } from "./edit-in-place";
 import EndorsementsPanel from "./endorsements-panel";
+import PublicationsPanel from "./publications-panel";
 
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
 
@@ -320,6 +321,17 @@ export default function ProfileView() {
                 ) : <EmptyRow text="No certifications added." onEdit={() => setEditing("certs")} />}
               </Card>
             </div>
+          )}
+
+          {/* Publications & research — self-contained panel, same pattern as
+              endorsements: structured rows with their own API, not a profile
+              field. Shown with Education because that is where an academic
+              record reads naturally. */}
+          {showEdu && (
+            <Card>
+              <SectionHead icon="doc" title="Publications & research" />
+              <PublicationsPanel />
+            </Card>
           )}
 
           {showSkillsTab && (

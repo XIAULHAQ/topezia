@@ -5,13 +5,13 @@
  * on a work's own page.
  *
  * Same machinery as the profile panel, pre-scoped to THIS piece: it mints a
- * one-time /r/{token} link that the owner sends themselves. Topezia never
+ * standing /r/{token} link that the owner sends themselves. Topezia never
  * emails anyone on a member's behalf, which is what keeps us from being
  * turned into a way to mail strangers — so the product of this button is a
  * link on the clipboard, not a message in flight.
  *
- * One request per person invited: each link can be answered exactly once, so
- * the owner mints a new one for each expert rather than passing one around.
+ * One link serves everyone: it keeps working until the owner turns it off,
+ * and each signed-in account can answer it once.
  */
 import { useEffect, useState, type CSSProperties } from "react";
 import { C, Icon } from "@/app/_components/ui";
@@ -91,7 +91,7 @@ export default function InviteReviewers({ portfolioId, workTitle }: { portfolioI
       {link ? (
         <>
           <p style={S.done}>
-            Link ready{copied ? " and copied" : ""} — send it to them yourself. It can be answered once, then it stops working.
+            Link ready{copied ? " and copied" : ""} — send it yourself, to as many people as you like. Each person signs in and writes once; the link works until you turn it off from your profile.
           </p>
           <div style={S.linkRow}>
             <input readOnly value={link} style={S.linkInput} onFocus={(e) => e.currentTarget.select()} />
@@ -101,7 +101,7 @@ export default function InviteReviewers({ portfolioId, workTitle }: { portfolioI
             They&rsquo;ll be asked to sign in before it posts, so the review comes from an account that isn&rsquo;t yours.
             Manage everything you&rsquo;ve requested on <a href="/profile" style={S.inlineLink}>your profile</a>.
           </p>
-          <button type="button" onClick={reset} style={S.secondary}>Invite someone else</button>
+          <button type="button" onClick={reset} style={S.secondary}>Create another link</button>
         </>
       ) : (
         <>

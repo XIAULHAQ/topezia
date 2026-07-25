@@ -3,10 +3,17 @@
  * honesty rules.
  *
  * ── What this is ─────────────────────────────────────────────────────────
- * A member creates a request, gets a one-time link, and sends it to the
- * person themselves. That person writes the text at /r/{token}. The member
- * can hide what comes back but can never edit it — the whole value is that
- * the words are not theirs.
+ * A member creates a request, gets a standing link, and sends it to people
+ * themselves. Whoever opens it writes the text at /r/{token}; each signed-in
+ * account can answer a given link once, and the link keeps working until the
+ * member deletes it. The member can hide what comes back but can never edit
+ * it — the whole value is that the words are not theirs.
+ *
+ * Links used to be single-use with a 60-day expiry. That guarded against a
+ * leaked link back when anyone holding it could write anonymously; now that
+ * every author signs in with an account that cannot be the member's, and the
+ * member can revoke the link or hide any response, the expiry only punished
+ * the honest case — people reasonably want one link they can keep sharing.
  *
  * ── What it is NOT ───────────────────────────────────────────────────────
  * It is not verification. We do not check that the author is who they say
@@ -33,15 +40,19 @@ export const ENDORSEMENT_LIMITS = {
   authorRole: 100,
   sentToLabel: 80,
   requestNote: 300,
-  /** Pending requests one profile may hold at once — a link generator is a
+  /** Standing links one profile may hold at once — a link generator is a
    *  spam vector if it is unbounded, even when we send no email ourselves. */
   maxPending: 25,
   /** Total submitted items we will render on a profile. */
   maxShown: 20,
+  /** Responses one link may collect. Well above any honest use; exists so a
+   *  link posted somewhere public can't grow a profile without bound. */
+  maxPerLink: 50,
 } as const;
 
-/** Invite links die; a permanent secret is a permanent attack surface. */
-export const LINK_TTL_DAYS = 60;
+/** Standing links don't expire — sign-in + revocation are the controls — but
+ *  expiresAt is NOT NULL, so they carry this sentinel instead of a branch. */
+export const NEVER_EXPIRES = new Date("2100-01-01T00:00:00Z");
 
 export type EndorsementKind = "RECOMMENDATION" | "REVIEW";
 
@@ -73,8 +84,11 @@ export interface RequestContext {
   requestNote: string | null;
   /** REVIEW only — the piece of work being reviewed. */
   work: { title: string; url: string; thumb: string | null } | null;
-  /** Already answered: the form is closed but we still say so kindly. */
+  /** True when THIS signed-in viewer already answered this link (or, for
+   *  legacy single-use rows, when anyone did). The form closes kindly. */
   alreadySubmitted: boolean;
+  /** Only ever true for legacy single-use links minted before links became
+   *  standing; new invites carry the NEVER_EXPIRES sentinel. */
   expired: boolean;
 }
 

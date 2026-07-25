@@ -35,6 +35,8 @@ export async function GET() {
       employmentTypes: true, remoteTypes: true, locations: true, salaryFloor: true,
       salaryTarget: true, salaryPeriod: true, workAuthorization: true, tier: true, createdAt: true,
       skills: { select: { proficiency: true, confidence: true, source: true, skill: { select: { name: true } } } },
+      // "Export my data" must actually be all of it.
+      publications: { select: { type: true, title: true, authors: true, venue: true, year: true, doi: true, isbn: true, url: true, abstract: true } },
     },
   });
   if (!profile) return NextResponse.json({ error: "No profile." }, { status: 404 });

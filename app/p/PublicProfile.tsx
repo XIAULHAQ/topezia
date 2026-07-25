@@ -33,6 +33,20 @@ const PATHS: Record<string, string[]> = {
   github: ["M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-.9-2.6c3.1-.4 6.4-1.5 6.4-7A5.4 5.4 0 0 0 20 4.8 5 5 0 0 0 19.9 1S18.7.7 16 2.5a13.4 13.4 0 0 0-7 0C6.3.7 5.1 1 5.1 1A5 5 0 0 0 5 4.8a5.4 5.4 0 0 0-1.5 3.7c0 5.5 3.3 6.6 6.4 7A3.4 3.4 0 0 0 9 18.1V22"],
   mail: ["M3 6h18v12H3z", "M3 7l9 6 9-6"],
   chat: ["M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5z"],
+  doc: ["M6 2h9l4 4v16H6z", "M14 2v5h5"],
+};
+
+/** Local copy of lib/publications/doc labels, keyed loosely because the DB
+ *  value arrives as string over the wire. */
+const PUB_TYPE_LABELS: Record<string, string> = {
+  JOURNAL_ARTICLE: "Journal article",
+  CONFERENCE_PAPER: "Conference paper",
+  BOOK: "Book",
+  BOOK_CHAPTER: "Book chapter",
+  THESIS: "Thesis",
+  REPORT: "Report",
+  PREPRINT: "Preprint",
+  OTHER: "Publication",
 };
 function Ic({ n, s = 16, color }: { n: string; s?: number; color?: string }) {
   return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color ?? "currentColor"} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none" }}>{(PATHS[n] ?? []).map((d, i) => <path key={i} d={d} />)}</svg>;
@@ -268,6 +282,37 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
                   </Card>
                 )}
               </div>
+            )}
+
+            {/* Publications & research — papers, books, theses. Member-entered
+                like education; the DOI/ISBN/link is what a reader can check,
+                which is exactly why it is shown. */}
+            {show.edu && p.publications.length > 0 && (
+              <Card><Head icon="doc" title="Publications & research" />
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  {p.publications.map((pub) => (
+                    <div key={pub.id}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: C.c1, background: "#EEF2FF", borderRadius: 999, padding: "2px 8px", textTransform: "uppercase", letterSpacing: 0.3 }}>
+                          {PUB_TYPE_LABELS[pub.type] ?? "Publication"}
+                        </span>
+                        {pub.year && <span style={{ fontSize: 11.5, color: C.mut, fontWeight: 600 }}>{pub.year}</span>}
+                      </div>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.4 }}>{pub.title}</div>
+                      {pub.authors.length > 0 && <div style={{ fontSize: 12, color: C.slate, marginTop: 3 }}>{pub.authors.join(", ")}</div>}
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4, fontSize: 11.5, color: C.mut }}>
+                        {pub.venue && <span style={{ fontWeight: 600, color: C.c1 }}>{pub.venue}</span>}
+                        {pub.doi && <a href={`https://doi.org/${pub.doi}`} target="_blank" rel="noopener noreferrer" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>DOI {pub.doi}</a>}
+                        {pub.isbn && <span>ISBN {pub.isbn}</span>}
+                        {pub.url && <a href={pub.url} target="_blank" rel="noopener noreferrer" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>View ↗</a>}
+                      </div>
+                      {pub.abstract && (
+                        <p style={{ fontSize: 12.5, color: C.slate, lineHeight: 1.65, margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{pub.abstract}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Card>
             )}
 
             {/* Written by other people, through a request. Rendered ABOVE the

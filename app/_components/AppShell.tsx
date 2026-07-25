@@ -51,13 +51,16 @@ const FIND_HINT_CSS = `
 // avatar, not here — the sidebar is what you've collected and who you are.
 const NAV: NavItem[] = [
   { icon: "user", label: "My Profile", href: "/profile" },
+  // Resume Builder and Career Coach sit directly under the profile: all three
+  // are "work on yourself" surfaces, and the builder/coach both read the
+  // profile — the saved/collected things come after.
+  { icon: "doc", label: "Resume Builder", href: "/resume" },
+  { icon: "spark", label: "Career Coach", href: "/coach" },
   { icon: "bookmark", label: "Saved Jobs", href: "/saved" },
   { icon: "zap", label: "Saved Projects", href: "/saved/projects" },
   { icon: "image", label: "My Work", href: "/portfolio/mine" },
   { icon: "briefcase", label: "Applications", soon: true },
-  { icon: "doc", label: "Resume Builder", href: "/resume" },
   { icon: "gauge", label: "Skill Assessment", soon: true },
-  { icon: "spark", label: "Career Coach", href: "/coach" },
 ];
 
 const S_menuItem: CSSProperties = {

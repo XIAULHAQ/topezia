@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
-import { ENDORSEMENT_LIMITS, LINK_TTL_DAYS, newToken, clean } from "@/lib/endorsements/doc";
+import { ENDORSEMENT_LIMITS, NEVER_EXPIRES, newToken, clean } from "@/lib/endorsements/doc";
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com").replace(/\/$/, "");
 
@@ -33,17 +33,21 @@ export async function GET() {
       authorName: true, authorRole: true, text: true, rating: true,
       submittedAt: true, visible: true, expiresAt: true,
       portfolio: { select: { title: true, slug: true } },
+      _count: { select: { responses: true } },
     },
   });
 
   return NextResponse.json({
     endorsements: rows.map((r) => ({
       ...r,
-      // The token is the member's to share — it is their link — but it only
-      // goes out for rows still awaiting an answer.
+      // The token is the member's to share — it is their link — and a
+      // PENDING row IS the standing link, however many responses it has.
       link: r.status === "PENDING" ? `${SITE}/r/${r.token}` : null,
       token: undefined,
+      // Legacy single-use rows only; standing links carry NEVER_EXPIRES.
       expired: r.status === "PENDING" && r.expiresAt < new Date(),
+      responses: r._count.responses,
+      _count: undefined,
     })),
   });
 }
@@ -89,7 +93,9 @@ export async function POST(req: NextRequest) {
       token: newToken(),
       sentToLabel: clean(body.sentToLabel, ENDORSEMENT_LIMITS.sentToLabel) || null,
       requestNote: clean(body.requestNote, ENDORSEMENT_LIMITS.requestNote) || null,
-      expiresAt: new Date(Date.now() + LINK_TTL_DAYS * 24 * 60 * 60 * 1000),
+      // Standing link: it works until the member deletes it. Sign-in +
+      // revocation replaced the old 60-day expiry as the abuse control.
+      expiresAt: NEVER_EXPIRES,
     },
     select: { id: true, token: true, kind: true, sentToLabel: true, expiresAt: true },
   });

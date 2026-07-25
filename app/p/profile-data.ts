@@ -48,6 +48,14 @@ export interface PubProfile {
   locations: string[];
   /** Published work only — drafts never appear on a public profile. */
   portfolios: { slug: string; title: string; coverUrl: string | null }[];
+  /** Papers, books, theses — member-entered, shown with their checkable
+   *  identifiers (DOI/ISBN/link) so a reader can verify what we cannot. */
+  publications: {
+    id: string; type: string; title: string; authors: string[];
+    venue: string | null; year: number | null;
+    doi: string | null; isbn: string | null; url: string | null;
+    abstract: string | null;
+  }[];
 }
 
 /** Fetch a public profile by slug (cached so page + generateMetadata share one query). */
@@ -77,6 +85,14 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
         orderBy: { publishedAt: "desc" },
         take: 12,
         select: { slug: true, title: true, coverPath: true },
+      },
+      publications: {
+        orderBy: [{ position: "asc" as const }, { createdAt: "desc" as const }],
+        take: 25,
+        select: {
+          id: true, type: true, title: true, authors: true, venue: true,
+          year: true, doi: true, isbn: true, url: true, abstract: true,
+        },
       },
     },
   });
@@ -112,6 +128,7 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     remoteTypes: p.remoteTypes,
     locations: p.locations,
     portfolios: p.portfolios.map((w) => ({ slug: w.slug, title: w.title, coverUrl: portfolioImageUrl(w.coverPath) })),
+    publications: p.publications,
   };
 });
 

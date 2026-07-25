@@ -389,6 +389,7 @@ model Profile {
   portfolioSaves    PortfolioSave[]
   portfolioLikes    PortfolioLike[]
   endorsements      Endorsement[]
+  publications      Publication[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -763,12 +764,20 @@ model PortfolioLike {
 // A recommendation or review someone ELSE wrote about a member.
 //
 // The distinction from Profile.recommendations (a JSON blob the member types
-// themselves) is the whole point: these arrive through a one-time link that
+// themselves) is the whole point: these arrive through an invite link that
 // the member sends out but cannot write into. The member may hide one, never
 // edit it — see lib/endorsements/doc.ts for why hiding has to stay allowed.
 //
 // A RECOMMENDATION is about the person. A REVIEW is about one piece of work,
 // so it hangs off a Portfolio row and may carry a rating.
+//
+// Two shapes share this table:
+//  - An INVITE: status PENDING, holds the shareable token. Standing — it
+//    lives until the member deletes it (that deletion is the kill switch
+//    that used to be the expiry date).
+//  - A RESPONSE: status SUBMITTED, points at its invite via inviteId. Each
+//    signed-in author gets at most one response per invite (unique below),
+//    so a shared link can collect many voices but one account can't stack.
 model Endorsement {
   id          String            @id @default(uuid())
   profileId   String            // who it is about
@@ -789,6 +798,12 @@ model Endorsement {
   portfolioId String?
   portfolio   Portfolio?        @relation(fields: [portfolioId], references: [id], onDelete: SetNull)
 
+  // RESPONSE only: the standing invite it answered. SetNull so revoking an
+  // invite kills the link but never takes the words people already wrote.
+  inviteId    String?
+  invite      Endorsement?      @relation("InviteResponses", fields: [inviteId], references: [id], onDelete: SetNull)
+  responses   Endorsement[]     @relation("InviteResponses")
+
   // Filled in by the AUTHOR through the public form; null while PENDING.
   // The author must be signed in — their Supabase user id, which is what
   // makes "someone else wrote this" enforceable rather than merely claimed.
@@ -804,9 +819,56 @@ model Endorsement {
   visible     Boolean           @default(true)
 
   createdAt   DateTime          @default(now())
-  expiresAt   DateTime          // dead links stop being an attack surface
+  // Kept for the historical single-use rows; standing invites carry a
+  // far-future sentinel. Revocation (deleting the invite) is the control now
+  // that authors must sign in — see lib/endorsements/doc.ts.
+  expiresAt   DateTime
 
+  // One response per author account per invite — the DB is the lock, so two
+  // tabs (or a retry) can't double-post. NULLs (invites, legacy rows) are
+  // distinct in Postgres and never collide.
+  @@unique([inviteId, authorUserId])
   @@index([profileId, status])
+}
+
+// Published written work — the ResearchGate-shaped section: papers, books,
+// theses. Member-entered and member-owned, like education; we verify nothing
+// (a DOI link is checkable by the reader, which is exactly why we show it).
+model Publication {
+  id        String          @id @default(uuid())
+  profileId String
+  profile   Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  type      PublicationType
+  title     String
+  // Authors as printed on the work, in order — includes the member and any
+  // co-authors. Free text: author lists don't resolve to accounts.
+  authors   String[]
+  // Journal, conference, or publisher — whichever the type calls for.
+  venue     String?
+  year      Int?
+  // Reader-checkable identifiers. DOI for papers, ISBN for books.
+  doi       String?
+  isbn      String?
+  url       String?
+  abstract  String?
+
+  position  Int             @default(0)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([profileId, position])
+}
+
+enum PublicationType {
+  JOURNAL_ARTICLE
+  CONFERENCE_PAPER
+  BOOK
+  BOOK_CHAPTER
+  THESIS
+  REPORT
+  PREPRINT
+  OTHER
 }
 
 enum EndorsementKind {

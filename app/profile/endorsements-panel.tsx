@@ -26,6 +26,8 @@ type Row = {
   visible: boolean;
   link: string | null;
   expired: boolean;
+  /** How many people have answered this standing link so far. */
+  responses: number;
   portfolio: { title: string; slug: string } | null;
 };
 type Work = { id: string; title: string; slug: string; thumb: string | null };
@@ -196,20 +198,30 @@ export default function EndorsementsPanel() {
 
       {pending.length > 0 && (
         <div style={{ marginTop: 14 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: C.mut, marginBottom: 7 }}>Waiting on a reply</div>
+          <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: C.mut, marginBottom: 7 }}>Your invite links</div>
+          <p style={{ fontSize: 11, color: C.mut, margin: "0 0 8px", lineHeight: 1.5 }}>
+            Each link keeps working until you turn it off — share it with as many people as you like; everyone signs in and writes once.
+          </p>
           <div style={{ display: "grid", gap: 7 }}>
             {pending.map((r) => (
               <div key={r.id} style={{ ...S.item, display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap", padding: "9px 12px" }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: r.expired ? C.mut : C.ink }}>
-                  {r.sentToLabel || (r.kind === "REVIEW" ? "Review request" : "Recommendation request")}
+                  {r.sentToLabel || (r.kind === "REVIEW" ? "Review link" : "Recommendation link")}
                 </span>
                 {r.portfolio && <span style={{ fontSize: 11, color: C.mut }}>on {r.portfolio.title}</span>}
+                {r.responses > 0 && (
+                  <span style={{ fontSize: 10.5, color: "#0F6E56", background: "#E7F6EE", borderRadius: 999, padding: "2px 8px", fontWeight: 700 }}>
+                    {r.responses} {r.responses === 1 ? "reply" : "replies"}
+                  </span>
+                )}
                 {r.expired && <span style={{ fontSize: 10.5, color: "#9A3412", background: "#FFF7ED", borderRadius: 999, padding: "2px 8px", fontWeight: 700 }}>expired</span>}
                 <div style={{ flex: 1 }} />
                 {!r.expired && r.link && (
                   <button type="button" onClick={() => copy(r.link!)} style={S.linkBtn}>{copied === r.link ? "Copied ✓" : "Copy link"}</button>
                 )}
-                <button type="button" onClick={() => remove(r.id)} style={{ ...S.linkBtn, color: "#b42318" }}>Delete</button>
+                {/* Deleting the link is the revocation control: it stops
+                    working instantly, but replies already written stay. */}
+                <button type="button" onClick={() => remove(r.id)} style={{ ...S.linkBtn, color: "#b42318" }}>Turn off</button>
               </div>
             ))}
           </div>

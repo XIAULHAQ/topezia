@@ -47,6 +47,11 @@ export interface Viewer { firstName: string; photoUrl: string | null; hasAccount
 
 const initialsOf = (name: string) => name.slice(0, 2).toUpperCase();
 
+/** LinkedIn OAuth only exists once the Supabase provider is configured —
+ *  flip NEXT_PUBLIC_LINKEDIN_AUTH=1 in the environment when it is. Inlined
+ *  at build time, so this is a compile-time gate, not a runtime probe. */
+const LINKEDIN_ENABLED = process.env.NEXT_PUBLIC_LINKEDIN_AUTH === "1";
+
 /** What they were trying to reach, for the badge + panel eyebrow. */
 const DESTINATIONS: { prefix: string; label: string; eyebrow: string }[] = [
   { prefix: "/coach", label: "Career Coach", eyebrow: "Your Career Coach" },
@@ -69,7 +74,7 @@ const CSS = `
 @media (max-width:900px){ .lg-panel{display:none!important} .lg-left{padding:22px 20px!important} }
 `;
 
-export default function LoginClient({ next, stats, viewer }: { next: string | null; stats: LoginStats | null; viewer: Viewer | null }) {
+export default function LoginClient({ next, stats, viewer, initialError = null }: { next: string | null; stats: LoginStats | null; viewer: Viewer | null; initialError?: string | null }) {
   const router = useRouter();
   // /login means SIGN IN — that is what every "Sign in" link in the app points
   // at, so it must land on the sign-in form. The one exception is the
@@ -82,7 +87,7 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
   const [notice, setNotice] = useState<string | null>(null);
   // What the button reports while it works. "…" alone left people unsure
   // anything had happened during a multi-second sign-in.
@@ -105,6 +110,19 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
   }, []);
 
   const dest = next ? DESTINATIONS.find((d) => next === d.prefix || next.startsWith(`${d.prefix}/`)) : undefined;
+
+  async function signInWithLinkedIn() {
+    setError(null);
+    const supabase = createClient();
+    // The whole page navigates away to LinkedIn; /auth/callback finishes the
+    // exchange server-side and runs the same anon-profile migration the
+    // email flow does, so nothing built before signing in is lost.
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "linkedin_oidc",
+      options: { redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next ?? "/feed")}` },
+    });
+    if (error) setError(error.message);
+  }
 
   async function forgotPassword() {
     setError(null); setNotice(null);
@@ -301,6 +319,18 @@ export default function LoginClient({ next, stats, viewer }: { next: string | nu
                 ) : mode === "signup" ? "Create account" : "Sign in"}
                 {!loading && <Ic n="arrow" />}
               </button>
+
+              {/* LinkedIn OAuth — gated on the env flag so the button only
+                  exists once the Supabase provider is actually configured; a
+                  sign-in button that errors is worse than none. */}
+              {LINKEDIN_ENABLED && (
+                <button type="button" onClick={signInWithLinkedIn} disabled={loading} style={S.linkedinBtn}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                    <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45z" />
+                  </svg>
+                  Continue with LinkedIn
+                </button>
+              )}
             </div>
 
             <p style={S.consent}>
@@ -378,6 +408,8 @@ const S: Record<string, CSSProperties> = {
   eyeBtn: { border: "none", background: "none", color: C.mut, cursor: "pointer", padding: 0, display: "grid", placeItems: "center" },
   forgot: { border: "none", background: "none", color: C.c1, fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", padding: 0 },
   submit: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: GRAD, color: "#fff", border: "none", borderRadius: 11, padding: 13, fontSize: 14, fontWeight: 600, cursor: "pointer", boxShadow: "0 8px 22px rgba(99,102,241,.35)", marginTop: 4, fontFamily: "inherit" },
+  // LinkedIn's brand blue, outlined so the primary action stays the primary.
+  linkedinBtn: { display: "flex", alignItems: "center", justifyContent: "center", gap: 9, background: "#fff", color: "#0A66C2", border: "1.5px solid #0A66C2", borderRadius: 11, padding: 12, fontSize: 13.5, fontWeight: 700, cursor: "pointer", marginTop: 10, fontFamily: "inherit" },
   error: { color: "#dc2626", fontSize: 13, margin: 0, lineHeight: 1.5 },
   notice: { color: "#059669", fontSize: 13, margin: 0, lineHeight: 1.5 },
   consent: { textAlign: "center", color: C.mut, fontSize: 11.5, marginTop: 14, lineHeight: 1.5 },

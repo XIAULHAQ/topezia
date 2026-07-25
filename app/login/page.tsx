@@ -78,7 +78,10 @@ async function getViewer(): Promise<Viewer | null> {
   }
 }
 
-export default async function LoginPage({ searchParams }: { searchParams: { next?: string | string[] } }) {
+export default async function LoginPage({ searchParams }: { searchParams: { next?: string | string[]; error?: string | string[] } }) {
   const [stats, viewer] = await Promise.all([getStats(), getViewer()]);
-  return <LoginClient next={safeNext(searchParams.next)} stats={stats} viewer={viewer} />;
+  // /auth/callback lands here with ?error= when an OAuth attempt fails or is
+  // cancelled — surface it in the form instead of a silent round trip.
+  const error = typeof searchParams.error === "string" ? searchParams.error.slice(0, 200) : null;
+  return <LoginClient next={safeNext(searchParams.next)} stats={stats} viewer={viewer} initialError={error} />;
 }

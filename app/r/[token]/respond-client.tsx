@@ -23,7 +23,6 @@ import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { C, GRAD, FONT, BrandMark, Icon } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/client";
 import { ENDORSEMENT_LIMITS, type RequestContext } from "@/lib/endorsements/doc";
-import { LINK_TTL_DAYS } from "@/lib/endorsements/doc";
 
 type Step = "write" | "auth" | "done";
 type Listing = {
@@ -171,8 +170,11 @@ export default function RespondClient({ token }: { token: string }) {
 
   if (dead) return shell(<><h1 style={S.h1}>This link isn&apos;t valid</h1><p style={S.sub}>{dead} If someone asked you for a recommendation, ask them to send a fresh link.</p></>);
   if (!ctx) return shell(<p style={S.sub}>Loading…</p>);
-  if (ctx.alreadySubmitted && step !== "done") return shell(<><h1 style={S.h1}>Already answered</h1><p style={S.sub}>Someone has already used this link. Thanks all the same.</p></>);
-  if (ctx.expired && step !== "done") return shell(<><h1 style={S.h1}>This link has expired</h1><p style={S.sub}>Links stay open for {LINK_TTL_DAYS} days. Ask {ctx.memberName} to send a new one.</p></>);
+  // Per-viewer now that links are shared: this closes the form only for an
+  // account that already wrote its response.
+  if (ctx.alreadySubmitted && step !== "done") return shell(<><h1 style={S.h1}>Already answered</h1><p style={S.sub}>You&apos;ve already written yours for this link — thank you. Each person can answer once.</p></>);
+  // Legacy single-use links only; standing links never expire.
+  if (ctx.expired && step !== "done") return shell(<><h1 style={S.h1}>This link has expired</h1><p style={S.sub}>This was an older, single-use link. Ask {ctx.memberName} for a fresh one — links no longer expire.</p></>);
 
   const isReview = ctx.kind === "REVIEW";
 
