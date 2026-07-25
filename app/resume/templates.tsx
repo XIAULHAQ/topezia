@@ -24,7 +24,7 @@ import type { ResumeContent } from "@/lib/resume/doc";
 /** A4 at 96dpi — the width every design was drawn against. */
 export const SHEET_W = 794;
 
-export type TemplateId = "signal" | "ledger" | "grid" | "prism" | "atlas" | "ats";
+export type TemplateId = "signal" | "ledger" | "grid" | "prism" | "atlas" | "studio" | "ats";
 
 export const TEMPLATES: { id: TemplateId; name: string; blurb: string }[] = [
   { id: "signal", name: "Signal", blurb: "Topezia navy rail with your photo — product and marketing roles" },
@@ -32,12 +32,13 @@ export const TEMPLATES: { id: TemplateId; name: string; blurb: string }[] = [
   { id: "grid", name: "Grid", blurb: "Swiss, mono labels, one accent band — cleanest parse" },
   { id: "prism", name: "Prism", blurb: "Gradient masthead, skills grouped by discipline" },
   { id: "atlas", name: "Atlas", blurb: "Warm terracotta and teal on cream — its own palette" },
+  { id: "studio", name: "Studio", blurb: "Warm paper, portrait hero, gallery footer — creative roles" },
   { id: "ats", name: "ATS-safe", blurb: "Plain single-column text, no graphics at all" },
 ];
 
 /** Designs with their own built-in page padding print edge-to-edge. */
 export const BLEEDS: Record<TemplateId, boolean> = {
-  signal: true, ledger: true, grid: true, prism: true, atlas: true, ats: false,
+  signal: true, ledger: true, grid: true, prism: true, atlas: true, studio: true, ats: false,
 };
 
 export interface SheetData {
@@ -110,6 +111,7 @@ export function ResumeSheet({ id, d }: { id: TemplateId; d: SheetData }) {
     case "grid": return <Grid d={d} />;
     case "prism": return <Prism d={d} />;
     case "atlas": return <Atlas d={d} />;
+    case "studio": return <Studio d={d} />;
     case "ats": return <Ats d={d} />;
     default: return <Signal d={d} />;
   }
@@ -866,6 +868,171 @@ function Ats({ d }: { d: SheetData }) {
           Full profile &amp; portfolio: {d.publicShort}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── 7 Studio — warm paper, portrait hero, gallery footer ─────────────── */
+/* Two honest departures from the mock, both because the mock hard-codes
+   data we don't have or can't claim:
+   - Its right-hand vertical caption says "15 Years Experience"; nothing in
+     the resume doc stores years-of-experience, and deriving one would be a
+     guess printed as a fact. The location (real, member-typed) takes that
+     visual slot instead.
+   - Its skills carry 5-dot proficiency ratings; the resume doc has no
+     proficiency, so dots-as-rating would be an invented measurement. Each
+     skill gets a single ink dot as a marker — same texture, no claim. */
+function Studio({ d }: { d: SheetData }) {
+  const INK = "#1F2430", MUT = "#6E6A61", FAINT = "#9A9488", RULE = "#C9C4B9";
+  const vertical: CSSProperties = {
+    writingMode: "vertical-rl", fontSize: 8.5, fontWeight: 600, letterSpacing: 4,
+    textTransform: "uppercase", color: "#8C877C", whiteSpace: "nowrap",
+  };
+  const colHead: CSSProperties = {
+    fontSize: 9, fontWeight: 600, letterSpacing: 3.2, textTransform: "uppercase",
+    color: INK, paddingBottom: 9, borderBottom: `1px solid ${RULE}`,
+  };
+  const itemTitle: CSSProperties = { fontSize: 10.5, fontWeight: 700, lineHeight: 1.35 };
+  const itemSub: CSSProperties = { fontSize: 9, color: MUT, marginTop: 4, lineHeight: 1.6 };
+  // The mock breaks the name across two lines; split on the middle word so
+  // "Muhammad Zia Ul Haq" reads Muhammad / Zia Ul Haq rather than one long line.
+  const words = d.name.split(/\s+/);
+  const head = words.slice(0, Math.max(1, Math.floor(words.length / 2))).join(" ");
+  const tail = words.slice(Math.max(1, Math.floor(words.length / 2))).join(" ");
+  const located = d.contacts.find((c) => c.k === "Based")?.v ?? null;
+  const [site, path] = d.publicShort ? [d.publicShort.split("/")[0], d.publicShort.slice(d.publicShort.indexOf("/"))] : [null, null];
+
+  return (
+    <div style={{ ...sheet(ARCHIVO, "#F4F2ED", INK), padding: "56px 54px 48px" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 20 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: 5.4, textTransform: "uppercase", lineHeight: 1.5 }}>
+            {head}{tail && <><br />{tail}</>}<span style={{ color: FAINT }}>.</span>
+          </div>
+        </div>
+        {site && (
+          <div style={{ flex: "none", textAlign: "right", fontSize: 9, fontWeight: 500, letterSpacing: 2.6, textTransform: "uppercase", color: "#5C5A53", lineHeight: 1.9 }}>
+            {site}{path && <><br />{path}</>}
+          </div>
+        )}
+      </div>
+
+      {d.photo ? (
+        <div style={{ marginTop: 26, display: "grid", gridTemplateColumns: "24px minmax(0,1fr) 24px", gap: "0 14px", alignItems: "stretch" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start" }}>
+            {d.headline && <div style={{ ...vertical, transform: "rotate(180deg)" }}>{d.headline}</div>}
+          </div>
+          <div style={{ position: "relative", display: "grid", placeItems: "center", padding: "0 90px" }}>
+            <div style={{ width: "100%", maxWidth: 400, aspectRatio: "1 / 1", borderRadius: "50%", overflow: "hidden", background: "#E4E1D9" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={d.photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top", display: "block" }} />
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+            {located && <div style={vertical}>{located}</div>}
+          </div>
+        </div>
+      ) : (
+        // No photo (or hidden): the hero collapses to a quiet caption row so
+        // the page doesn't open with an empty grey circle.
+        (d.headline || located) && (
+          <div style={{ marginTop: 18, display: "flex", justifyContent: "space-between", gap: 16, fontSize: 9, fontWeight: 600, letterSpacing: 3, textTransform: "uppercase", color: "#8C877C" }}>
+            <span>{d.headline}</span>{located && <span>{located}</span>}
+          </div>
+        )
+      )}
+
+      {d.summary && (
+        <p style={{ margin: "24px auto 0", maxWidth: 560, textAlign: "center", fontSize: 10.5, lineHeight: 1.75, color: "#4A4740" }}>{d.summary}</p>
+      )}
+
+      <div className="rb-flex" style={{ flex: 1, minHeight: 22 }} />
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: "0 26px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={colHead}>Education</div>
+          {d.education.map((e, i) => (
+            <div key={i} className="rb-keep">
+              <div style={itemTitle}>{e.degree}</div>
+              <div style={itemSub}>{e.institution}{e.year && <><br />{e.year}</>}</div>
+            </div>
+          ))}
+          {d.languages.length > 0 && (
+            <div className="rb-keep">
+              <div style={itemTitle}>Languages</div>
+              <div style={itemSub}>{d.languages.map((l, i) => <span key={i}>{l}{i < d.languages.length - 1 && <br />}</span>)}</div>
+            </div>
+          )}
+          {d.certifications.length > 0 && (
+            <div className="rb-keep">
+              <div style={itemTitle}>Certifications</div>
+              <div style={itemSub}>{d.certifications.map((c, i) => <span key={i}>{c}{i < d.certifications.length - 1 && <br />}</span>)}</div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={colHead}>Experience</div>
+          {d.experience.map((r, i) => (
+            <div key={i} className="rb-keep">
+              <div style={itemTitle}>{r.title}</div>
+              {r.company && <div style={itemSub}>{r.company}</div>}
+              {r.years && <div style={{ fontSize: 9, color: FAINT, marginTop: 2, letterSpacing: 0.4 }}>{r.years}</div>}
+              {r.bullets.length > 0 && (
+                <ul style={{ margin: "5px 0 0", paddingLeft: 12 }}>
+                  {r.bullets.map((b, j) => <li key={j} style={{ fontSize: 8.8, lineHeight: 1.55, color: "#4A4740", marginBottom: 2 }}>{b}</li>)}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={colHead}>{d.focused ? "Core skills" : "Skills & tools"}</div>
+          {d.coreSkills.map((sk) => (
+            <div key={sk} className="rb-keep" style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+              <span style={{ flex: "none", width: 6, height: 6, borderRadius: "50%", background: INK, position: "relative", top: -1 }} />
+              <div style={itemTitle}>{sk}</div>
+            </div>
+          ))}
+          {d.extraSkills.length > 0 && (
+            <div className="rb-keep">
+              <div style={{ ...itemTitle, color: MUT }}>Also</div>
+              <div style={itemSub}>{d.extraSkills.join(" · ")}</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {d.projects.length > 0 && (
+        <div style={{ marginTop: 22 }}>
+          <div style={colHead}>Selected work</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: "10px 26px", marginTop: 12 }}>
+            {d.projects.slice(0, 6).map((p) => (
+              <a key={p.url} href={p.url} className="rb-keep" style={{ textDecoration: "none", color: "inherit", minWidth: 0 }}>
+                <div style={itemTitle}>{p.title}</div>
+                <div style={{ ...itemSub, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.short}</div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {d.quotes[0] && (
+        <div className="rb-keep" style={{ marginTop: 22, maxWidth: 560 }}>
+          <p style={{ margin: 0, fontSize: 9.5, lineHeight: 1.7, color: "#4A4740", fontStyle: "italic" }}>&ldquo;{d.quotes[0].text}&rdquo;</p>
+          {d.quotes[0].by && <div style={{ fontSize: 8.5, letterSpacing: 2, textTransform: "uppercase", color: MUT, marginTop: 6 }}>{d.quotes[0].by}</div>}
+        </div>
+      )}
+
+      <div style={{ marginTop: 22, paddingTop: 12, borderTop: `1px solid ${RULE}`, display: "flex", gap: 18, alignItems: "center" }}>
+        {d.contacts.filter((c) => c.k !== "Based").map((c) => (
+          <div key={c.k} style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: MUT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.v}</div>
+        ))}
+        {located && <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: MUT, flex: "none" }}>{located}</div>}
+        <div style={{ flex: 1 }} />
+        {d.qr && /* eslint-disable-next-line @next/next/no-img-element */ <img src={d.qr} alt="" style={{ width: 34, height: 34, flex: "none" }} />}
+      </div>
     </div>
   );
 }

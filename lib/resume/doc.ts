@@ -38,7 +38,7 @@ export interface ResumeContent {
   /** Which export design renders the sheet. See app/resume/templates.tsx —
    *  the id list lives there, this only stores the choice. Same content in
    *  every one; a template is a layout decision, never a data one. */
-  template: "signal" | "ledger" | "grid" | "prism" | "atlas" | "ats";
+  template: "signal" | "ledger" | "grid" | "prism" | "atlas" | "studio" | "ats";
   /** Focus Check: the direction this resume leads with. `core` is the skill
    *  names rendered as "Core skills"; everything else steps back to
    *  "Additional skills". Null = no focus chosen (single Skills section).
@@ -55,7 +55,7 @@ export interface ResumeContent {
 
 /** Valid template ids. Kept here (not imported from the client component)
  *  so sanitisation never drags a React module into a server route. */
-const TEMPLATE_IDS = ["signal", "ledger", "grid", "prism", "atlas", "ats"];
+const TEMPLATE_IDS = ["signal", "ledger", "grid", "prism", "atlas", "studio", "ats"];
 
 export const LIMITS = {
   contactField: 120,
