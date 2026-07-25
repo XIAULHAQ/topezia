@@ -11,6 +11,7 @@
  */
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { C, GRAD, Icon, Card, SoonTag, initials } from "@/app/_components/ui";
+import { COUNTRY_NAMES } from "@/lib/countries";
 import ShareMenu from "@/app/_components/ShareMenu";
 import EditInPlace, { EditPencil, type SectionKey, type ProfilePatch } from "./edit-in-place";
 
@@ -25,6 +26,8 @@ interface Profile {
   education: { degree?: string; institution?: string; year?: string }[];
   certifications: string[];
   languages: { name: string; level?: string }[];
+  authorizedCountries: string[];
+  relocateCountries: string[];
   recommendations: { text: string; author?: string; role?: string }[];
 }
 interface Insights {
@@ -418,6 +421,41 @@ export default function ProfileView() {
               ))}
             </div>
           </section>
+
+          {/* REAL: work eligibility — this is what scopes the job feed, so it
+              gets a card of its own rather than hiding inside preferences. */}
+          <Card>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}><h2 style={S.railH}>Where you can work</h2><EditPencil onClick={() => setEditing("eligibility")} label="Edit where you can work" /></div>
+            {(p.authorizedCountries ?? []).length > 0 || (p.relocateCountries ?? []).length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {(p.authorizedCountries ?? []).length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: C.mut, marginBottom: 5 }}>No sponsorship needed</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                      {(p.authorizedCountries ?? []).map((c) => (
+                        <span key={c} style={{ background: "#EEF2FF", color: "#4338CA", borderRadius: 999, padding: "4px 10px", fontSize: 11.5, fontWeight: 600 }}>{COUNTRY_NAMES[c] ?? c}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {(p.relocateCountries ?? []).length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: C.mut, marginBottom: 5 }}>Would relocate — needs sponsorship</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                      {(p.relocateCountries ?? []).map((c) => (
+                        <span key={c} style={{ background: "#FFF7ED", color: "#9A3412", border: "1px solid #FED7AA", borderRadius: 999, padding: "3px 9px", fontSize: 11.5, fontWeight: 600 }}>{COUNTRY_NAMES[c] ?? c}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <p style={{ fontSize: 11, color: C.mut, margin: 0, lineHeight: 1.5 }}>This is what scopes your job feed — not where you live.</p>
+              </div>
+            ) : (
+              <p style={{ fontSize: 12.5, color: C.mut, margin: 0, lineHeight: 1.5 }}>
+                Your feed is scoped to where you live. If you can work somewhere else — citizenship, a visa, or you&apos;d relocate — <button type="button" onClick={() => setEditing("eligibility")} style={{ color: C.c1, fontWeight: 600, border: "none", background: "none", padding: 0, cursor: "pointer", fontSize: "inherit", fontFamily: "inherit" }}>tell us here</button>.
+              </p>
+            )}
+          </Card>
 
           {/* REAL: languages */}
           <Card>

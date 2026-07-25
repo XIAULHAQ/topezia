@@ -226,6 +226,11 @@ export interface ProfileFieldEdit {
   salaryTarget?: number | null;
   salaryPeriod?: SalaryPeriod | null;
   workAuthorization?: WorkAuthorization;
+  // Where they may work (no sponsorship) and where they'd move to. These SCOPE
+  // THE FEED — see lib/matching/eligibility.ts — so they are normalised to
+  // uppercase ISO-2 on write; a stray "us" would silently match nothing.
+  authorizedCountries?: string[];
+  relocateCountries?: string[];
   skills?: { name: string; proficiency: import("@prisma/client").SkillProficiency | null; source?: SkillSource; tier?: SkillTier }[];
   // Resume-derived history the profile view/edit surfaces. Stored as-is; these
   // don't affect matching (the embedding is built from headline + skills), so
@@ -278,6 +283,16 @@ export async function updateProfileFields(
   if (edit.salaryTarget !== undefined) data.salaryTarget = edit.salaryTarget;
   if (edit.salaryPeriod !== undefined) data.salaryPeriod = edit.salaryPeriod;
   if (edit.workAuthorization !== undefined) data.workAuthorization = edit.workAuthorization;
+  // ISO-2, uppercased, deduped, capped. A country listed as "authorised" is
+  // never also "would relocate" — authorisation already implies you can go.
+  const isoList = (xs: string[]) =>
+    [...new Set(xs.map((c) => String(c).trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c)))].slice(0, 40);
+  if (edit.authorizedCountries !== undefined) data.authorizedCountries = isoList(edit.authorizedCountries);
+  if (edit.relocateCountries !== undefined) {
+    const authorized = data.authorizedCountries ?? (edit.authorizedCountries ? isoList(edit.authorizedCountries) : null);
+    const relocate = isoList(edit.relocateCountries);
+    data.relocateCountries = authorized ? relocate.filter((c) => !(authorized as string[]).includes(c)) : relocate;
+  }
   if (edit.workHistory !== undefined) data.workHistory = edit.workHistory as unknown as Prisma.InputJsonValue;
   if (edit.education !== undefined) data.education = edit.education as unknown as Prisma.InputJsonValue;
   if (edit.certifications !== undefined) data.certifications = edit.certifications;

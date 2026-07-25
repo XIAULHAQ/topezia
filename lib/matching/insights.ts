@@ -14,6 +14,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { REGION_MEMBERS } from "@/lib/ingestion/normalize-rules";
+import { workContext, targetCountries, regionsCovering, type WorkContext } from "@/lib/matching/eligibility";
 
 const SENIORITY_RANK: Record<string, number> = {
   INTERN: 1, JUNIOR: 2, MID: 3, SENIOR: 4, LEAD: 5, EXEC: 6, NOT_APPLICABLE: 0,
@@ -135,28 +136,31 @@ const ROLE_SCOPE_MIN = 10; // role-scope when it has enough jobs; else widen to 
 
 async function targetJobIds(p: {
   profileId: string;
-  country: string | null;
+  ctx: WorkContext;
   headlineRoleId: string | null;
   skillIds: string[];
 }): Promise<{ ids: string[]; verticalId: string | null; scope: "role" | "vertical" | "none"; label: string | null; fieldWhere: object | null }> {
-  const eligibleRegions = p.country
-    ? Object.entries(REGION_MEMBERS).filter(([, m]) => m.includes(p.country!)).map(([r]) => r)
-    : [];
-  // MUST match eligibleIn() in match.ts, or the mirror counts jobs the feed
-  // can't actually show. A country-unknown job is eligible only when its remote
-  // scope is ALSO unknown — a null-country job scoped to EMEA is not open to a
-  // seeker in Pakistan.
-  const eligibility = p.country
+  // Scoped on where they may WORK, exactly as the feed is — the mirror must
+  // count the jobs the feed can actually show. Both sides read the same
+  // definitions from lib/matching/eligibility.ts.
+  //
+  // Note this deliberately omits the sponsorship-refusal exclusion the feed
+  // applies: that needs a full-text scan per posting, and the couple of
+  // percent it would shave off a market-size count isn't worth the cost. The
+  // difference is a slight over-count of a would-relocate market, never an
+  // under-count, so no gap is ever hidden from someone.
+  const targets = targetCountries(p.ctx);
+  const eligibility = targets.length
     ? {
         OR: [
-          { country: p.country },
+          { country: { in: targets } },
           { remoteScope: "GLOBAL" },
-          { remoteScope: p.country },
-          { remoteScope: { in: eligibleRegions } },
+          { remoteScope: { in: targets } },
+          { remoteScope: { in: regionsCovering(targets) } },
           { AND: [{ country: null }, { remoteScope: null }] },
         ],
       }
-    : {}; // no country known → filter nothing (mirrors eligibleIn)
+    : {}; // nothing known → filter nothing (mirrors eligibleIn)
 
   // Prefer the person's ACTUAL role — "backend engineer" jobs, not the whole
   // "tech & software" vertical, which would surface frontend skills as gaps for
@@ -192,8 +196,8 @@ async function targetJobIds(p: {
        FROM "Job" j CROSS JOIN "Profile" p
        WHERE p.id = $1 AND p.embedding IS NOT NULL AND j.status = 'LIVE' AND j.embedding IS NOT NULL
        AND (
-         $2::text IS NULL OR j."remoteScope" = 'GLOBAL' OR j.country = $2
-         OR j."remoteScope" = $2 OR j."remoteScope" = ANY($3::text[])
+         cardinality($2::text[]) = 0 OR j."remoteScope" = 'GLOBAL' OR j.country = ANY($2::text[])
+         OR j."remoteScope" = ANY($2::text[]) OR j."remoteScope" = ANY($3::text[])
          OR (j.country IS NULL AND j."remoteScope" IS NULL)
        )
        AND j."verticalId" IN (
@@ -205,7 +209,7 @@ async function targetJobIds(p: {
          )
        )
        GROUP BY j."verticalId" ORDER BY n DESC LIMIT 1`,
-      p.profileId, p.country, eligibleRegions
+      p.profileId, targets, regionsCovering(targets)
     );
     if (rows[0]) {
       const vName = (await prisma.vertical.findUnique({ where: { id: rows[0].verticalId }, select: { name: true, slug: true } }));
@@ -232,7 +236,8 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
     select: {
-      country: true, headlineRoleId: true, seniority: true,
+      country: true, authorizedCountries: true, relocateCountries: true,
+      headlineRoleId: true, seniority: true,
       skills: { select: { skillId: true, proficiency: true, skill: { select: { name: true } } } },
     },
   });
@@ -241,7 +246,7 @@ export async function getProfileInsights(profileId: string): Promise<ProfileInsi
   const mySkills = new Map(profile.skills.map((s) => [s.skillId, s.proficiency]));
   const { ids, scope, label, fieldWhere } = await targetJobIds({
     profileId,
-    country: profile.country,
+    ctx: workContext(profile),
     headlineRoleId: profile.headlineRoleId,
     skillIds: [...mySkills.keys()],
   });

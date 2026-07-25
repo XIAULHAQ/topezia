@@ -25,6 +25,7 @@ type Match = {
   salaryMin: number | null; salaryMax: number | null; salaryCurrency: string; salaryPeriod: string | null;
   locationState: string | null; lastVerifiedAt: string; similarity: number; score: number;
   matchedSkills: string[]; gapSkills: string[]; whyLine: string; pending: boolean;
+  geoNote: { kind: string; label: string; text: string } | null;
 };
 
 const FILTERS = ["All matches", "Remote", "Hourly", "Saved"] as const;
@@ -322,6 +323,15 @@ export default function FeedPage() {
                       </div>
                     </div>
                   </div>
+                  {/* Honest geographic caveat — sponsorship needed, or a
+                      country-scoped remote role you'd have to live in. Shown
+                      on the card so nobody finds out at the rejection email. */}
+                  {m.geoNote && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 18px", background: "#FFF7ED", borderTop: "1px solid #FED7AA", color: "#9A3412", fontSize: 11.5, lineHeight: 1.45 }} title={m.geoNote.text}>
+                      <Icon name="globe" size={13} />
+                      <span>{m.geoNote.text}</span>
+                    </div>
+                  )}
                   {(m.whyLine || m.pending) && (
                     <div style={S.cardFoot}>
                       <Icon name="spark" size={14} color={C.c1} />

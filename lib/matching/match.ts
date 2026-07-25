@@ -17,6 +17,7 @@
 import { prisma } from "@/lib/prisma";
 import { decodeHtmlEntities } from "@/lib/sanitize";
 import { REGION_MEMBERS } from "@/lib/ingestion/normalize-rules";
+import { workContext, eligibilityParams, eligibilitySql, eligibleIn, geoNote } from "@/lib/matching/eligibility";
 import type { EmploymentType, RemoteType, SalaryPeriod } from "@prisma/client";
 
 const RERANK_MODEL = "claude-haiku-4-5-20251001";
@@ -46,6 +47,9 @@ export interface JobMatch {
   gapSkills: string[];
   whyLine: string;
   pending: boolean; // true = not yet LLM-scored (provisional); enriched by rerank pass
+  /** Honest geographic caveat — sponsorship needed, or "remote but you must
+   *  live there". Null when the job is straightforwardly takeable. */
+  geoNote: { kind: string; label: string; text: string } | null;
 }
 
 interface CandidateRow {
@@ -107,6 +111,8 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       currentLocation: true,
       industries: true,
       workAuthorization: true,
+      authorizedCountries: true,
+      relocateCountries: true,
       headlineRoleId: true,
       matchVersion: true,
       skills: { select: { proficiency: true, tier: true, skill: { select: { name: true } } } },
@@ -137,19 +143,13 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
   // silently starved low-inventory countries: a Pakistan-based seeker's 100
   // nearest jobs were nearly all US/EU, so after the country filter only ~3
   // survived — even though ~80 eligible jobs existed and were never considered.
-  // The eligibility clause below MUST mirror eligibleIn() exactly.
-  const uc = profile.country;
-  const eligibleRegions = uc
-    ? Object.entries(REGION_MEMBERS).filter(([, members]) => members.includes(uc)).map(([region]) => region)
-    : [];
-  const eligSql = `(
-      $2::text IS NULL
-      OR j."remoteScope" = 'GLOBAL'
-      OR j.country = $2
-      OR j."remoteScope" = $2
-      OR j."remoteScope" = ANY($3::text[])
-      OR (j.country IS NULL AND j."remoteScope" IS NULL)
-    )`;
+  // Geography. Scoped on where they may WORK (authorised ∪ would-relocate),
+  // not where they live — see lib/matching/eligibility.ts. The SQL clause and
+  // the JS filter below are generated from that one module, so they cannot
+  // drift apart the way the old hand-synced pair could.
+  const ctx = workContext(profile);
+  const [elTargets, elRegions, elSponsor, elRx] = eligibilityParams(ctx);
+  const eligSql = eligibilitySql({ targets: 2, regions: 3, sponsorNeeded: 4, rx: 5 });
 
   // Literals from the typed options, never user input — safe to inline. The
   // routes whitelist the query-param values before they reach MatchOptions.
@@ -175,7 +175,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
        AND ${eligSql}
      ORDER BY j.embedding <=> p.embedding
      LIMIT 100`,
-    profileId, uc, eligibleRegions
+    profileId, elTargets, elRegions, elSponsor, elRx
   );
 
   // Guarantee the user's field is represented. The general retrieval ranks by
@@ -192,10 +192,10 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
        CROSS JOIN "Profile" p
        WHERE p.id = $1 AND p.embedding IS NOT NULL AND j.status = 'LIVE' AND j.embedding IS NOT NULL
          ${kindSql}
-         AND v.slug = $4 AND ${eligSql}
+         AND v.slug = $6 AND ${eligSql}
        ORDER BY j.embedding <=> p.embedding
        LIMIT 40`,
-      profileId, uc, eligibleRegions, fieldVerticalSlug
+      profileId, elTargets, elRegions, elSponsor, elRx, fieldVerticalSlug
     );
     const seen = new Set(candidates.map((c) => c.id));
     for (const c of fieldCandidates) if (!seen.has(c.id)) candidates.push(c);
@@ -226,7 +226,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       if (empPrefs.size && !empPrefs.has(j.employmentType)) return false;
       if (remotePrefs.size && !remotePrefs.has(j.remoteType)) return false;
     }
-    if (!eligibleIn(j, profile.country)) return false;
+    if (!eligibleIn(j, ctx)) return false;
     if (
       profile.salaryFloor != null &&
       j.salaryMax != null &&
@@ -331,6 +331,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       // credit) — we fall back to the similarity score rather than spin on
       // "scoring…" forever. Only stage 1 (rerank=false) leaves cards pending.
       pending: !rerank && !r,
+      geoNote: geoNote(j, ctx),
     };
   });
 
@@ -397,25 +398,6 @@ export function cleanWhyLine(line: string): string {
   if (clauses.length === 0) return ""; // nothing honest left to say
   const out = clauses.join("; ").replace(/[;,]\s*$/, "");
   return out.charAt(0).toUpperCase() + out.slice(1) + (/[.!?]$/.test(out) ? "" : ".");
-}
-
-/**
- * Could this person actually take this job, geographically?
- *
- * We index the whole world but a feed should show one person's world. Note the
- * last clause: unknown geography PASSES. Absence of evidence isn't evidence of
- * ineligibility, and hiding a job because we failed to parse its location would
- * be our bug punishing the seeker. Only positive evidence of a mismatch hides.
- */
-function eligibleIn(job: { country: string | null; remoteScope: string | null }, userCountry: string | null): boolean {
-  if (!userCountry) return true; // we don't know where they are — filter nothing
-  if (job.remoteScope === "GLOBAL") return true;
-  if (job.country === userCountry) return true;
-  if (job.remoteScope && job.remoteScope === userCountry) return true;
-  const region = job.remoteScope ? REGION_MEMBERS[job.remoteScope] : undefined;
-  if (region?.includes(userCountry)) return true; // e.g. "North America" covers US
-  if (!job.country && !job.remoteScope) return true; // genuinely unknown
-  return false;
 }
 
 const RERANK_PROMPT = `You are an honest job-matching reranker for a job seeker. For each job, score fit 0-100 and explain it. Return ONLY a JSON array, one object per job, in the same order:

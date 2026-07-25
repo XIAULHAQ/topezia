@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties } from "react";
+import { CountryPicker } from "./edit-in-place";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { initials } from "@/app/_components/ui";
@@ -93,6 +94,12 @@ export default function ProfileEditor() {
   const [roleModal, setRoleModal] = useState(false);
   const [mRole, setMRole] = useState("");
   const [mSen, setMSen] = useState("MID");
+  // Work eligibility, asked in the same first-run modal: where the feed should
+  // be scoped to. Seeded from the parsed location, because that IS the right
+  // answer for most people — they just need the chance to say otherwise.
+  const [mAuth, setMAuth] = useState<string[]>([]);
+  const [mReloc, setMReloc] = useState<string[]>([]);
+  const [mShowReloc, setMShowReloc] = useState(false);
   const [savingRole, setSavingRole] = useState(false);
   const [mErr, setMErr] = useState<string | null>(null);
 
@@ -119,6 +126,15 @@ export default function ProfileEditor() {
         // taxonomy to offer, so we never trap someone with an empty list).
         if (!data.profile.headline && (data.roleGroups?.length ?? 0) > 0) {
           setMSen(data.profile.seniority || "MID");
+          // Seed eligibility from what we already know: saved answers if any,
+          // else the parsed country. Pre-filling matters — most people ARE
+          // authorised where they live, so the question should read as a
+          // confirmation they can correct, not a form they must fill.
+          const seeded: string[] = (data.profile.authorizedCountries ?? []).length
+            ? data.profile.authorizedCountries
+            : data.profile.country ? [data.profile.country] : [];
+          setMAuth(seeded);
+          setMReloc(data.profile.relocateCountries ?? []);
           setRoleModal(true);
         }
       } catch {
@@ -137,7 +153,7 @@ export default function ProfileEditor() {
       const res = await fetch("/api/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ headline: mRole, seniority: mSen }),
+        body: JSON.stringify({ headline: mRole, seniority: mSen, authorizedCountries: mAuth, relocateCountries: mReloc }),
       });
       if (!res.ok) throw new Error("save");
       setP((cur) => (cur ? { ...cur, headline: mRole, seniority: mSen } : cur));
@@ -550,6 +566,33 @@ export default function ProfileEditor() {
               <select style={{ ...S.wide, cursor: "pointer" }} value={mSen} onChange={(e) => setMSen(e.target.value)}>
                 {SENIORITIES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
               </select>
+
+              {/* Work eligibility — the other thing that scopes the feed. It is
+                  seeded from the parsed location, so the common case is already
+                  correct and this reads as a confirmation, not a form. */}
+              <div style={{ ...S.qLabel, marginTop: 18 }}>Where can you work?</div>
+              <CountryPicker
+                label=""
+                hint="Countries where you don't need sponsorship — citizenship, residency, or a visa you already hold."
+                selected={mAuth}
+                onChange={setMAuth}
+              />
+              {mShowReloc ? (
+                <div style={{ marginTop: 14 }}>
+                  <CountryPicker
+                    label=""
+                    hint="You'd move here for the right job and would need sponsoring. We'll show those jobs and drop the ones that say outright they don't sponsor."
+                    selected={mReloc}
+                    exclude={mAuth}
+                    onChange={setMReloc}
+                  />
+                </div>
+              ) : (
+                <button type="button" onClick={() => setMShowReloc(true)}
+                  style={{ background: "none", border: "none", color: INDIGO, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", padding: "8px 0 0" }}>
+                  I&apos;d also relocate somewhere →
+                </button>
+              )}
 
               {mErr && <p style={{ color: "#dc2626", fontSize: 13, margin: "12px 0 0" }}>{mErr}</p>}
               <button style={{ ...S.saveBtn, width: "100%", marginTop: 20, opacity: mRole && !savingRole ? 1 : 0.55 }} disabled={!mRole || savingRole} onClick={saveRole}>

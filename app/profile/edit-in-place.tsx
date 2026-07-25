@@ -18,13 +18,14 @@
  */
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { C, GRAD, Icon } from "@/app/_components/ui";
+import { COUNTRY_NAMES, COUNTRY_GROUPS, PICKER_ORDER } from "@/lib/countries";
 
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
 
 const SENIORITIES = ["INTERN", "JUNIOR", "MID", "SENIOR", "LEAD", "EXEC", "NOT_APPLICABLE"];
 const PROFICIENCIES = ["FAMILIAR", "PROFICIENT", "ADVANCED", "EXPERT"];
 
-export type SectionKey = "intro" | "skills" | "experience" | "education" | "certs" | "languages" | "recommendations";
+export type SectionKey = "intro" | "skills" | "experience" | "education" | "certs" | "languages" | "recommendations" | "eligibility";
 
 export type EditSkill = { name: string; proficiency: string | null; source: string; tier?: "CORE" | "SECONDARY" };
 export type EditLanguage = { name: string; level?: string };
@@ -43,6 +44,9 @@ export type EditableProfile = {
   certifications: string[];
   languages: EditLanguage[];
   recommendations: EditRecommendation[];
+  /** Where they may work without sponsorship, and where they'd move to. */
+  authorizedCountries: string[];
+  relocateCountries: string[];
 };
 
 /** What a completed save hands back for the view to merge into its state. */
@@ -56,6 +60,7 @@ const TITLES: Record<SectionKey, string> = {
   certs: "Edit certifications",
   languages: "Edit languages",
   recommendations: "Edit recommendations",
+  eligibility: "Where you can work",
 };
 
 export default function EditInPlace({
@@ -88,6 +93,11 @@ export default function EditInPlace({
       case "certs": return { certifications: [...profile.certifications] };
       case "languages": return { languages: (profile.languages ?? []).map((l) => ({ ...l })) };
       case "recommendations": return { recommendations: (profile.recommendations ?? []).map((r) => ({ ...r })) };
+      case "eligibility":
+        return {
+          authorizedCountries: [...(profile.authorizedCountries ?? [])],
+          relocateCountries: [...(profile.relocateCountries ?? [])],
+        };
     }
   });
   const [saving, setSaving] = useState(false);
@@ -117,6 +127,10 @@ export default function EditInPlace({
     if (section === "education") patch.education = (draft.education ?? []).filter((e) => e.degree || e.institution);
     if (section === "languages") patch.languages = (draft.languages ?? []).map((l) => ({ name: l.name.trim(), level: l.level?.trim() || undefined })).filter((l) => l.name);
     if (section === "recommendations") patch.recommendations = (draft.recommendations ?? []).map((r) => ({ text: r.text.trim(), author: r.author?.trim() || undefined, role: r.role?.trim() || undefined })).filter((r) => r.text);
+    if (section === "eligibility") {
+      patch.authorizedCountries = draft.authorizedCountries ?? [];
+      patch.relocateCountries = draft.relocateCountries ?? [];
+    }
     try {
       const res = await fetch("/api/profile", {
         method: "PATCH",
@@ -322,6 +336,37 @@ export default function EditInPlace({
     );
   }
 
+  if (section === "eligibility") {
+    const authorized = draft.authorizedCountries ?? [];
+    const relocate = draft.relocateCountries ?? [];
+    body = (
+      <>
+        <div style={S.hint}>
+          This is what scopes your job feed. It is deliberately separate from where you live — a US citizen in Karachi should see US jobs, and someone in Karachi who&apos;d move to the US should see those too.
+        </div>
+        <CountryPicker
+          label="I can work here without sponsorship"
+          hint="Citizenship, permanent residency, or a visa that already lets you work."
+          selected={authorized}
+          onChange={(v) => setDraft((d) => ({ ...d, authorizedCountries: v, relocateCountries: (d.relocateCountries ?? []).filter((c) => !v.includes(c)) }))}
+        />
+        <div style={{ height: 18 }} />
+        <CountryPicker
+          label="I'd move here for the right job"
+          hint="You'd need sponsorship. We'll show these jobs and hide the ones that say outright they don't sponsor."
+          selected={relocate}
+          exclude={authorized}
+          onChange={(v) => setDraft((d) => ({ ...d, relocateCountries: v }))}
+        />
+        {relocate.length > 0 && (
+          <div style={{ ...S.hint, background: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412", borderRadius: 10, padding: "9px 12px", marginTop: 14 }}>
+            Most postings never mention sponsorship at all. We can only remove the ones that explicitly refuse it — the rest are shown with an honest &quot;not stated&quot; note, not a promise.
+          </div>
+        )}
+      </>
+    );
+  }
+
   if (section === "languages") {
     const rows = draft.languages ?? [];
     body = (
@@ -381,6 +426,78 @@ export default function EditInPlace({
 }
 
 /** The pencil that marks a section as editable in place. */
+/**
+ * Country multi-select with one-tap groups.
+ *
+ * Group shortcuts exist because work rights genuinely come in bundles: an EU
+ * citizen may work in 29 countries, and making them tick 29 boxes would be our
+ * data model leaking into their afternoon. Search is there because a flat list
+ * of ~90 countries is not a UI.
+ */
+export function CountryPicker({ label, hint, selected, exclude = [], onChange }: {
+  label: string;
+  hint: string;
+  selected: string[];
+  exclude?: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const [q, setQ] = useState("");
+  const query = q.trim().toLowerCase();
+  const matches = PICKER_ORDER
+    .filter((c) => !selected.includes(c) && !exclude.includes(c))
+    .filter((c) => !query || COUNTRY_NAMES[c].toLowerCase().includes(query) || c.toLowerCase() === query)
+    .slice(0, query ? 8 : 6);
+
+  const add = (c: string) => { if (!selected.includes(c)) onChange([...selected, c]); setQ(""); };
+
+  return (
+    <div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 11.5, color: C.mut, lineHeight: 1.5, marginBottom: 9 }}>{hint}</div>
+
+      {selected.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 9 }}>
+          {selected.map((c) => (
+            <span key={c} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#EEF2FF", color: "#4338CA", borderRadius: 999, padding: "5px 11px", fontSize: 12, fontWeight: 600 }}>
+              {COUNTRY_NAMES[c] ?? c}
+              <button type="button" aria-label={`Remove ${COUNTRY_NAMES[c] ?? c}`} onClick={() => onChange(selected.filter((x) => x !== c))} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+        {COUNTRY_GROUPS.map((g) => {
+          const addable = g.codes.filter((c) => !selected.includes(c) && !exclude.includes(c));
+          if (!addable.length) return null;
+          return (
+            <button key={g.label} type="button" title={g.hint} onClick={() => onChange([...selected, ...addable])}
+              style={{ background: "#F1F5F9", border: `1px solid ${C.line}`, color: C.slate, borderRadius: 999, padding: "5px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              + All {g.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search countries…"
+        style={{ width: "100%", padding: "9px 11px", borderRadius: 9, border: `1px solid ${C.line}`, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }}
+      />
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+        {matches.map((c) => (
+          <button key={c} type="button" onClick={() => add(c)}
+            style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.slate, borderRadius: 999, padding: "5px 11px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+            + {COUNTRY_NAMES[c]}
+          </button>
+        ))}
+        {query && matches.length === 0 && <span style={{ fontSize: 12, color: C.mut }}>No country matches “{q}”.</span>}
+      </div>
+    </div>
+  );
+}
+
 export function EditPencil({ onClick, label: aria = "Edit" }: { onClick: () => void; label?: string }) {
   return (
     <button type="button" aria-label={aria} onClick={onClick} style={S.pencil}>

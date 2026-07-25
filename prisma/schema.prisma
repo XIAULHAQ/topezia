@@ -351,7 +351,16 @@ model Profile {
   // sponsorship terms from postings, and silently hiding jobs on a guess would
   // be worse than saying nothing.
   workAuthorization WorkAuthorization @default(NOT_SPECIFIED)
-  country          String?  // ISO-2, derived from currentLocation; scopes the feed
+  country          String?  // ISO-2, derived from currentLocation — where they ARE
+  // Where they may legally work WITHOUT sponsorship (ISO-2). Plural because
+  // work rights are: dual nationals, EU citizens, Gulf residents. This — not
+  // `country` — is what scopes the feed. Empty = never asked; the matcher then
+  // falls back to `country`, preserving the old location-only behaviour.
+  authorizedCountries String[]
+  // Where they'd MOVE for the right job but would need sponsorship (ISO-2).
+  // Jobs here are shown but honestly labelled, and postings whose text
+  // explicitly refuses sponsorship are filtered out — see lib/matching/eligibility.ts.
+  relocateCountries   String[]
   verticalsOptIn   String[] // vertical slugs
   tier             MemberTier @default(FREE) // paywall stub — see MemberTier
 

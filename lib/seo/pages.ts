@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import type { EmploymentType, JobKind, RemoteType, SalaryPeriod } from "@prisma/client";
 import { hubBySlug, hubMatchIds, HUBS, type SkillHub } from "./hubs";
 import { getCachedIntro } from "./intro";
+import { COUNTRY_NAMES, countryName } from "@/lib/countries";
 
 export const MIN_JOBS_FOR_PAGE = 5;
 const REMOTE_PREFIX = "remote-";
@@ -90,29 +91,6 @@ export const stateSlugFor = (abbr: string) => stateSlug(abbr);
  * twice over. US pages keep their two-letter codes untouched; full names also
  * happen to be what people actually search.
  */
-const COUNTRY_NAMES: Record<string, string> = {
-  US: "United States", GB: "United Kingdom", IE: "Ireland", DE: "Germany", FR: "France",
-  ES: "Spain", PT: "Portugal", IT: "Italy", NL: "Netherlands", BE: "Belgium",
-  AT: "Austria", CH: "Switzerland", LU: "Luxembourg", SE: "Sweden", NO: "Norway",
-  DK: "Denmark", FI: "Finland", IS: "Iceland", EE: "Estonia", LV: "Latvia",
-  LT: "Lithuania", PL: "Poland", CZ: "Czechia", SK: "Slovakia", HU: "Hungary",
-  RO: "Romania", BG: "Bulgaria", HR: "Croatia", SI: "Slovenia", RS: "Serbia",
-  BA: "Bosnia and Herzegovina", AL: "Albania", GR: "Greece", CY: "Cyprus",
-  MT: "Malta", UA: "Ukraine", MD: "Moldova", TR: "Türkiye", RU: "Russia",
-  KZ: "Kazakhstan", AZ: "Azerbaijan", AM: "Armenia", UZ: "Uzbekistan", GE: "Georgia (country)",
-  CA: "Canada", MX: "Mexico", BR: "Brazil", AR: "Argentina", CL: "Chile",
-  CO: "Colombia", PE: "Peru", UY: "Uruguay", EC: "Ecuador", CR: "Costa Rica",
-  PA: "Panama", GT: "Guatemala", DO: "Dominican Republic",
-  IL: "Israel", AE: "United Arab Emirates", SA: "Saudi Arabia", QA: "Qatar",
-  KW: "Kuwait", BH: "Bahrain", OM: "Oman", JO: "Jordan", LB: "Lebanon",
-  EG: "Egypt", MA: "Morocco", TN: "Tunisia", DZ: "Algeria",
-  ZA: "South Africa", NG: "Nigeria", KE: "Kenya", GH: "Ghana", ET: "Ethiopia",
-  UG: "Uganda", TZ: "Tanzania", RW: "Rwanda",
-  IN: "India", PK: "Pakistan", BD: "Bangladesh", LK: "Sri Lanka", NP: "Nepal",
-  CN: "China", HK: "Hong Kong", TW: "Taiwan", JP: "Japan", KR: "South Korea",
-  SG: "Singapore", MY: "Malaysia", ID: "Indonesia", TH: "Thailand", VN: "Vietnam",
-  PH: "Philippines", AU: "Australia", NZ: "New Zealand",
-};
 
 const countrySlug = (iso: string) =>
   (COUNTRY_NAMES[iso] ?? iso).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -123,7 +101,7 @@ const ISO_BY_SLUG: Record<string, string> = Object.fromEntries(
 
 export const countrySlugFor = (iso: string) => countrySlug(iso);
 export const isoForCountrySlug = (slug: string): string | null => ISO_BY_SLUG[slug.toLowerCase()] ?? null;
-export const countryName = (iso: string) => COUNTRY_NAMES[iso.toUpperCase()] ?? iso.toUpperCase();
+export { countryName };
 export const countryHref = (roleSlug: string, iso: string) => `/jobs/${roleSlug}/${countrySlug(iso)}`;
 
 /**
