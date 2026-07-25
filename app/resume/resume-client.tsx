@@ -19,11 +19,12 @@
  *  - AI drafting is per-section and OPT-IN; saving is explicit, not auto.
  */
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { C, GRAD, Icon, BrandMark, MatchRing } from "@/app/_components/ui";
+import { C, GRAD, Icon, BrandMark, MatchRing, SoonTag } from "@/app/_components/ui";
 import { LIMITS, type ResumeContent, type ResumeExperience } from "@/lib/resume/doc";
 import { scoreResume } from "@/lib/resume/score";
 import type { AssistStatus } from "@/lib/resume/assist-quota";
 import type { DemandSkill } from "@/lib/matching/insights";
+import type { FocusDirection } from "@/app/api/resume/focus/route";
 
 type Busy = null | "save" | "sync" | "summary" | `bullets-${number}`;
 
@@ -41,6 +42,7 @@ export default function ResumeClient() {
   const [publicUrl, setPublicUrl] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
   const [market, setMarket] = useState<MarketStats | null>(null);
+  const [directions, setDirections] = useState<FocusDirection[]>([]);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +74,25 @@ export default function ResumeClient() {
     setDoc((d) => (d ? { ...d, ...patch } : d));
     setDirty(true);
   }, []);
+
+  // Focus Check — re-classify the LIVE skill list (debounced) whenever it
+  // changes. The key encodes the list so the effect closure is never stale.
+  const skillsKey = doc ? doc.skills.join("") : "";
+  useEffect(() => {
+    const skills = skillsKey ? skillsKey.split("") : [];
+    if (skills.length < 2) { setDirections([]); return; }
+    const t = setTimeout(() => {
+      fetch("/api/resume/focus", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skills }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d && Array.isArray(d.directions)) setDirections(d.directions); })
+        .catch(() => {});
+    }, 700);
+    return () => clearTimeout(t);
+  }, [skillsKey]);
 
   if (error && !doc) return <p style={{ color: C.mut }}>{error}</p>;
   if (!doc) return <p style={{ color: C.mut }}>Loading your resume…</p>;
@@ -163,6 +184,15 @@ export default function ResumeClient() {
   // Hero stats — real counts only. The strength score is checklist-based
   // (lib/resume/score.ts) and recomputes live on every edit.
   const strength = scoreResume(doc);
+
+  // Focus split: core skills lead, the rest step back to "Additional". Falls
+  // back to a single list when the chosen core no longer intersects the
+  // skill list (e.g. every core skill was removed after focusing).
+  const coreSet = new Set((doc.focus?.core ?? []).map((s) => s.toLowerCase()));
+  const coreSkills = doc.focus ? doc.skills.filter((s) => coreSet.has(s.toLowerCase())) : doc.skills;
+  const extraSkills = doc.focus ? doc.skills.filter((s) => !coreSet.has(s.toLowerCase())) : [];
+  const focusActive = !!doc.focus && coreSkills.length > 0;
+
   const shortTime = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const shortDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   const quotaStat = !quota
@@ -340,6 +370,20 @@ export default function ResumeClient() {
               <button type="button" style={{ ...S.addBtn, marginTop: doc.education.length ? 14 : 0 }} onClick={() => up({ education: [...doc.education, { degree: "", institution: "", year: "" }] })}>+ Add education</button>
             )}
           </section>
+
+          <FocusCard
+            directions={directions}
+            focus={doc.focus}
+            onFocus={(d) => {
+              // Reorder so core leads everywhere, including saved order.
+              const core = new Set(d.skills.map((s) => s.toLowerCase()));
+              up({
+                focus: { label: d.label, core: d.skills },
+                skills: [...doc.skills.filter((s) => core.has(s.toLowerCase())), ...doc.skills.filter((s) => !core.has(s.toLowerCase()))],
+              });
+            }}
+            onClear={() => up({ focus: null })}
+          />
 
           <section style={S.card}>
             <CardHead icon="spark" title="Skills & certifications" />
@@ -519,10 +563,18 @@ export default function ResumeClient() {
               )}
 
               {doc.skills.length > 0 && (
-                <PSection icon="spark" title="Skills">
+                <PSection icon="spark" title={focusActive ? "Core skills" : "Skills"}>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {doc.skills.map((sk) => <span key={sk} style={S.pSkill}>{sk}</span>)}
+                    {(focusActive ? coreSkills : doc.skills).map((sk) => <span key={sk} style={S.pSkill}>{sk}</span>)}
                   </div>
+                  {focusActive && extraSkills.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: C.mut, margin: "10px 0 6px" }}>Additional skills</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {extraSkills.map((sk) => <span key={sk} style={{ ...S.pSkill, background: "#F8FAFC", border: `1px solid ${C.line}`, color: C.mut }}>{sk}</span>)}
+                      </div>
+                    </>
+                  )}
                 </PSection>
               )}
 
@@ -742,10 +794,90 @@ function MarketCard({ market, resumeSkills, onAdd }: { market: MarketStats; resu
 }
 
 /**
+ * Focus Check — one question, one click, then silence.
+ *
+ * Renders NOTHING when the skills read as one direction (silence is the
+ * reward for a focused resume). With 2+ detected directions it asks exactly
+ * one question; once answered it collapses to a single line and never nags.
+ * The premium pitch appears exactly once, right after focusing — the moment
+ * the person has just felt "but I also do design…" — and is dismissible.
+ * Honest per the gating rule: "coming soon", never a fake checkout.
+ */
+function FocusCard({ directions, focus, onFocus, onClear }: {
+  directions: FocusDirection[];
+  focus: ResumeContent["focus"];
+  onFocus: (d: FocusDirection) => void;
+  onClear: () => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const [pitch, setPitch] = useState(false);
+
+  if (focus) {
+    return (
+      <section style={{ ...S.card, padding: "16px 26px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ color: "#0F6E56", fontWeight: 800, fontSize: 14 }}>✓</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>Focused on {focus.label}</span>
+          <span style={{ fontSize: 12, color: C.mut }}>— core skills lead, the rest are listed as additional.</span>
+          <div style={{ flex: 1 }} />
+          <button type="button" onClick={onClear} style={{ background: "none", border: "none", color: C.c1, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>Change</button>
+        </div>
+        {pitch && (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12, background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 11, padding: "11px 14px" }}>
+            <Icon name="spark" size={14} color="#7C3AED" />
+            <span style={{ fontSize: 12.5, color: "#5B21B6", lineHeight: 1.6, flex: 1 }}>
+              <strong>Your other directions didn&apos;t disappear</strong> — they&apos;re on this resume as additional skills. Premium will keep <strong>one resume per direction</strong>, so every application leads with the right you. <SoonTag label="Premium — coming soon" />
+            </span>
+            <button type="button" aria-label="Dismiss" onClick={() => setPitch(false)} style={{ background: "none", border: "none", color: "#7C3AED", fontSize: 16, cursor: "pointer", lineHeight: 1, padding: 0, flex: "none" }}>×</button>
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  if (directions.length < 2) return null;
+  const shown = showAll ? directions : directions.slice(0, 3);
+  return (
+    <section style={{ ...S.card, border: "1px solid #C7D2FE", background: "#FDFDFF" }}>
+      <CardHead icon="gauge" title="Who is this resume for?" />
+      <p style={{ fontSize: 12.5, color: C.slate, margin: "0 0 14px", lineHeight: 1.65 }}>
+        Your skills point in <strong>{directions.length} directions</strong> — recruiters skim for one. A resume that says several things at once reads as none of them. Pick the one this resume leads with; the rest become additional skills, not deleted ones.
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        {shown.map((d) => (
+          <button
+            key={d.label}
+            type="button"
+            onClick={() => { onFocus(d); setPitch(true); }}
+            title={d.skills.join(", ")}
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#EEF2FF", color: "#4338CA", border: "1px solid #C7D2FE", borderRadius: 999, padding: "9px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+          >
+            {d.label}
+            <span style={{ fontWeight: 600, color: "#818CF8" }}>{d.skills.length} skills</span>
+          </button>
+        ))}
+        {!showAll && directions.length > 3 && (
+          <button type="button" onClick={() => setShowAll(true)} style={{ background: "none", border: "none", color: C.mut, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+            and {directions.length - 3} more
+          </button>
+        )}
+      </div>
+      <p style={{ fontSize: 11, color: C.mut, margin: "12px 0 0", lineHeight: 1.5 }}>
+        Directions are counted from which professions&apos; live postings ask for each skill — no AI involved.
+      </p>
+    </section>
+  );
+}
+
+/**
  * The ATS-safe rendering: single column, serif, black on white, no photo, no
  * QR, no graphics — plain text a parser can't misread. Same ResumeContent.
  */
 function AtsSheet({ doc, publicUrl }: { doc: ResumeContent; publicUrl: string | null }) {
+  const coreSet = new Set((doc.focus?.core ?? []).map((s) => s.toLowerCase()));
+  const core = doc.focus ? doc.skills.filter((s) => coreSet.has(s.toLowerCase())) : doc.skills;
+  const extra = doc.focus ? doc.skills.filter((s) => !coreSet.has(s.toLowerCase())) : [];
+  const focusActive = !!doc.focus && core.length > 0;
   return (
     <div>
       <header style={{ borderBottom: "2px solid #111827", paddingBottom: 12, marginBottom: 14 }}>
@@ -787,7 +919,14 @@ function AtsSheet({ doc, publicUrl }: { doc: ResumeContent; publicUrl: string | 
         </AtsSection>
       )}
 
-      {doc.skills.length > 0 && <AtsSection title="Skills"><p style={A.body}>{doc.skills.join("  ·  ")}</p></AtsSection>}
+      {doc.skills.length > 0 && (
+        <AtsSection title={focusActive ? "Core Skills" : "Skills"}>
+          <p style={A.body}>{(focusActive ? core : doc.skills).join("  ·  ")}</p>
+          {focusActive && extra.length > 0 && (
+            <p style={{ ...A.body, fontSize: 10.5, color: "#4B5563", marginTop: 4 }}>Additional: {extra.join("  ·  ")}</p>
+          )}
+        </AtsSection>
+      )}
       {doc.certifications.length > 0 && <AtsSection title="Certifications"><p style={A.body}>{doc.certifications.join("  ·  ")}</p></AtsSection>}
 
       {doc.projects.length > 0 && (

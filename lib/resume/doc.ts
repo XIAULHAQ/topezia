@@ -39,6 +39,11 @@ export interface ResumeContent {
    *  serif with no photo/graphics, for parsers that choke on layout. Same
    *  content either way — this only picks the rendering. */
   template: "styled" | "ats";
+  /** Focus Check: the direction this resume leads with. `core` is the skill
+   *  names rendered as "Core skills"; everything else steps back to
+   *  "Additional skills". Null = no focus chosen (single Skills section).
+   *  Nothing is ever deleted by focusing — skills only change prominence. */
+  focus: { label: string; core: string[] } | null;
   experience: ResumeExperience[];
   education: ResumeEducation[];
   skills: string[];
@@ -143,6 +148,10 @@ export function sanitizeContent(raw: unknown): ResumeContent {
   const strList = (v: unknown, max: number, cap: number) =>
     [...new Set((Array.isArray(v) ? v : []).map((s) => str(s, max)).filter(Boolean))].slice(0, cap);
 
+  const focusRaw = r.focus as Record<string, unknown> | null | undefined;
+  const focusLabel = focusRaw && typeof focusRaw === "object" ? str(focusRaw.label, 60) : "";
+  const focusCore = focusRaw && typeof focusRaw === "object" ? strList(focusRaw.core, 60, LIMITS.skills) : [];
+
   return {
     contact: {
       name: str(contact.name, LIMITS.contactField),
@@ -156,6 +165,7 @@ export function sanitizeContent(raw: unknown): ResumeContent {
     // Absent on docs saved before the field existed — default to shown.
     showPhoto: r.showPhoto !== false,
     template: r.template === "ats" ? "ats" : "styled",
+    focus: focusLabel && focusCore.length ? { label: focusLabel, core: focusCore } : null,
     experience,
     education,
     skills: strList(r.skills, 60, LIMITS.skills),
