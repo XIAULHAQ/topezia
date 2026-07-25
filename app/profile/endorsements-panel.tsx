@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { C, GRAD, Icon } from "@/app/_components/ui";
 import { ENDORSEMENT_LIMITS } from "@/lib/endorsements/doc";
+import { NOTE_SUGGESTIONS } from "@/lib/endorsements/notes";
 
 type Row = {
   id: string;
@@ -28,28 +29,6 @@ type Row = {
   portfolio: { title: string; slug: string } | null;
 };
 type Work = { id: string; title: string; slug: string; thumb: string | null };
-
-/**
- * Starter notes. Asking someone for a recommendation is a small social
- * ordeal, and a blank box is where most requests die — so we hand over a
- * sentence that is already polite and specific enough to send, and let people
- * edit it. Written as prompts a real person would actually type, not
- * marketing copy: the recommender sees this line, and it should sound like
- * the member wrote it, because they can.
- */
-const NOTE_SUGGESTIONS: Record<"RECOMMENDATION" | "REVIEW", string[]> = {
-  RECOMMENDATION: [
-    "We worked together for a while and I'd really value a few words from you — whatever you honestly remember is perfect.",
-    "You saw my work up close. Would you mind writing a couple of lines about what I was like to work with?",
-    "I'm putting my profile together and would love your perspective on how we worked together.",
-  ],
-  REVIEW: [
-    "Thanks again for the project — would you mind leaving a short review of how it went?",
-    "You hired me for this one. A couple of honest lines about the result would mean a lot.",
-    "Would you write a short review of this work? What you needed, and whether it landed.",
-  ],
-};
-
 
 export default function EndorsementsPanel() {
   const [rows, setRows] = useState<Row[] | null>(null);

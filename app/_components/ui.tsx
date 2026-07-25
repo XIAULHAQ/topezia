@@ -42,6 +42,7 @@ const PATHS: Record<string, string[]> = {
   feed: ["M4 4h16v16H4z", "M8 9h8", "M8 13h8", "M8 17h5"],
   search: ["M21 21l-4.35-4.35", "M11 5a6 6 0 1 1 0 12 6 6 0 0 1 0-12z"],
   bookmark: ["M6 3h12v18l-6-4-6 4z"],
+  heart: ["M12 20s-7-4.6-7-9.4A4.1 4.1 0 0 1 12 8a4.1 4.1 0 0 1 7 2.6c0 4.8-7 9.4-7 9.4z"],
   briefcase: ["M4 8h16v12H4z", "M9 8V5h6v3"],
   chat: ["M4 4h16v12H7l-3 3z"],
   user: ["M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M4 21c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5"],
@@ -81,14 +82,21 @@ const PATHS: Record<string, string[]> = {
   eye: ["M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"],
 };
 
-export function Icon({ name, size = 17, color }: { name: keyof typeof PATHS | string; size?: number; color?: string }) {
+export function Icon({
+  name,
+  size = 17,
+  color,
+  // Solid variant. Only meaningful for single-outline glyphs (heart, star,
+  // bookmark) where "filled" is how a toggled-on state reads at a glance.
+  filled = false,
+}: { name: keyof typeof PATHS | string; size?: number; color?: string; filled?: boolean }) {
   const paths = PATHS[name] ?? [];
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill="none"
+      fill={filled ? color ?? "currentColor" : "none"}
       stroke={color ?? "currentColor"}
       strokeWidth={1.8}
       strokeLinecap="round"

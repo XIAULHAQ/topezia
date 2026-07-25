@@ -387,6 +387,7 @@ model Profile {
 
   portfolios        Portfolio[]
   portfolioSaves    PortfolioSave[]
+  portfolioLikes    PortfolioLike[]
   endorsements      Endorsement[]
 
   createdAt        DateTime @default(now())
@@ -685,6 +686,7 @@ model Portfolio {
 
   media        PortfolioMedia[]
   saves        PortfolioSave[]
+  likes        PortfolioLike[]
   endorsements Endorsement[]
 
   publishedAt  DateTime?
@@ -734,6 +736,28 @@ model PortfolioSave {
 
   @@unique([profileId, portfolioId])
   @@index([profileId, createdAt])
+}
+
+// A public "like" on a piece of work — the counterpart to PortfolioSave,
+// which is a private bookmark.
+//
+// The count is shown on the work's own page and nowhere else: it never
+// orders the grid, never feeds matching, and never appears on a profile.
+// That is the line that keeps it a signal of appreciation rather than a
+// ranking, which is what would push people to post what performs instead of
+// what represents them.
+model PortfolioLike {
+  id          String    @id @default(uuid())
+  profileId   String
+  profile     Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  portfolioId String
+  portfolio   Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  // One like per person per piece — enforced here, not in application code,
+  // so a double-click or a retried request can never inflate a count.
+  @@unique([profileId, portfolioId])
+  @@index([portfolioId, createdAt])
 }
 
 // A recommendation or review someone ELSE wrote about a member.

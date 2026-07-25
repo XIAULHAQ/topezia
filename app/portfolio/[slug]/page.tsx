@@ -26,6 +26,7 @@ import { categoryLabel, categorySlug } from "@/lib/portfolio/categories";
 import { videoEmbedUrl, videoPosterUrl } from "@/lib/portfolio/video";
 import PortfolioRail from "./portfolio-rail";
 import VideoEmbed from "./video-embed";
+import InviteReviewers from "./invite-reviewers";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,17 @@ async function load(slug: string) {
       skills: true, technologies: true, publishedAt: true, profileId: true,
       media: { orderBy: { position: "asc" }, select: { kind: true, path: true, videoId: true, videoProvider: true, videoHash: true, width: true, height: true, caption: true } },
       profile: { select: { fullName: true, photoUrl: true, publicSlug: true } },
-      _count: { select: { saves: true } },
+      // Reviews OF THIS PIECE, in the creator's chosen order of visibility.
+      // Same rule as the public profile: only what came back and only what
+      // they chose to show. Hiding is allowed and editing never is — see
+      // lib/endorsements/doc.ts for why that asymmetry has to exist.
+      endorsements: {
+        where: { kind: "REVIEW" as const, status: "SUBMITTED" as const, visible: true },
+        orderBy: { submittedAt: "desc" as const },
+        take: 20,
+        select: { id: true, authorName: true, authorRole: true, text: true, rating: true, submittedAt: true, authorUserId: true },
+      },
+      _count: { select: { saves: true, likes: true } },
     },
   });
 }
@@ -74,19 +85,36 @@ export default async function PortfolioDetailPage({ params }: { params: { slug: 
   const p = await load(params.slug);
   if (!p) notFound();
 
-  const { userId } = await currentIdentity();
+  const { userId, authed } = await currentIdentity();
   let me: { id: string } | null = null;
   if (userId) me = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
   const isOwner = me?.id === p.profileId;
 
+  // Like and Save both require a real account server-side, so the rail has to
+  // gate on `authed` — not merely on having a profile. Someone browsing on an
+  // anonymous cookie does have a profile, and gating on that alone would show
+  // them a live button whose request comes back 401, reverting the optimistic
+  // state with no explanation. Send them to sign-in instead.
+  const canAct = Boolean(me) && authed;
+
   if (p.status !== "PUBLISHED" && !isOwner) notFound();
 
-  const saved = me
-    ? Boolean(await prisma.portfolioSave.findUnique({
-        where: { profileId_portfolioId: { profileId: me.id, portfolioId: p.id } },
-        select: { id: true },
-      }))
-    : false;
+  const [saved, liked] = me
+    ? await Promise.all([
+        prisma.portfolioSave.findUnique({
+          where: { profileId_portfolioId: { profileId: me.id, portfolioId: p.id } },
+          select: { id: true },
+        }).then(Boolean),
+        prisma.portfolioLike.findUnique({
+          where: { profileId_portfolioId: { profileId: me.id, portfolioId: p.id } },
+          select: { id: true },
+        }).then(Boolean),
+      ])
+    : [false, false];
+
+  // Only reviews with words and a name are renderable; the rest would be a
+  // blank quote mark on someone's page.
+  const reviews = p.endorsements.filter((e) => e.text && e.authorName);
 
   const cover = portfolioImageUrl(p.coverPath);
   const creator = p.profile.fullName ?? "A Topezia member";
@@ -239,13 +267,80 @@ export default async function PortfolioDetailPage({ params }: { params: { slug: 
                 )}
               </section>
             )}
+
+            {/* ── Reviews of this piece ──────────────────────────────────
+                Written by people the creator invited, through a one-time
+                link they cannot write into. Visitors see them; the creator
+                also sees the invite pitch below.
+
+                No average score anywhere. Every review here arrives through
+                an invitation the creator sent, so a "4.8 out of 5" would be
+                a number about who they chose to ask — and printing it as a
+                rating implies we measured something we didn't. Individual
+                stars are the author's own claim and stay. ── */}
+            {(reviews.length > 0 || isOwner) && (
+              <section style={S.reviewBlock}>
+                <div style={S.tagHead}>
+                  {reviews.length > 0
+                    ? `${reviews.length} ${reviews.length === 1 ? "review" : "reviews"} of this work`
+                    : "Reviews of this work"}
+                </div>
+
+                {reviews.length > 0 && (
+                  <div style={S.reviewList}>
+                    {reviews.map((e) => (
+                      <blockquote key={e.id} style={S.review}>
+                        {e.rating && (
+                          <div style={S.stars} aria-label={`${e.rating} out of 5`}>
+                            {"★".repeat(e.rating)}
+                            <span style={S.starsOff}>{"★".repeat(5 - e.rating)}</span>
+                          </div>
+                        )}
+                        <p style={S.reviewText}>&ldquo;{e.text}&rdquo;</p>
+                        <div style={S.reviewMeta}>
+                          <span style={S.reviewAuthor}>— {[e.authorName, e.authorRole].filter(Boolean).join(", ")}</span>
+                          <span style={S.reviewTag}>{e.authorUserId ? "written by them, signed in" : "written by them"}</span>
+                        </div>
+                      </blockquote>
+                    ))}
+                  </div>
+                )}
+
+                {/* The exact claim and its exact limit, in the same words the
+                    public profile uses. Signing in proves a mailbox, not a
+                    person, so "verified" is never on the table — and reviews
+                    written before sign-in was required carry no account at
+                    all, which is why the second sentence is conditional. */}
+                {reviews.length > 0 && (
+                  <p style={S.reviewNote}>
+                    Written by people {creator} invited, in their own words — {creator} can hide a review but cannot edit it.
+                    {reviews.some((e) => e.authorUserId) &&
+                      " Those marked “signed in” came from someone with their own Topezia account, which can never be the creator’s; that confirms an email, not an identity."}
+                  </p>
+                )}
+
+                {isOwner && p.status === "PUBLISHED" && (
+                  <div style={{ marginTop: reviews.length > 0 ? 22 : 12 }}>
+                    <InviteReviewers portfolioId={p.id} workTitle={p.title} />
+                  </div>
+                )}
+              </section>
+            )}
           </div>
 
+          {/* position:sticky lives HERE, on the grid item, not on the rail
+              inside it. A sticky element can only travel within its parent's
+              box, and with align-items:start that box is exactly the rail's
+              own height — so sticking the inner element looked right and
+              moved nothing. The grid item's containing block is the whole
+              row, which is the distance we actually want it to travel. */}
           <aside className="pd-rail" style={S.railCol}>
             <PortfolioRail
               portfolioId={p.id}
               initialSaved={saved}
-              canSave={Boolean(me)}
+              initialLiked={liked}
+              initialLikes={p._count.likes}
+              canAct={canAct}
               shareUrl={shareUrl}
               title={p.title}
             />
@@ -269,9 +364,9 @@ const CSS = `
 .pd-chip:hover{border-color:#A5B4FC!important;color:#8B5CF6!important}
 @media (max-width:900px){
   .pd-layout{grid-template-columns:1fr!important}
-  /* The rail's inner element carries position:sticky; unset it too or it
-     sticks inside a now-static column and floats over the gallery. */
-  .pd-rail, .pd-rail > div{position:static!important}
+  /* One column: the rail becomes a normal block above the reviews, so the
+     sticky has to come off or it pins itself over the gallery. */
+  .pd-rail{position:static!important}
 }
 `;
 
@@ -288,7 +383,10 @@ const S: Record<string, CSSProperties> = {
   topActions: { display: "flex", gap: 10, flex: "none", flexWrap: "wrap" },
   contactBtn: { border: `1px solid ${C.line}`, borderRadius: 12, padding: "11px 20px", fontSize: 13.5, fontWeight: 600, color: C.slate, textDecoration: "none", whiteSpace: "nowrap" },
   layout: { display: "grid", gridTemplateColumns: "minmax(0,1fr) 208px", gap: 34, alignItems: "start" },
-  railCol: { position: "relative" },
+  // Sticky on the grid item itself — see the comment at the call site. `top`
+  // clears the fixed site header; align-self:start keeps the item from
+  // stretching to the row, which is what makes sticky mean anything.
+  railCol: { position: "sticky", top: 90, alignSelf: "start" },
   savesNote: { fontSize: 12, color: C.mut, marginTop: 14, lineHeight: 1.5 },
   figure: { margin: "0 0 20px" },
   media: { width: "100%", height: "auto", borderRadius: 14, display: "block", marginBottom: 20 },
@@ -298,6 +396,16 @@ const S: Record<string, CSSProperties> = {
   description: { fontSize: 15, lineHeight: 1.8, color: C.slate, whiteSpace: "pre-wrap", margin: 0, maxWidth: 680 },
   tagBlock: { marginTop: 34, paddingTop: 26, borderTop: `1px solid ${C.line}` },
   tagHead: { fontSize: 12, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 10 },
+  reviewBlock: { marginTop: 34, paddingTop: 26, borderTop: `1px solid ${C.line}`, maxWidth: 680 },
+  reviewList: { display: "flex", flexDirection: "column", gap: 20, marginTop: 16 },
+  review: { margin: 0, borderLeft: "3px solid #A7F3D0", paddingLeft: 16 },
+  stars: { fontSize: 13, letterSpacing: "1.5px", color: "#F59E0B", marginBottom: 6 },
+  starsOff: { color: "#E2E8F0" },
+  reviewText: { fontSize: 14.5, lineHeight: 1.75, color: C.slate, margin: 0, fontStyle: "italic", whiteSpace: "pre-wrap" },
+  reviewMeta: { display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" },
+  reviewAuthor: { fontSize: 12.5, color: C.mut, fontWeight: 600 },
+  reviewTag: { fontSize: 10, fontWeight: 700, color: "#0F6E56", background: "#E7F6EE", borderRadius: 999, padding: "2px 8px" },
+  reviewNote: { fontSize: 11, color: C.mut, lineHeight: 1.6, margin: "18px 0 0" },
   chipRow: { display: "flex", flexWrap: "wrap", gap: 8 },
   chip: { background: "#EEF2FF", color: C.c1, border: "1px solid #C7D2FE", borderRadius: 999, padding: "6px 13px", fontSize: 13, fontWeight: 600, textDecoration: "none" },
   chipAlt: { background: "#F1F5F9", color: C.slate, border: `1px solid ${C.line}`, borderRadius: 999, padding: "6px 13px", fontSize: 13, fontWeight: 600, textDecoration: "none" },
