@@ -51,7 +51,7 @@ async function load(slug: string) {
         where: { kind: "REVIEW" as const, status: "SUBMITTED" as const, visible: true },
         orderBy: { submittedAt: "desc" as const },
         take: 20,
-        select: { id: true, authorName: true, authorRole: true, text: true, rating: true, submittedAt: true, authorUserId: true },
+        select: { id: true, authorName: true, authorRole: true, text: true, rating: true, submittedAt: true },
       },
       _count: { select: { saves: true, likes: true } },
     },
@@ -299,24 +299,10 @@ export default async function PortfolioDetailPage({ params }: { params: { slug: 
                         <p style={S.reviewText}>&ldquo;{e.text}&rdquo;</p>
                         <div style={S.reviewMeta}>
                           <span style={S.reviewAuthor}>— {[e.authorName, e.authorRole].filter(Boolean).join(", ")}</span>
-                          <span style={S.reviewTag}>{e.authorUserId ? "written by them, signed in" : "written by them"}</span>
                         </div>
                       </blockquote>
                     ))}
                   </div>
-                )}
-
-                {/* The exact claim and its exact limit, in the same words the
-                    public profile uses. Signing in proves a mailbox, not a
-                    person, so "verified" is never on the table — and reviews
-                    written before sign-in was required carry no account at
-                    all, which is why the second sentence is conditional. */}
-                {reviews.length > 0 && (
-                  <p style={S.reviewNote}>
-                    Written by people {creator} invited, in their own words — {creator} can hide a review but cannot edit it.
-                    {reviews.some((e) => e.authorUserId) &&
-                      " Those marked “signed in” came from someone with their own Topezia account, which can never be the creator’s; that confirms an email, not an identity."}
-                  </p>
                 )}
 
                 {isOwner && p.status === "PUBLISHED" && (
@@ -404,8 +390,6 @@ const S: Record<string, CSSProperties> = {
   reviewText: { fontSize: 14.5, lineHeight: 1.75, color: C.slate, margin: 0, fontStyle: "italic", whiteSpace: "pre-wrap" },
   reviewMeta: { display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" },
   reviewAuthor: { fontSize: 12.5, color: C.mut, fontWeight: 600 },
-  reviewTag: { fontSize: 10, fontWeight: 700, color: "#0F6E56", background: "#E7F6EE", borderRadius: 999, padding: "2px 8px" },
-  reviewNote: { fontSize: 11, color: C.mut, lineHeight: 1.6, margin: "18px 0 0" },
   chipRow: { display: "flex", flexWrap: "wrap", gap: 8 },
   chip: { background: "#EEF2FF", color: C.c1, border: "1px solid #C7D2FE", borderRadius: 999, padding: "6px 13px", fontSize: 13, fontWeight: 600, textDecoration: "none" },
   chipAlt: { background: "#F1F5F9", color: C.slate, border: `1px solid ${C.line}`, borderRadius: 999, padding: "6px 13px", fontSize: 13, fontWeight: 600, textDecoration: "none" },

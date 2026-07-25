@@ -329,41 +329,13 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
                         <span style={{ fontSize: 12, color: C.mut, fontWeight: 600 }}>— {[e.authorName, e.authorRole].filter(Boolean).join(", ")}</span>
                         {e.rating && <span style={{ fontSize: 12, color: C.c1, fontWeight: 700 }}>{"★".repeat(e.rating)}</span>}
                         {e.work && <span style={{ fontSize: 11, color: C.mut }}>on <a href={`/portfolio/${e.work.slug}`} style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>{e.work.title}</a></span>}
-                        <span style={{ fontSize: 10, fontWeight: 700, color: "#0F6E56", background: "#E7F6EE", borderRadius: 999, padding: "2px 8px" }}>{e.signedIn ? "written by them, signed in" : "written by them"}</span>
                       </div>
                     </blockquote>
                   ))}
-                  {/* The exact claim, and its exact limit. Authors now sign
-                      in with an account of their own that cannot be the
-                      member's — but signing in proves a mailbox, not a person,
-                      so we never say "verified". The wording adapts because
-                      endorsements written before sign-in was required carry no
-                      account, and describing those as signed-in would be a
-                      false claim on somebody's public profile. */}
-                  <div style={{ fontSize: 10.5, color: C.mut, lineHeight: 1.5 }}>
-                    Written by people {p.fullName ?? "the member"} invited, in their own words — {p.fullName ?? "the member"} can hide one but cannot edit it.
-                    {p.endorsements.some((e) => e.signedIn) && " Those marked \u201csigned in\u201d came from someone with their own Topezia account, which can never be the member\u2019s; that confirms an email, not an identity."}
-                  </div>
                 </div>
               </Card>
             )}
 
-            {tab === "overview" && p.recommendations.length > 0 && (
-              <Card><Head icon="chat" title={p.endorsements.length > 0 ? "Quotes added by " + (p.fullName ?? "the member") : "Recommendations"} />
-                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  {p.recommendations.map((r, i) => (
-                    <blockquote key={i} style={{ margin: 0, borderLeft: "3px solid #C7D2FE", paddingLeft: 14 }}>
-                      <p style={{ fontSize: 13, color: C.slate, lineHeight: 1.65, margin: 0, fontStyle: "italic" }}>&ldquo;{r.text}&rdquo;</p>
-                      {(r.author || r.role) && <div style={{ fontSize: 12, color: C.mut, marginTop: 6, fontWeight: 600 }}>— {[r.author, r.role].filter(Boolean).join(", ")}</div>}
-                    </blockquote>
-                  ))}
-                  {/* Honesty on a PUBLIC page matters double: these are quotes
-                      the member chose to display, not platform-verified
-                      endorsements, and a visitor must be able to tell. */}
-                  <div style={{ fontSize: 10.5, color: C.mut }}>Quotes added by {p.fullName ?? "the member"} themselves, not written on Topezia.</div>
-                </div>
-              </Card>
-            )}
           </div>
 
           {/* right column */}

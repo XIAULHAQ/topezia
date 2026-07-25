@@ -151,7 +151,7 @@ function Signal({ d }: { d: SheetData }) {
         {d.extraSkills.length > 0 && <RailBlock title="Also"><div style={{ fontSize: 10, lineHeight: 1.85, color: "#B4BCD2" }}>{d.extraSkills.join(" · ")}</div></RailBlock>}
         {d.languages.length > 0 && <RailBlock title="Languages"><div style={{ display: "grid", gap: 6 }}>{d.languages.map((l) => <div key={l} style={{ fontSize: 10, color: "#C6CDE0" }}>{l}</div>)}</div></RailBlock>}
         {d.certifications.length > 0 && <RailBlock title="Certifications"><div style={{ fontSize: 10, lineHeight: 1.8, color: "#B4BCD2" }}>{d.certifications.join(" · ")}</div></RailBlock>}
-        <div style={{ flex: 1 }} />
+        <div className="rb-flex" style={{ flex: 1 }} />
         {d.publicShort && (
           <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 9, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,.1)" }}>
             {d.qr && /* eslint-disable-next-line @next/next/no-img-element */ <img src={d.qr} alt="" style={{ width: 42, height: 42, background: "#fff", padding: 2, borderRadius: 4 }} />}
@@ -215,7 +215,7 @@ function Signal({ d }: { d: SheetData }) {
             </div>
           </Block>
         )}
-        <div style={{ flex: 1 }} />
+        <div className="rb-flex" style={{ flex: 1 }} />
         {d.quotes[0] && (
           <div className="rb-keep" style={{ background: "#F6F7FC", border: "1px solid #E6E9F0", borderRadius: 12, padding: "14px 16px", display: "flex", gap: 12 }}>
             <div style={{ flex: "none", fontSize: 26, lineHeight: 1, color: C.c2, fontFamily: INSTRUMENT }}>&ldquo;</div>
@@ -341,7 +341,7 @@ function Ledger({ d }: { d: SheetData }) {
         </>}
       </div>
 
-      <div style={{ flex: 1 }} />
+      <div className="rb-flex" style={{ flex: 1 }} />
       {(d.quotes[0] || d.publicShort) && (
         <div style={{ display: "flex", alignItems: "flex-end", gap: 18, borderTop: "1px solid #D3D7DF", paddingTop: 14, marginTop: 20 }}>
           {d.quotes[0] && (
@@ -462,7 +462,7 @@ function Grid({ d }: { d: SheetData }) {
           )}
         </div>
 
-        <div style={{ flex: 1 }} />
+        <div className="rb-flex" style={{ flex: 1 }} />
         {(d.quotes[0] || d.publicShort) && (
           <div style={{ display: "flex", alignItems: "flex-end", gap: 20, paddingTop: 16, marginTop: 20, borderTop: "1px solid #E0DFDA" }}>
             {d.quotes[0] && (
@@ -614,7 +614,7 @@ function Prism({ d }: { d: SheetData }) {
               <div style={{ display: "grid", gap: 5 }}>{d.languages.map((l) => <div key={l} style={{ fontSize: 9.8, color: "#4A5164" }}>{l}</div>)}</div>
             </div>
           )}
-          <div style={{ flex: 1 }} />
+          <div className="rb-flex" style={{ flex: 1 }} />
           {d.quotes[0] && (
             <div className="rb-keep" style={{ borderRadius: 13, padding: 14, background: GRAD, color: "#fff" }}>
               <div style={{ fontFamily: INSTRUMENT, fontSize: 26, lineHeight: 0.7 }}>&ldquo;</div>

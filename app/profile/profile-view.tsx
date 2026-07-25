@@ -30,7 +30,6 @@ interface Profile {
   languages: { name: string; level?: string }[];
   authorizedCountries: string[];
   relocateCountries: string[];
-  recommendations: { text: string; author?: string; role?: string }[];
 }
 interface Insights {
   fieldLabel: string | null; coveragePct: number | null; reliable: boolean;
@@ -261,6 +260,17 @@ export default function ProfileView() {
             </Card>
           )}
 
+          {/* Recommendations & reviews — CENTER column, because it was
+              invisible in the right rail. Requested-only: there is no
+              self-typed quote path anywhere in the product anymore; words
+              about you always come from someone else. */}
+          {tab === "Overview" && (
+            <Card>
+              <SectionHead icon="chat" title="Recommendations & reviews" />
+              <EndorsementsPanel />
+            </Card>
+          )}
+
           {showProjects && (
             <Card>
               <SectionHead
@@ -487,31 +497,6 @@ export default function ProfileView() {
                 Add the languages you work in — <button type="button" onClick={() => setEditing("languages")} style={{ color: C.c1, fontWeight: 600, border: "none", background: "none", padding: 0, cursor: "pointer", fontSize: "inherit", fontFamily: "inherit" }}>add them here</button>.
               </p>
             )}
-          </Card>
-
-          {/* REAL: recommendations — member-entered quotes, labelled as such */}
-          <Card>
-            <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}><h2 style={S.railH}>Recommendations</h2><EditPencil onClick={() => setEditing("recommendations")} label="Edit recommendations" /></div>
-            {(p.recommendations ?? []).length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {(p.recommendations ?? []).map((r, i) => (
-                  <blockquote key={i} style={{ margin: 0, borderLeft: `3px solid #C7D2FE`, paddingLeft: 12 }}>
-                    <p style={{ fontSize: 12.5, color: C.slate, lineHeight: 1.6, margin: 0, fontStyle: "italic" }}>&ldquo;{r.text}&rdquo;</p>
-                    {(r.author || r.role) && <div style={{ fontSize: 11.5, color: C.mut, marginTop: 5, fontWeight: 600 }}>— {[r.author, r.role].filter(Boolean).join(", ")}</div>}
-                  </blockquote>
-                ))}
-                <div style={{ fontSize: 10.5, color: C.mut }}>Quotes you added yourself.</div>
-              </div>
-            ) : (
-              <p style={{ fontSize: 12.5, color: C.mut, margin: 0, lineHeight: 1.5 }}>
-                Quotes from managers or clients you&apos;d like to show — <button type="button" onClick={() => setEditing("recommendations")} style={{ color: C.c1, fontWeight: 600, border: "none", background: "none", padding: 0, cursor: "pointer", fontSize: "inherit", fontFamily: "inherit" }}>add one</button>.
-              </p>
-            )}
-            {/* Requested ones live under the same heading but are kept visually
-                separate — the whole point is that these words aren't yours. */}
-            <div style={{ borderTop: `1px solid ${C.line}`, marginTop: 14, paddingTop: 14 }}>
-              <EndorsementsPanel />
-            </div>
           </Card>
 
           {/* SAMPLE: top companies */}

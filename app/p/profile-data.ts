@@ -29,17 +29,11 @@ export interface PubProfile {
   education: { degree?: string; institution?: string; year?: string }[];
   certifications: string[];
   languages: { name: string; level?: string }[];
-  /** Member-entered quotes — the UI labels them as added by the member. */
-  recommendations: { text: string; author?: string; role?: string }[];
   /** Written by someone else through a request link — never by the member.
-   *  Kept separate from `recommendations` because the claim is different. */
+   *  The ONLY recommendation surface: no self-typed quote path exists. */
   endorsements: {
     id: string; kind: "RECOMMENDATION" | "REVIEW";
     authorName: string; authorRole: string | null;
-    /** Did the author hold an account when they wrote it? Endorsements from
-     *  before sign-in was required have none, and must not be described as
-     *  though they did. */
-    signedIn: boolean;
     text: string; rating: number | null;
     work: { title: string; slug: string } | null;
   }[];
@@ -65,7 +59,7 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     select: {
       publicSlug: true, fullName: true, photoUrl: true, headlineRoleId: true, yearsExperience: true,
       currentLocation: true, industries: true, employmentTypes: true, remoteTypes: true, locations: true,
-      workHistory: true, education: true, certifications: true, languages: true, recommendations: true,
+      workHistory: true, education: true, certifications: true, languages: true,
       // Only what the member chose to display, newest first.
       endorsements: {
         where: { status: "SUBMITTED" as const, visible: true },
@@ -73,7 +67,6 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
         take: 20,
         select: {
           id: true, kind: true, authorName: true, authorRole: true, text: true, rating: true,
-          authorUserId: true,
           portfolio: { select: { title: true, slug: true } },
         },
       },
@@ -113,13 +106,11 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     education: (p.education as PubProfile["education"]) ?? [],
     certifications: p.certifications,
     languages: Array.isArray(p.languages) ? (p.languages as PubProfile["languages"]) : [],
-    recommendations: Array.isArray(p.recommendations) ? (p.recommendations as PubProfile["recommendations"]) : [],
     endorsements: (p.endorsements ?? []).map((e) => ({
       id: e.id,
       kind: e.kind,
       authorName: e.authorName ?? "",
       authorRole: e.authorRole,
-      signedIn: !!e.authorUserId,
       text: e.text ?? "",
       rating: e.rating,
       work: e.portfolio,

@@ -186,7 +186,6 @@ export default function EndorsementsPanel() {
                 {r.authorRole && <span style={{ fontSize: 11.5, color: C.mut }}>{r.authorRole}</span>}
                 {r.rating && <span style={{ fontSize: 11.5, color: C.c1, fontWeight: 700 }}>{"★".repeat(r.rating)}</span>}
                 {r.portfolio && <span style={{ fontSize: 11, color: C.mut }}>on {r.portfolio.title}</span>}
-                <span style={S.writtenTag}>written by them</span>
                 <div style={{ flex: 1 }} />
                 <button type="button" onClick={() => setVisible(r.id, !r.visible)} style={S.linkBtn}>{r.visible ? "Hide" : "Show"}</button>
                 <button type="button" onClick={() => remove(r.id)} style={{ ...S.linkBtn, color: "#b42318" }}>Delete</button>
@@ -238,6 +237,5 @@ const S: Record<string, CSSProperties> = {
   form: { border: `1px solid ${C.line}`, borderRadius: 13, padding: 14, background: "#FBFCFE" },
   input: { width: "100%", padding: "9px 11px", borderRadius: 9, border: `1px solid ${C.line}`, fontSize: 13, fontFamily: "inherit", background: "#fff", boxSizing: "border-box" },
   item: { border: `1px solid ${C.line}`, borderRadius: 12, padding: "11px 13px", background: "#fff" },
-  writtenTag: { fontSize: 10, fontWeight: 700, color: "#0F6E56", background: "#E7F6EE", borderRadius: 999, padding: "2px 8px" },
   linkBtn: { background: "none", border: "none", color: C.c1, fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", padding: 0 },
 };

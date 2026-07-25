@@ -490,22 +490,24 @@ export default function ResumeClient() {
             )}
           </section>
 
+          {/* Read-only by design: recommendations always come from someone
+              else, through the request-link flow. A field the member could
+              type into here would undercut every real one on the platform. */}
           <section style={S.card}>
             <CardHead icon="quote" title="Recommendations" />
-            <p style={{ fontSize: 12.5, color: C.mut, margin: "0 0 12px", lineHeight: 1.65 }}>Quotes you&apos;ve received and choose to show — with who said it.</p>
-            {doc.recommendations.map((r, i) => (
-              <div key={i} style={{ borderTop: i > 0 ? `1px solid #F2F2F5` : "none", paddingTop: i > 0 ? 10 : 0, marginBottom: 10 }}>
-                <textarea className="rb-in" style={S.textarea} rows={2} placeholder="What they said…" value={r.text} onChange={(e) => up({ recommendations: doc.recommendations.map((x, j) => (j === i ? { ...x, text: e.target.value.slice(0, LIMITS.recommendationText) } : x)) })} />
-                <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                  <input className="rb-in" style={{ ...S.inputSm, flex: 1 }} placeholder="Who" value={r.author} onChange={(e) => up({ recommendations: doc.recommendations.map((x, j) => (j === i ? { ...x, author: e.target.value } : x)) })} />
-                  <input className="rb-in" style={{ ...S.inputSm, flex: 1 }} placeholder="Their role" value={r.role} onChange={(e) => up({ recommendations: doc.recommendations.map((x, j) => (j === i ? { ...x, role: e.target.value } : x)) })} />
-                  <button type="button" aria-label="Remove" style={S.x} onClick={() => up({ recommendations: doc.recommendations.filter((_, j) => j !== i) })}>×</button>
-                </div>
-              </div>
-            ))}
-            {doc.recommendations.length < LIMITS.recommendations && (
-              <button type="button" style={S.addBtn} onClick={() => up({ recommendations: [...doc.recommendations, { text: "", author: "", role: "" }] })}>+ Add recommendation</button>
+            <p style={{ fontSize: 12.5, color: C.mut, margin: "0 0 12px", lineHeight: 1.65 }}>
+              Written by people you invited — never by you. The newest ones appear here automatically.{" "}
+              <a href="/profile" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>Request one from your profile →</a>
+            </p>
+            {doc.recommendations.length === 0 && (
+              <p style={{ fontSize: 12.5, color: C.mut, margin: 0, fontStyle: "italic" }}>None yet — this section stays off the printed resume until one arrives.</p>
             )}
+            {doc.recommendations.map((r, i) => (
+              <blockquote key={i} style={{ margin: i > 0 ? "10px 0 0" : 0, borderLeft: "3px solid #E2E8F0", paddingLeft: 12 }}>
+                <p style={{ fontSize: 12.5, color: C.slate, lineHeight: 1.6, margin: 0, fontStyle: "italic" }}>&ldquo;{r.text}&rdquo;</p>
+                <div style={{ fontSize: 11.5, color: C.mut, marginTop: 5, fontWeight: 600 }}>— {[r.author, r.role].filter(Boolean).join(", ")}</div>
+              </blockquote>
+            ))}
           </section>
         </div>
 
@@ -852,6 +854,12 @@ const PAGE_CSS = `
      items that are always well under a page tall — never whole sections,
      which would push an over-long one onto a fresh page and leave a gap. */
   .rb-keep { break-inside: avoid; page-break-inside: avoid; }
+  /* On screen, these spacers pin the quote card / QR to the sheet's bottom
+     edge — the polished one-page look. In PRINT they are the bug: when
+     content overflows a page they stretch, leaving a half-empty page 1 and
+     dumping the pinned blocks alone onto page 2. Collapse them so printed
+     content flows naturally top-down. */
+  .rb-flex { flex: 0 0 0 !important; }
 }
 `;
 

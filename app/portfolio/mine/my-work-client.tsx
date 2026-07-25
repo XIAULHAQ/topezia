@@ -103,6 +103,7 @@ export default function MyWorkClient() {
             </div>
 
             <div style={S.actions}>
+              <Link href={`/portfolio/${it.slug}`} style={S.editBtn}>View</Link>
               <Link href={`/portfolio/${it.slug}/edit`} style={S.editBtn}>Edit</Link>
               <button type="button" onClick={() => remove(it)} disabled={busyId === it.id} style={S.delBtn}>
                 {busyId === it.id ? "…" : "Delete"}

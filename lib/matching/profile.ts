@@ -239,7 +239,9 @@ export interface ProfileFieldEdit {
   education?: { degree?: string; institution?: string; year?: string }[];
   certifications?: string[];
   languages?: { name: string; level?: string }[];
-  recommendations?: { text: string; author?: string; role?: string }[];
+  // NOTE: no `recommendations` here, deliberately. Words about a member must
+  // come from someone else, through the endorsement request flow — a field
+  // the member could type into themselves would undercut every real one.
   photoUrl?: string | null; // set a new photo, or null to remove
 }
 
@@ -297,7 +299,6 @@ export async function updateProfileFields(
   if (edit.education !== undefined) data.education = edit.education as unknown as Prisma.InputJsonValue;
   if (edit.certifications !== undefined) data.certifications = edit.certifications;
   if (edit.languages !== undefined) data.languages = edit.languages as unknown as Prisma.InputJsonValue;
-  if (edit.recommendations !== undefined) data.recommendations = edit.recommendations as unknown as Prisma.InputJsonValue;
   if (edit.photoUrl !== undefined) data.photoUrl = edit.photoUrl;
 
   await prisma.profile.update({ where: { id: existing.id }, data });

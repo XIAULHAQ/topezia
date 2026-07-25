@@ -44,7 +44,8 @@ export async function POST(req: NextRequest) {
     education: c.education.map((e) => ({ degree: e.degree, institution: e.institution, year: e.year })),
     certifications: c.certifications,
     languages: c.languages.map((l) => ({ name: l.name, level: l.level || undefined })),
-    recommendations: c.recommendations.map((r) => ({ text: r.text, author: r.author || undefined, role: r.role || undefined })),
+    // No recommendations: those live in the Endorsement table, written by
+    // other people — a resume sync must never write them onto the profile.
     skills: c.skills.map((name) => ({ name, proficiency: null })),
   };
   if (c.contact.name) edit.fullName = c.contact.name;
