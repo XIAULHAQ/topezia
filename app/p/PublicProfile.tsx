@@ -160,9 +160,21 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
                 {/* 0 years is real data but "0+ years experience" reads as a bug — only brag when there's something to brag about */}
                 {!!p.yearsExperience && <span style={S.meta}><Ic n="briefcase" s={14} />{p.yearsExperience}+ years experience</span>}
               </div>
-              <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
-                {["linkedin", "github", "globe", "mail"].map((n) => <span key={n} style={S.social} title="Links — coming soon"><Ic n={n} s={16} /></span>)}
-              </div>
+              {/* Only the links the member actually set — no dead placeholder icons on a public page. */}
+              {(p.linkedinUrl || p.githubUrl || p.websiteUrl || p.contactEmail) && (
+                <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
+                  {([
+                    ["linkedin", p.linkedinUrl, "LinkedIn"],
+                    ["github", p.githubUrl, "GitHub"],
+                    ["globe", p.websiteUrl, "Website"],
+                    ["mail", p.contactEmail ? `mailto:${p.contactEmail}` : null, "Email"],
+                  ] as const).map(([icon, href, title]) =>
+                    href ? (
+                      <a key={icon} href={href} target={icon === "mail" ? undefined : "_blank"} rel="noopener noreferrer" title={title} style={{ ...S.social, cursor: "pointer" }}><Ic n={icon} s={16} /></a>
+                    ) : null
+                  )}
+                </div>
+              )}
             </div>
             <div style={{ flex: "none", paddingTop: 4 }}>
               <ShareButton url={url} />

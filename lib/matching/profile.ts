@@ -243,6 +243,36 @@ export interface ProfileFieldEdit {
   // come from someone else, through the endorsement request flow — a field
   // the member could type into themselves would undercut every real one.
   photoUrl?: string | null; // set a new photo, or null to remove
+  // Public links shown on the profile (own + /p). Display-only — matching
+  // never reads them. Normalised/validated on write; null clears.
+  linkedinUrl?: string | null;
+  githubUrl?: string | null;
+  websiteUrl?: string | null;
+  contactEmail?: string | null;
+}
+
+/** http(s) URLs only, "linkedin.com/in/x" tolerated (https:// prefixed).
+ *  Anything that won't parse — or smuggles another scheme — becomes null
+ *  rather than a broken/dangerous anchor on a public page. */
+function cleanLinkUrl(v: string | null): string | null {
+  if (!v) return null;
+  let s = v.trim().slice(0, 300);
+  if (!s) return null;
+  if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+  try {
+    const u = new URL(s);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+    if (!u.hostname.includes(".")) return null;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+function cleanEmail(v: string | null): string | null {
+  if (!v) return null;
+  const s = v.trim().slice(0, 200);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) ? s : null;
 }
 
 /**
@@ -300,6 +330,10 @@ export async function updateProfileFields(
   if (edit.certifications !== undefined) data.certifications = edit.certifications;
   if (edit.languages !== undefined) data.languages = edit.languages as unknown as Prisma.InputJsonValue;
   if (edit.photoUrl !== undefined) data.photoUrl = edit.photoUrl;
+  if (edit.linkedinUrl !== undefined) data.linkedinUrl = cleanLinkUrl(edit.linkedinUrl);
+  if (edit.githubUrl !== undefined) data.githubUrl = cleanLinkUrl(edit.githubUrl);
+  if (edit.websiteUrl !== undefined) data.websiteUrl = cleanLinkUrl(edit.websiteUrl);
+  if (edit.contactEmail !== undefined) data.contactEmail = cleanEmail(edit.contactEmail);
 
   await prisma.profile.update({ where: { id: existing.id }, data });
 

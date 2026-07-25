@@ -315,6 +315,14 @@ model Profile {
   // (e.g. "raheel-ali-k3m9x2"). Stable once set.
   publicSlug       String?  @unique
 
+  // Public links the member chooses to show on their profile (own + /p page).
+  // Display-only: never touch matching or the embedding. URLs are normalised
+  // and validated http(s)-only on write — see updateProfileFields.
+  linkedinUrl      String?
+  githubUrl        String?
+  websiteUrl       String?
+  contactEmail     String?
+
   fullName         String?
   headlineRoleId   String?
   seniority        Seniority?

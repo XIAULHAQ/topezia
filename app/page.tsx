@@ -268,7 +268,14 @@ export default async function Home() {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=200&q=80&fit=crop&crop=faces" alt="" style={{ width: 54, height: 54, borderRadius: "50%", objectFit: "cover", border: "2.5px solid rgba(255,255,255,.25)", flex: "none", position: "relative" }} />
                 <div style={{ position: "relative", flex: 1 }}><div style={{ fontSize: 15, fontWeight: 700 }}>Omar Khalid</div><div style={{ fontSize: 11.5, color: "#94A3C0", marginTop: 2 }}>Backend Engineer → <strong style={{ color: "#A5B4FC" }}>Staff Engineer</strong></div></div>
-                <div style={{ position: "relative", textAlign: "right" }}><div style={{ fontSize: 19, fontWeight: 800 }}>84 <span style={{ color: "#4ADE80", fontSize: 12 }}>→ 97</span></div><div style={{ fontSize: 10, color: "#8B96B5", marginTop: 1 }}>AI Career Score</div></div>
+                {/* The score ring as the product actually renders it (84% arc). */}
+                <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ position: "relative", width: 44, height: 44, flex: "none" }}>
+                    <svg width="44" height="44" viewBox="0 0 100 100"><defs><linearGradient id="rmsc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#818CF8" /><stop offset="1" stopColor="#22D3EE" /></linearGradient></defs><circle cx="50" cy="50" r="42" stroke="rgba(255,255,255,.14)" strokeWidth="10" fill="none" /><circle cx="50" cy="50" r="42" stroke="url(#rmsc)" strokeWidth="10" fill="none" strokeLinecap="round" strokeDasharray="263.9" strokeDashoffset="42.2" transform="rotate(-90 50 50)" /></svg>
+                    <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontSize: 13, fontWeight: 800 }}>84</div>
+                  </div>
+                  <div style={{ textAlign: "left" }}><div style={{ fontSize: 11, color: "#4ADE80", fontWeight: 700 }}>→ 97</div><div style={{ fontSize: 10, color: "#8B96B5", marginTop: 1 }}>AI Career Score</div></div>
+                </div>
               </div>
               <div style={{ padding: "20px 22px" }}>
                 <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".7px", color: C.mut, textTransform: "uppercase", marginBottom: 12 }}>Roadmap to Staff Engineer · 2 of 3 done</div>

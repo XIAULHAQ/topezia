@@ -76,6 +76,7 @@ export async function GET() {
       tier: true, headlineRoleId: true, fullName: true, photoUrl: true, publicSlug: true,
       workHistory: true, education: true, certifications: true, entryPath: true,
       languages: true,
+      linkedinUrl: true, githubUrl: true, websiteUrl: true, contactEmail: true,
       skills: { select: { proficiency: true, confidence: true, source: true, tier: true, skill: { select: { name: true } } } },
     },
   });
@@ -110,6 +111,7 @@ export async function GET() {
       authorizedCountries: p.authorizedCountries ?? [], relocateCountries: p.relocateCountries ?? [],
       workHistory: p.workHistory ?? [], education: p.education ?? [], certifications: p.certifications,
       languages: Array.isArray(p.languages) ? p.languages : [],
+      linkedinUrl: p.linkedinUrl, githubUrl: p.githubUrl, websiteUrl: p.websiteUrl, contactEmail: p.contactEmail,
       skills: p.skills.map((s) => ({ name: s.skill.name, proficiency: s.proficiency, confidence: s.confidence, source: s.source, tier: s.tier })),
     },
   });

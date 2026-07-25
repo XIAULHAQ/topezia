@@ -29,6 +29,11 @@ export interface PubProfile {
   education: { degree?: string; institution?: string; year?: string }[];
   certifications: string[];
   languages: { name: string; level?: string }[];
+  /** Member-chosen public links — validated http(s)/email on write. */
+  linkedinUrl: string | null;
+  githubUrl: string | null;
+  websiteUrl: string | null;
+  contactEmail: string | null;
   /** Written by someone else through a request link — never by the member.
    *  The ONLY recommendation surface: no self-typed quote path exists. */
   endorsements: {
@@ -60,6 +65,7 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
       publicSlug: true, fullName: true, photoUrl: true, headlineRoleId: true, yearsExperience: true,
       currentLocation: true, industries: true, employmentTypes: true, remoteTypes: true, locations: true,
       workHistory: true, education: true, certifications: true, languages: true,
+      linkedinUrl: true, githubUrl: true, websiteUrl: true, contactEmail: true,
       // Only what the member chose to display, newest first.
       endorsements: {
         where: { status: "SUBMITTED" as const, visible: true },
@@ -106,6 +112,10 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     education: (p.education as PubProfile["education"]) ?? [],
     certifications: p.certifications,
     languages: Array.isArray(p.languages) ? (p.languages as PubProfile["languages"]) : [],
+    linkedinUrl: p.linkedinUrl,
+    githubUrl: p.githubUrl,
+    websiteUrl: p.websiteUrl,
+    contactEmail: p.contactEmail,
     endorsements: (p.endorsements ?? []).map((e) => ({
       id: e.id,
       kind: e.kind,

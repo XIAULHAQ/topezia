@@ -31,6 +31,10 @@ interface Profile {
   languages: { name: string; level?: string }[];
   authorizedCountries: string[];
   relocateCountries: string[];
+  linkedinUrl: string | null;
+  githubUrl: string | null;
+  websiteUrl: string | null;
+  contactEmail: string | null;
 }
 interface Insights {
   fieldLabel: string | null; coveragePct: number | null; reliable: boolean;
@@ -166,10 +170,21 @@ export default function ProfileView() {
               {p.yearsExperience != null && <span style={S.metaItem}><Icon name="briefcase" size={14} />{p.yearsExperience}+ years experience</span>}
             </div>
             <div style={{ display: "flex", gap: 9, marginTop: 16, alignItems: "center" }}>
-              {["linkedin", "github", "globe", "mail"].map((n) => (
-                <span key={n} title="Social links — coming soon" style={S.social}><Icon name={n} size={16} /></span>
-              ))}
-              <SoonTag label="Links — soon" style={{ background: "rgba(255,255,255,.08)", color: "#94A3C0", borderColor: "rgba(255,255,255,.14)" }} />
+              {([
+                ["linkedin", p.linkedinUrl, "LinkedIn"],
+                ["github", p.githubUrl, "GitHub"],
+                ["globe", p.websiteUrl, "Website"],
+                ["mail", p.contactEmail ? `mailto:${p.contactEmail}` : null, "Email"],
+              ] as const).map(([icon, href, title]) =>
+                href ? (
+                  <a key={icon} href={href} target={icon === "mail" ? undefined : "_blank"} rel="noopener noreferrer" title={title} style={{ ...S.social, cursor: "pointer" }}><Icon name={icon} size={16} /></a>
+                ) : (
+                  <button key={icon} type="button" title={`Add your ${title} link`} onClick={() => setEditing("links")} style={{ ...S.social, opacity: 0.4, cursor: "pointer", fontFamily: "inherit" }}><Icon name={icon} size={16} /></button>
+                )
+              )}
+              <button type="button" onClick={() => setEditing("links")} style={{ background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 999, color: "#94A3C0", fontSize: 11, fontWeight: 700, padding: "4px 11px", cursor: "pointer", fontFamily: "inherit" }}>
+                Edit links
+              </button>
             </div>
           </div>
           <div style={{ flex: "none", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 14, paddingTop: 4 }}>
@@ -200,30 +215,24 @@ export default function ProfileView() {
                 )}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 9, flexWrap: "wrap", justifyContent: "flex-end" }}>
-              <button type="button" onClick={() => setEditing("intro")} style={{ ...S.editBtn, border: "none", fontFamily: "inherit" }}><Icon name="edit" size={15} />Edit profile</button>
-              {p.publicSlug && (
-                <ShareMenu
-                  url={p.publicSlug ? `${origin}/p/${p.publicSlug}` : ""}
-                  title="My Topezia profile"
-                  tone="dark"
-                  buttonStyle={{ ...S.shareBtn, cursor: "pointer", fontFamily: "inherit" }}
-                ><Icon name="share" size={15} />Share</ShareMenu>
-              )}
-              {/* Resume replacement and job preferences re-parse or aren't
-                  shown on this page, so they keep the full-form editor. */}
-              <a href="/profile/edit" style={{ fontSize: 11.5, color: "#94A3C0", textDecoration: "none", alignSelf: "center", fontWeight: 600 }}>Resume &amp; preferences →</a>
-            </div>
           </div>
         </div>
-        {/* hero metric strip — SAMPLE (we don't track profile views / recruiter contacts) */}
-        <div style={{ position: "relative", display: "flex", flexWrap: "wrap", borderTop: "1px solid rgba(255,255,255,.09)", marginTop: 24 }}>
-          {[["1,284", "Profile views this month"], ["342", "Search appearances"], ["12", "Recruiter contacts"], ["87", "Skill endorsements"]].map(([v, l], i) => (
-            <div key={i} style={{ flex: 1, minWidth: 150, padding: "16px 0", borderRight: i < 3 ? "1px solid rgba(255,255,255,.06)" : "none" }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}><span style={{ fontSize: 20, fontWeight: 800, color: "rgba(255,255,255,.5)" }}>{v}</span><SoonTag label="Sample" style={{ background: "rgba(255,255,255,.08)", color: "#94A3C0", borderColor: "transparent" }} /></div>
-              <div style={{ fontSize: 11.5, color: "#8B96B5", marginTop: 3 }}>{l}</div>
-            </div>
-          ))}
+        {/* Actions strip. The old sample metrics (views / recruiter contacts /
+            endorsement counts) lived here — removed until we actually track
+            them; invented numbers have no place on a real profile. */}
+        <div style={{ position: "relative", display: "flex", gap: 9, flexWrap: "wrap", alignItems: "center", borderTop: "1px solid rgba(255,255,255,.09)", marginTop: 24, paddingTop: 18 }}>
+          <button type="button" onClick={() => setEditing("intro")} style={{ ...S.editBtn, border: "none", fontFamily: "inherit" }}><Icon name="edit" size={15} />Edit profile</button>
+          {/* Resume replacement and job preferences re-parse or aren't
+              shown on this page, so they keep the full-form editor. */}
+          <a href="/profile/edit" style={{ ...S.shareBtn, cursor: "pointer", textDecoration: "none" }}><Icon name="sliders" size={15} />Preferences</a>
+          {p.publicSlug && (
+            <ShareMenu
+              url={p.publicSlug ? `${origin}/p/${p.publicSlug}` : ""}
+              title="My Topezia profile"
+              tone="dark"
+              buttonStyle={{ ...S.shareBtn, cursor: "pointer", fontFamily: "inherit" }}
+            ><Icon name="share" size={15} />Share</ShareMenu>
+          )}
         </div>
       </section>
 
@@ -566,18 +575,6 @@ export default function ProfileView() {
             )}
           </Card>
 
-          {/* SAMPLE: top companies */}
-          <Card>
-            <div style={{ display: "flex", alignItems: "baseline", marginBottom: 14 }}><h2 style={S.railH}>Top companies for you</h2><SoonTag label="Sample" /></div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-              {[["Stripe", "S"], ["OpenAI", "O"], ["Careem", "C"]].map(([nm, lt]) => (
-                <div key={nm} style={{ border: `1px solid ${C.line}`, borderRadius: 12, padding: "14px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, opacity: 0.75 }}>
-                  <div style={{ width: 38, height: 38, borderRadius: 11, background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 15, fontWeight: 800 }}>{lt}</div>
-                  <div style={{ fontSize: 11.5, fontWeight: 700 }}>{nm}</div>
-                </div>
-              ))}
-            </div>
-          </Card>
         </div>
       </div>
 

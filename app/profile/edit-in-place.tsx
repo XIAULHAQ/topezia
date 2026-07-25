@@ -25,7 +25,7 @@ const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g,
 const SENIORITIES = ["INTERN", "JUNIOR", "MID", "SENIOR", "LEAD", "EXEC", "NOT_APPLICABLE"];
 const PROFICIENCIES = ["FAMILIAR", "PROFICIENT", "ADVANCED", "EXPERT"];
 
-export type SectionKey = "intro" | "skills" | "experience" | "education" | "certs" | "languages" | "eligibility";
+export type SectionKey = "intro" | "skills" | "experience" | "education" | "certs" | "languages" | "eligibility" | "links";
 
 export type EditSkill = { name: string; proficiency: string | null; source: string; tier?: "CORE" | "SECONDARY" };
 export type EditLanguage = { name: string; level?: string };
@@ -45,6 +45,11 @@ export type EditableProfile = {
   /** Where they may work without sponsorship, and where they'd move to. */
   authorizedCountries: string[];
   relocateCountries: string[];
+  /** Public links shown in the hero — null when unset. */
+  linkedinUrl: string | null;
+  githubUrl: string | null;
+  websiteUrl: string | null;
+  contactEmail: string | null;
 };
 
 /** What a completed save hands back for the view to merge into its state. */
@@ -58,6 +63,7 @@ const TITLES: Record<SectionKey, string> = {
   certs: "Edit certifications",
   languages: "Edit languages",
   eligibility: "Where you can work",
+  links: "Edit links",
 };
 
 export default function EditInPlace({
@@ -94,6 +100,11 @@ export default function EditInPlace({
           authorizedCountries: [...(profile.authorizedCountries ?? [])],
           relocateCountries: [...(profile.relocateCountries ?? [])],
         };
+      case "links":
+        return {
+          linkedinUrl: profile.linkedinUrl, githubUrl: profile.githubUrl,
+          websiteUrl: profile.websiteUrl, contactEmail: profile.contactEmail,
+        };
     }
   });
   const [saving, setSaving] = useState(false);
@@ -125,6 +136,20 @@ export default function EditInPlace({
     if (section === "eligibility") {
       patch.authorizedCountries = draft.authorizedCountries ?? [];
       patch.relocateCountries = draft.relocateCountries ?? [];
+    }
+    if (section === "links") {
+      // Empty string → null (a cleared field removes the link). The server
+      // normalises and validates authoritatively; the https:// prefix is
+      // mirrored here only so the merged page state renders a working anchor
+      // immediately (a bare "linkedin.com/…" href would be a relative link).
+      const url = (v: string | null | undefined) => {
+        const s = v?.trim();
+        return s ? (/^https?:\/\//i.test(s) ? s : `https://${s}`) : null;
+      };
+      patch.linkedinUrl = url(draft.linkedinUrl);
+      patch.githubUrl = url(draft.githubUrl);
+      patch.websiteUrl = url(draft.websiteUrl);
+      patch.contactEmail = draft.contactEmail?.trim() || null;
     }
     try {
       const res = await fetch("/api/profile", {
@@ -375,6 +400,23 @@ export default function EditInPlace({
           </div>
         ))}
         <button type="button" style={{ ...S.ghostBtn, marginTop: 12 }} onClick={() => set("languages", [...rows, { name: "", level: "" }])}>+ Add language</button>
+      </>
+    );
+  }
+
+  if (section === "links") {
+    body = (
+      <>
+        <div style={S.hint}>Shown on your profile and your public page. Leave a field empty to hide that link.</div>
+        <div style={S.qLabel}>LinkedIn</div>
+        <input style={S.wide} placeholder="linkedin.com/in/your-name" value={draft.linkedinUrl ?? ""} onChange={(e) => set("linkedinUrl", e.target.value)} />
+        <div style={S.qLabel}>GitHub</div>
+        <input style={S.wide} placeholder="github.com/your-handle" value={draft.githubUrl ?? ""} onChange={(e) => set("githubUrl", e.target.value)} />
+        <div style={S.qLabel}>Website / portfolio</div>
+        <input style={S.wide} placeholder="yoursite.com" value={draft.websiteUrl ?? ""} onChange={(e) => set("websiteUrl", e.target.value)} />
+        <div style={S.qLabel}>Contact email</div>
+        <input style={S.wide} type="email" placeholder="you@example.com" value={draft.contactEmail ?? ""} onChange={(e) => set("contactEmail", e.target.value)} />
+        <div style={S.hint}>This email is public to anyone who can see your profile — use one you&apos;re happy to share.</div>
       </>
     );
   }
