@@ -45,11 +45,11 @@ export type EditableProfile = {
   /** Where they may work without sponsorship, and where they'd move to. */
   authorizedCountries: string[];
   relocateCountries: string[];
-  /** Public links shown in the hero — null when unset. */
+  /** Public links shown in the hero — null when unset. No email here:
+   *  contact addresses are deliberately not a public-profile field. */
   linkedinUrl: string | null;
   githubUrl: string | null;
   websiteUrl: string | null;
-  contactEmail: string | null;
 };
 
 /** What a completed save hands back for the view to merge into its state. */
@@ -103,7 +103,7 @@ export default function EditInPlace({
       case "links":
         return {
           linkedinUrl: profile.linkedinUrl, githubUrl: profile.githubUrl,
-          websiteUrl: profile.websiteUrl, contactEmail: profile.contactEmail,
+          websiteUrl: profile.websiteUrl,
         };
     }
   });
@@ -149,7 +149,6 @@ export default function EditInPlace({
       patch.linkedinUrl = url(draft.linkedinUrl);
       patch.githubUrl = url(draft.githubUrl);
       patch.websiteUrl = url(draft.websiteUrl);
-      patch.contactEmail = draft.contactEmail?.trim() || null;
     }
     try {
       const res = await fetch("/api/profile", {
@@ -414,9 +413,7 @@ export default function EditInPlace({
         <input style={S.wide} placeholder="github.com/your-handle" value={draft.githubUrl ?? ""} onChange={(e) => set("githubUrl", e.target.value)} />
         <div style={S.qLabel}>Website / portfolio</div>
         <input style={S.wide} placeholder="yoursite.com" value={draft.websiteUrl ?? ""} onChange={(e) => set("websiteUrl", e.target.value)} />
-        <div style={S.qLabel}>Contact email</div>
-        <input style={S.wide} type="email" placeholder="you@example.com" value={draft.contactEmail ?? ""} onChange={(e) => set("contactEmail", e.target.value)} />
-        <div style={S.hint}>This email is public to anyone who can see your profile — use one you&apos;re happy to share.</div>
+        <div style={S.hint}>No email field on purpose — a public page shouldn&apos;t hand your address to scrapers. People reach you through these links.</div>
       </>
     );
   }

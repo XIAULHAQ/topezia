@@ -11,7 +11,7 @@
  * this person.
  */
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { C, GRAD, Icon, Card, SoonTag, initials } from "@/app/_components/ui";
+import { C, GRAD, Icon, Card, initials } from "@/app/_components/ui";
 import { COUNTRY_NAMES } from "@/lib/countries";
 import ShareMenu from "@/app/_components/ShareMenu";
 import EditInPlace, { EditPencil, type SectionKey, type ProfilePatch } from "./edit-in-place";
@@ -34,7 +34,6 @@ interface Profile {
   linkedinUrl: string | null;
   githubUrl: string | null;
   websiteUrl: string | null;
-  contactEmail: string | null;
 }
 interface Insights {
   fieldLabel: string | null; coveragePct: number | null; reliable: boolean;
@@ -169,21 +168,20 @@ export default function ProfileView() {
               {isRemote && <span style={S.metaItem}><Icon name="globe" size={14} />Open to remote</span>}
               {p.yearsExperience != null && <span style={S.metaItem}><Icon name="briefcase" size={14} />{p.yearsExperience}+ years experience</span>}
             </div>
+            {/* Only links with content — an icon that goes nowhere is noise.
+                No email icon at all: contact details aren't for harvesting. */}
             <div style={{ display: "flex", gap: 9, marginTop: 16, alignItems: "center" }}>
               {([
                 ["linkedin", p.linkedinUrl, "LinkedIn"],
                 ["github", p.githubUrl, "GitHub"],
                 ["globe", p.websiteUrl, "Website"],
-                ["mail", p.contactEmail ? `mailto:${p.contactEmail}` : null, "Email"],
               ] as const).map(([icon, href, title]) =>
                 href ? (
-                  <a key={icon} href={href} target={icon === "mail" ? undefined : "_blank"} rel="noopener noreferrer" title={title} style={{ ...S.social, cursor: "pointer" }}><Icon name={icon} size={16} /></a>
-                ) : (
-                  <button key={icon} type="button" title={`Add your ${title} link`} onClick={() => setEditing("links")} style={{ ...S.social, opacity: 0.4, cursor: "pointer", fontFamily: "inherit" }}><Icon name={icon} size={16} /></button>
-                )
+                  <a key={icon} href={href} target="_blank" rel="noopener noreferrer" title={title} style={{ ...S.social, cursor: "pointer" }}><Icon name={icon} size={16} /></a>
+                ) : null
               )}
               <button type="button" onClick={() => setEditing("links")} style={{ background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 999, color: "#94A3C0", fontSize: 11, fontWeight: 700, padding: "4px 11px", cursor: "pointer", fontFamily: "inherit" }}>
-                Edit links
+                {p.linkedinUrl || p.githubUrl || p.websiteUrl ? "Edit links" : "Add links"}
               </button>
             </div>
           </div>
@@ -506,21 +504,6 @@ export default function ProfileView() {
             </Card>
           )}
 
-          {/* SAMPLE: AI insights */}
-          <section style={S.dark}>
-            <div style={S.darkGlow} />
-            <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}><Icon name="spark" size={18} color="#fff" /><h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, flex: 1 }}>AI insights</h2><SoonTag label="Sample" style={{ background: "rgba(255,255,255,.1)", color: "#A5B4FC", borderColor: "transparent" }} /></div>
-            <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 12 }}>
-              {[["Interview chance", "High", "76%"], ["Salary potential", "Above market", "+18%"], ["Market demand", "Very high", "94%"], ["Profile strength", "Excellent", "92%"]].map(([l, t, v]) => (
-                <div key={l} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5 }}>
-                  <span style={{ flex: 1, color: "#8B96B5" }}>{l}</span>
-                  <span style={{ background: "rgba(99,102,241,.22)", border: "1px solid rgba(139,92,246,.4)", color: "#C4B5FD", fontSize: 10.5, fontWeight: 600, borderRadius: 999, padding: "3px 9px" }}>{t}</span>
-                  <span style={{ fontWeight: 700, minWidth: 42, textAlign: "right", color: "rgba(255,255,255,.55)" }}>{v}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-
           {/* REAL: work eligibility — this is what scopes the job feed, so it
               gets a card of its own rather than hiding inside preferences. */}
           <Card>
@@ -635,6 +618,4 @@ const S: Record<string, CSSProperties> = {
   railH: { margin: 0, fontSize: 15, fontWeight: 700, flex: 1 },
   railLink: { fontSize: 12, fontWeight: 600, color: C.c1, textDecoration: "none" },
   learnBtn: { border: `1px solid #C7D2FE`, color: "#4F46E5", borderRadius: 8, padding: "6px 13px", fontSize: 11.5, fontWeight: 600, textDecoration: "none", flex: "none" },
-  dark: { background: `linear-gradient(160deg, ${C.navy}, ${C.navy2})`, borderRadius: 16, padding: "22px 24px", color: "#fff", position: "relative", overflow: "hidden" },
-  darkGlow: { position: "absolute", top: -60, right: -60, width: 190, height: 190, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.35), transparent 70%)" },
 };

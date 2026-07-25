@@ -160,17 +160,18 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
                 {/* 0 years is real data but "0+ years experience" reads as a bug — only brag when there's something to brag about */}
                 {!!p.yearsExperience && <span style={S.meta}><Ic n="briefcase" s={14} />{p.yearsExperience}+ years experience</span>}
               </div>
-              {/* Only the links the member actually set — no dead placeholder icons on a public page. */}
-              {(p.linkedinUrl || p.githubUrl || p.websiteUrl || p.contactEmail) && (
+              {/* Only the links the member actually set — no dead placeholder
+                  icons, and never an email icon: a public page must not hand
+                  out contact details for harvesting. */}
+              {(p.linkedinUrl || p.githubUrl || p.websiteUrl) && (
                 <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
                   {([
                     ["linkedin", p.linkedinUrl, "LinkedIn"],
                     ["github", p.githubUrl, "GitHub"],
                     ["globe", p.websiteUrl, "Website"],
-                    ["mail", p.contactEmail ? `mailto:${p.contactEmail}` : null, "Email"],
                   ] as const).map(([icon, href, title]) =>
                     href ? (
-                      <a key={icon} href={href} target={icon === "mail" ? undefined : "_blank"} rel="noopener noreferrer" title={title} style={{ ...S.social, cursor: "pointer" }}><Ic n={icon} s={16} /></a>
+                      <a key={icon} href={href} target="_blank" rel="noopener noreferrer" title={title} style={{ ...S.social, cursor: "pointer" }}><Ic n={icon} s={16} /></a>
                     ) : null
                   )}
                 </div>
