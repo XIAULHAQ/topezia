@@ -387,6 +387,7 @@ model Profile {
 
   portfolios        Portfolio[]
   portfolioSaves    PortfolioSave[]
+  endorsements      Endorsement[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -684,6 +685,7 @@ model Portfolio {
 
   media        PortfolioMedia[]
   saves        PortfolioSave[]
+  endorsements Endorsement[]
 
   publishedAt  DateTime?
   createdAt    DateTime @default(now())
@@ -732,4 +734,60 @@ model PortfolioSave {
 
   @@unique([profileId, portfolioId])
   @@index([profileId, createdAt])
+}
+
+// A recommendation or review someone ELSE wrote about a member.
+//
+// The distinction from Profile.recommendations (a JSON blob the member types
+// themselves) is the whole point: these arrive through a one-time link that
+// the member sends out but cannot write into. The member may hide one, never
+// edit it — see lib/endorsements/doc.ts for why hiding has to stay allowed.
+//
+// A RECOMMENDATION is about the person. A REVIEW is about one piece of work,
+// so it hangs off a Portfolio row and may carry a rating.
+model Endorsement {
+  id          String            @id @default(uuid())
+  profileId   String            // who it is about
+  profile     Profile           @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  kind        EndorsementKind
+  status      EndorsementStatus @default(PENDING)
+
+  // The secret in the invite URL (/r/{token}). High entropy, single use:
+  // once submitted it can only be read back, never written again.
+  token       String            @unique
+  // Who the member says they sent it to — their own note-to-self, shown only
+  // to them. We never email anyone, so this is a label, not an address.
+  sentToLabel String?
+  // Optional personal line from the member, shown on the write page.
+  requestNote String?
+  // REVIEW only: the piece of work being reviewed.
+  portfolioId String?
+  portfolio   Portfolio?        @relation(fields: [portfolioId], references: [id], onDelete: SetNull)
+
+  // Filled in by the AUTHOR through the public form; null while PENDING.
+  authorName  String?
+  authorRole  String?
+  text        String?
+  rating      Int?              // REVIEW only, 1-5
+  submittedAt DateTime?
+
+  // The member's display choice. Hiding is allowed (an unverified link could
+  // otherwise be used to plant something damaging); editing never is.
+  visible     Boolean           @default(true)
+
+  createdAt   DateTime          @default(now())
+  expiresAt   DateTime          // dead links stop being an attack surface
+
+  @@index([profileId, status])
+}
+
+enum EndorsementKind {
+  RECOMMENDATION // about the person
+  REVIEW         // about one piece of work
+}
+
+enum EndorsementStatus {
+  PENDING
+  SUBMITTED
 }

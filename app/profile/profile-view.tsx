@@ -14,6 +14,7 @@ import { C, GRAD, Icon, Card, SoonTag, initials } from "@/app/_components/ui";
 import { COUNTRY_NAMES } from "@/lib/countries";
 import ShareMenu from "@/app/_components/ShareMenu";
 import EditInPlace, { EditPencil, type SectionKey, type ProfilePatch } from "./edit-in-place";
+import EndorsementsPanel from "./endorsements-panel";
 
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
 
@@ -487,13 +488,18 @@ export default function ProfileView() {
                     {(r.author || r.role) && <div style={{ fontSize: 11.5, color: C.mut, marginTop: 5, fontWeight: 600 }}>— {[r.author, r.role].filter(Boolean).join(", ")}</div>}
                   </blockquote>
                 ))}
-                <div style={{ fontSize: 10.5, color: C.mut }}>Quotes added by the member.</div>
+                <div style={{ fontSize: 10.5, color: C.mut }}>Quotes you added yourself.</div>
               </div>
             ) : (
               <p style={{ fontSize: 12.5, color: C.mut, margin: 0, lineHeight: 1.5 }}>
                 Quotes from managers or clients you&apos;d like to show — <button type="button" onClick={() => setEditing("recommendations")} style={{ color: C.c1, fontWeight: 600, border: "none", background: "none", padding: 0, cursor: "pointer", fontSize: "inherit", fontFamily: "inherit" }}>add one</button>.
               </p>
             )}
+            {/* Requested ones live under the same heading but are kept visually
+                separate — the whole point is that these words aren't yours. */}
+            <div style={{ borderTop: `1px solid ${C.line}`, marginTop: 14, paddingTop: 14 }}>
+              <EndorsementsPanel />
+            </div>
           </Card>
 
           {/* SAMPLE: top companies */}

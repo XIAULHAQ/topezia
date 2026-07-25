@@ -31,6 +31,14 @@ export interface PubProfile {
   languages: { name: string; level?: string }[];
   /** Member-entered quotes — the UI labels them as added by the member. */
   recommendations: { text: string; author?: string; role?: string }[];
+  /** Written by someone else through a request link — never by the member.
+   *  Kept separate from `recommendations` because the claim is different. */
+  endorsements: {
+    id: string; kind: "RECOMMENDATION" | "REVIEW";
+    authorName: string; authorRole: string | null;
+    text: string; rating: number | null;
+    work: { title: string; slug: string } | null;
+  }[];
   employmentTypes: string[];
   remoteTypes: string[];
   locations: string[];
@@ -46,6 +54,16 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
       publicSlug: true, fullName: true, photoUrl: true, headlineRoleId: true, yearsExperience: true,
       currentLocation: true, industries: true, employmentTypes: true, remoteTypes: true, locations: true,
       workHistory: true, education: true, certifications: true, languages: true, recommendations: true,
+      // Only what the member chose to display, newest first.
+      endorsements: {
+        where: { status: "SUBMITTED" as const, visible: true },
+        orderBy: { submittedAt: "desc" as const },
+        take: 20,
+        select: {
+          id: true, kind: true, authorName: true, authorRole: true, text: true, rating: true,
+          portfolio: { select: { title: true, slug: true } },
+        },
+      },
       skills: { select: { proficiency: true, tier: true, skill: { select: { name: true } } } },
       // PUBLISHED only. A draft is private to its author and must never leak
       // onto their public page.
@@ -75,6 +93,15 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     certifications: p.certifications,
     languages: Array.isArray(p.languages) ? (p.languages as PubProfile["languages"]) : [],
     recommendations: Array.isArray(p.recommendations) ? (p.recommendations as PubProfile["recommendations"]) : [],
+    endorsements: (p.endorsements ?? []).map((e) => ({
+      id: e.id,
+      kind: e.kind,
+      authorName: e.authorName ?? "",
+      authorRole: e.authorRole,
+      text: e.text ?? "",
+      rating: e.rating,
+      work: e.portfolio,
+    })).filter((e) => e.text && e.authorName),
     employmentTypes: p.employmentTypes,
     remoteTypes: p.remoteTypes,
     locations: p.locations,

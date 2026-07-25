@@ -270,8 +270,36 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
               </div>
             )}
 
+            {/* Written by other people, through a request. Rendered ABOVE the
+                self-added quotes and visually distinct, because the two make
+                very different claims — and a visitor has to be able to tell
+                which is which without reading the small print. */}
+            {tab === "overview" && p.endorsements.length > 0 && (
+              <Card><Head icon="chat" title="Recommendations & reviews" />
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  {p.endorsements.map((e) => (
+                    <blockquote key={e.id} style={{ margin: 0, borderLeft: "3px solid #A7F3D0", paddingLeft: 14 }}>
+                      <p style={{ fontSize: 13, color: C.slate, lineHeight: 1.65, margin: 0, fontStyle: "italic" }}>&ldquo;{e.text}&rdquo;</p>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 12, color: C.mut, fontWeight: 600 }}>— {[e.authorName, e.authorRole].filter(Boolean).join(", ")}</span>
+                        {e.rating && <span style={{ fontSize: 12, color: C.c1, fontWeight: 700 }}>{"★".repeat(e.rating)}</span>}
+                        {e.work && <span style={{ fontSize: 11, color: C.mut }}>on <a href={`/portfolio/${e.work.slug}`} style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>{e.work.title}</a></span>}
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "#0F6E56", background: "#E7F6EE", borderRadius: 999, padding: "2px 8px" }}>written by them</span>
+                      </div>
+                    </blockquote>
+                  ))}
+                  {/* The exact claim, and its exact limit. We know these came
+                      through a request link rather than the member's keyboard;
+                      we do NOT know the author is who they say they are. */}
+                  <div style={{ fontSize: 10.5, color: C.mut, lineHeight: 1.5 }}>
+                    Written by people {p.fullName ?? "the member"} invited, in their own words — {p.fullName ?? "the member"} can hide one but cannot edit it. Topezia doesn&apos;t verify identities.
+                  </div>
+                </div>
+              </Card>
+            )}
+
             {tab === "overview" && p.recommendations.length > 0 && (
-              <Card><Head icon="chat" title="Recommendations" />
+              <Card><Head icon="chat" title={p.endorsements.length > 0 ? "Quotes added by " + (p.fullName ?? "the member") : "Recommendations"} />
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   {p.recommendations.map((r, i) => (
                     <blockquote key={i} style={{ margin: 0, borderLeft: "3px solid #C7D2FE", paddingLeft: 14 }}>
@@ -282,7 +310,7 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
                   {/* Honesty on a PUBLIC page matters double: these are quotes
                       the member chose to display, not platform-verified
                       endorsements, and a visitor must be able to tell. */}
-                  <div style={{ fontSize: 10.5, color: C.mut }}>Quotes added by {p.fullName ?? "the member"}.</div>
+                  <div style={{ fontSize: 10.5, color: C.mut }}>Quotes added by {p.fullName ?? "the member"} themselves, not written on Topezia.</div>
                 </div>
               </Card>
             )}
