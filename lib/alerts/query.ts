@@ -11,6 +11,7 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma, RemoteType } from "@prisma/client";
 import { stateName, countryName, isoForCountrySlug } from "@/lib/seo/pages";
+import { regionsCovering } from "@/lib/matching/eligibility";
 
 const REMOTE_PREFIX = "remote-";
 const REMOTE_TYPES: RemoteType[] = ["REMOTE_US", "REMOTE_GLOBAL"];
@@ -35,14 +36,31 @@ export function alertQueryKey(t: AlertTarget): string {
   ].join("|");
 }
 
-/** The Job filter this alert watches; `since` scopes it to what's new. */
+/** The Job filter this alert watches; `since` scopes it to what's new.
+ *
+ *  A country alert mirrors the feed's eligibility clause (lib/matching/
+ *  eligibility.ts): jobs IN the country, plus remote jobs open to it —
+ *  GLOBAL, the country itself, or a region covering it. The strict
+ *  `country =` filter silently dropped every remote job a subscriber could
+ *  actually take. Deliberately NOT mirrored: the feed's "location unknown"
+ *  branch — a browsing surface can afford maybes, a push email claiming
+ *  "new jobs for you" cannot. */
 export function alertWhere(t: AlertTarget, since?: Date | null): Prisma.JobWhereInput {
   return {
     status: "LIVE",
     ...(t.roleId ? { roleId: t.roleId } : {}),
     ...(t.verticalId ? { verticalId: t.verticalId } : {}),
     ...(t.locationState ? { locationState: t.locationState } : {}),
-    ...(t.country ? { country: t.country } : {}),
+    ...(t.country
+      ? {
+          OR: [
+            { country: t.country },
+            { remoteScope: "GLOBAL" },
+            { remoteScope: t.country },
+            { remoteScope: { in: regionsCovering([t.country]) } },
+          ],
+        }
+      : {}),
     ...(t.remoteOnly ? { remoteType: { in: REMOTE_TYPES } } : {}),
     ...(since ? { firstSeenAt: { gt: since } } : {}),
   };
@@ -63,16 +81,20 @@ export async function resolveAlertTarget(slug: string, place?: string | null): P
     const locationState = iso ? null : place.toUpperCase();
     const placeName = iso ? countryName(iso) : stateName(place.toUpperCase());
 
+    // Country labels say what the query now matches: in-country + remote
+    // open to it. State pages stay literal — they have no remote clause.
+    const placeLabel = iso ? `in ${placeName} or remote` : `in ${placeName}`;
+
     // Role + place (SEO role pages, and the feed's per-profile alert).
     const role = await prisma.role.findUnique({ where: { slug: clean }, select: { id: true, name: true } });
     if (role) {
-      return { label: `${role.name} jobs in ${placeName}`, roleId: role.id, verticalId: null, locationState, country, remoteOnly: false };
+      return { label: `${role.name} jobs ${placeLabel}`, roleId: role.id, verticalId: null, locationState, country, remoteOnly: false };
     }
     // Vertical + place (SEO field pages, and a field-scoped feed alert when the
     // person has no resolved role).
     const vertical = await prisma.vertical.findUnique({ where: { slug: clean }, select: { id: true, name: true } });
     if (vertical && clean !== "unsorted") {
-      return { label: `${vertical.name} jobs in ${placeName}`, roleId: null, verticalId: vertical.id, locationState, country, remoteOnly: false };
+      return { label: `${vertical.name} jobs ${placeLabel}`, roleId: null, verticalId: vertical.id, locationState, country, remoteOnly: false };
     }
     return null;
   }

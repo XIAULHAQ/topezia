@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import Analytics from "@/app/_components/Analytics";
 import { Sora, Plus_Jakarta_Sans, EB_Garamond, Instrument_Serif, Archivo, IBM_Plex_Mono } from "next/font/google";
 
 /**
@@ -72,7 +73,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         */}
         <style dangerouslySetInnerHTML={{ __html: "*,*::before,*::after{box-sizing:border-box}" }} />
       </head>
-      <body style={{ margin: 0 }}>{children}</body>
+      <body style={{ margin: 0 }}>{children}<Analytics /></body>
     </html>
   );
 }

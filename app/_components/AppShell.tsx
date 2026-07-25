@@ -59,7 +59,8 @@ const NAV: NavItem[] = [
   { icon: "bookmark", label: "Saved Jobs", href: "/saved" },
   { icon: "zap", label: "Saved Projects", href: "/saved/projects" },
   { icon: "image", label: "My Work", href: "/portfolio/mine" },
-  { icon: "briefcase", label: "Applications", soon: true },
+  { icon: "briefcase", label: "Applications", href: "/applications" },
+  { icon: "plus", label: "Post a Job", href: "/employer" },
   { icon: "gauge", label: "Skill Assessment", soon: true },
 ];
 
@@ -246,7 +247,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <div style={{ position: "absolute", right: -30, top: -30, width: 110, height: 110, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.45), transparent 70%)" }} />
             <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 5 }}>Unlock full potential</div>
             <div style={{ fontSize: 11.5, color: "#B9C0D4", lineHeight: 1.5, marginBottom: 12 }}>AI insights, unlimited resume versions and more.</div>
-            <div style={{ display: "inline-block", background: GRAD, borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "default", opacity: 0.95 }}>Upgrade — Soon</div>
+            {/* Links to the honest pricing page — which itself says Premium
+                isn't on sale yet. No fake checkout behind this button. */}
+            <Link href="/pricing" style={{ display: "inline-block", background: GRAD, borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 600, color: "#fff", textDecoration: "none" }}>See membership →</Link>
           </div>
         )}
 

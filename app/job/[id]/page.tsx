@@ -18,6 +18,7 @@ import { renderJobDescription, jobDescriptionText } from "@/lib/sanitize";
 import { MIN_JOBS_FOR_PAGE } from "@/lib/seo/pages";
 import SiteNav from "@/app/_components/SiteNav";
 import ApplyGate, { SignedInOnly } from "./ApplyGate";
+import ApplyBox from "./ApplyBox";
 import { SiteFooter } from "@/app/_components/SiteChrome";
 import { curSym } from "@/lib/currency";
 
@@ -107,7 +108,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
   const applyHref = `/go/${job.id}${q.toString() ? `?${q}` : ""}`;
   const isProject = job.kind === "PROJECT";
   const applyLabel = isProject ? "Bid on Freelancer.com →" : "Apply on company site →";
-  const sourceLabel = job.source === "FREELANCER_COM" ? "Freelancer.com" : label(job.source);
+  const sourceLabel = job.source === "FREELANCER_COM" ? "Freelancer.com" : job.source === "NATIVE" ? "posted on Topezia" : label(job.source);
 
   // Google's JobPosting policy covers employment, not freelance bid work —
   // emitting it for projects would risk the whole site's rich-result standing.
@@ -158,14 +159,16 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
         </div>
         <div style={S.fresh}>● {freshness(job.lastVerifiedAt)} · via {sourceLabel}</div>
 
-        {!dead && (
+        {!dead && (job.source === "NATIVE" ? (
+          <ApplyBox jobId={job.id} kind={job.kind} companyName={job.companyName} />
+        ) : (
           <ApplyGate
             jobId={job.id}
             applyHref={applyHref}
             applyLabel={applyLabel}
             note={isProject ? "Bidding happens on Freelancer.com — we never sit between you and the client." : `Applies at ${job.companyName} — we never sit between you and the employer.`}
           />
-        )}
+        ))}
 
         {job.skills.length > 0 && (
           <div style={S.chips}>
@@ -187,7 +190,9 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
 
         <article style={S.body} dangerouslySetInnerHTML={{ __html: clean }} />
 
-        {!dead && (
+        {!dead && (job.source === "NATIVE" ? (
+          <ApplyBox jobId={job.id} kind={job.kind} companyName={job.companyName} />
+        ) : (
           <ApplyGate
             jobId={job.id}
             applyHref={applyHref}
@@ -195,7 +200,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
             note=""
             compact
           />
-        )}
+        ))}
       </div>
       <SiteFooter />
     </main>

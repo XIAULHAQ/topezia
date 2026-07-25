@@ -30,6 +30,9 @@ const SOURCE_PRIORITY: Record<JobSource, number> = {
   // Projects never collide with ATS jobs (different kind, no companyDomain),
   // so priority only matters against other marketplace copies.
   FREELANCER_COM: 3,
+  // The employer posted it HERE, first-party — it outranks every crawled copy
+  // of itself.
+  NATIVE: 0,
 };
 
 interface DedupCandidate {

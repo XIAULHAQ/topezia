@@ -98,6 +98,7 @@ enum JobSource {
   CPC_FEED
   FREELANCER_COM
   JOBPOSTING_SCHEMA
+  NATIVE // posted by an employer ON Topezia — same table, same pipeline
 }
 
 enum EmploymentType {
@@ -208,6 +209,11 @@ model Job {
 
   cpcFeedId          String?  // revenue attribution
 
+  // NATIVE postings only: the company that posted it here.
+  companyId          String?
+  company            Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  applications       Application[]
+
   clicks             JobClick[]
   matchScores        MatchScore[]
 
@@ -224,6 +230,7 @@ model Job {
   @@index([descriptionHash])
   @@index([locationState])
   @@index([roleId])
+  @@index([companyId])
 }
 
 model JobSkill {
@@ -398,6 +405,7 @@ model Profile {
   portfolioLikes    PortfolioLike[]
   endorsements      Endorsement[]
   publications      Publication[]
+  applications      Application[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -887,4 +895,58 @@ enum EndorsementKind {
 enum EndorsementStatus {
   PENDING
   SUBMITTED
+}
+
+// ─────────────────────────────────────────────
+// Employer side — companies, native postings, applications
+// ─────────────────────────────────────────────
+
+// The employer identity behind a NATIVE posting. One per account for now.
+model Company {
+  id          String  @id @default(uuid())
+  ownerUserId String  @unique
+  name        String
+  slug        String  @unique // public page at /company/{slug}
+  tagline     String?
+  about       String?
+  website     String?
+  location    String?
+  logoUrl     String?
+
+  jobs        Job[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// APPLIED → SHORTLISTED → INTERVIEW → SELECTED is the employer's pipeline;
+// REJECTED can happen from any stage; WITHDRAWN is the applicant's own exit.
+enum ApplicationStage {
+  APPLIED
+  SHORTLISTED
+  INTERVIEW
+  SELECTED
+  REJECTED
+  WITHDRAWN
+}
+
+// One member's application/proposal to one NATIVE posting.
+model Application {
+  id               String           @id @default(uuid())
+  jobId            String
+  job              Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  profileId        String
+  profile          Profile          @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  stage            ApplicationStage @default(APPLIED)
+  coverNote        String?
+  // Projects carry a bid; jobs leave these null.
+  proposedRate     Int?
+  proposedCurrency String?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([jobId, profileId])
+  @@index([profileId])
+  @@index([jobId, stage])
 }

@@ -32,8 +32,10 @@ async function feedAlert(profileId: string): Promise<{ slug: string; place?: str
   if (!p?.headlineRoleId) return null;
   const role = await prisma.role.findUnique({ where: { id: p.headlineRoleId }, select: { name: true, slug: true } });
   if (!role) return null;
+  // "or remote": the subscription's query includes remote jobs open to the
+  // country (see lib/alerts/query.ts alertWhere) — the label must say so.
   const place = p.country ? countrySlugFor(p.country) : undefined;
-  const where = p.country ? ` in ${countryName(p.country)}` : "";
+  const where = p.country ? ` in ${countryName(p.country)} or remote` : "";
   return { slug: role.slug, place, label: `${role.name} jobs${where}` };
 }
 
