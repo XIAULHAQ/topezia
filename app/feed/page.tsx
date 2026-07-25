@@ -8,7 +8,7 @@
  * preferences, email alerts, strong-match count) with clearly-labelled
  * "Coming soon" panels for features we don't back with data yet.
  */
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import AppShell from "@/app/_components/AppShell";
@@ -17,6 +17,7 @@ import { C, GRAD, FONT, Icon, MatchRing, Card, SoonTag } from "@/app/_components
 import { curSym } from "@/lib/currency";
 import { fetchProfileShared } from "@/lib/fetch-profile";
 import { ensureFreshSession } from "@/lib/ensure-session";
+import { buildTips, pickTip, type TipChange, type TipScore } from "@/lib/coach/tips";
 
 type Match = {
   jobId: string; title: string; company: string; verticalSlug: string; cardLayout: string;
@@ -80,6 +81,9 @@ interface FeedInsights {
   coveragePct: number | null;
   skillGaps: { skill: string; pct: number; youHave: string | null }[];
   nextSkills: { skill: string; withSkill: string; pairJobs: number; pairPct: number }[];
+  ladder: { to: string; steps: { skill: string; nextPct: number; yourPct: number }[] } | null;
+  certs: { label: string; jobs: number }[];
+  momentum: { fresh7: number } | null;
   reliable: boolean;
 }
 interface Prefs {
@@ -102,8 +106,19 @@ export default function FeedPage() {
   const [enriching, setEnriching] = useState(false);
   const [alert, setAlert] = useState<{ slug: string; place?: string; label: string } | null>(null);
   const [insights, setInsights] = useState<FeedInsights | null>(null);
+  const [insightChanges, setInsightChanges] = useState<TipChange[] | null>(null);
+  const [careerScore, setCareerScore] = useState<TipScore | null>(null);
+  // Manual "another tip" clicks, layered on the deterministic daily pick.
+  const [tipOffset, setTipOffset] = useState(0);
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [saved, setSaved] = useState<Set<string>>(new Set());
+
+  // The rotating coach tip — deterministic daily pick over every counted lens
+  // we have, recomputed as its inputs stream in.
+  const { tip, index: tipIndex, count: tipCount } = useMemo(
+    () => pickTip(buildTips(insights, insightChanges, careerScore), tipOffset),
+    [insights, insightChanges, careerScore, tipOffset]
+  );
 
   async function toggleSave(jobId: string) {
     const wasSaved = saved.has(jobId);
@@ -129,8 +144,18 @@ export default function FeedPage() {
       (async () => {
         try {
           const r = await fetch("/api/profile/insights");
-          if (r.ok) setInsights((await r.json()).insights ?? null);
+          if (r.ok) {
+            const d = await r.json();
+            setInsights(d.insights ?? null);
+            setInsightChanges(d.changes ?? null); // "since last week" — tip fuel
+          }
         } catch { /* optional */ }
+      })();
+      (async () => {
+        try {
+          const r = await fetch("/api/career-score");
+          if (r.ok) setCareerScore((await r.json()).careerScore ?? null);
+        } catch { /* optional — the tip pool just loses the score moves */ }
       })();
       (async () => {
         try {
@@ -382,20 +407,28 @@ export default function FeedPage() {
             <p style={S.railP}>matched against {stats?.totalLive ?? 0} verified jobs open to you</p>
           </Card>
 
-          {/* Dark AI coach tip — real gap data, linking to the Career Coach */}
+          {/* Dark AI coach tip — a rotating pool of counted facts (snapshot
+              diffs, Career Score moves, pairings, gaps, ladder, certs,
+              freshness), one per day plus a manual cycle. lib/coach/tips.ts. */}
           <section style={S.coach}>
             <div style={S.coachGlow} />
             <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-              <Icon name="spark" size={18} color="#fff" /><h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>AI coach tip</h2>
+              <Icon name="spark" size={18} color="#fff" /><h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, flex: 1 }}>AI coach tip</h2>
+              {tipCount > 1 && <span style={{ fontSize: 10.5, color: "#8B96B5", fontWeight: 600 }}>{tipIndex + 1}/{tipCount}</span>}
             </div>
             <p style={{ position: "relative", margin: 0, fontSize: 12.5, lineHeight: 1.65, color: "#C7CEE4" }}>
-              {insights?.nextSkills?.[0]
-                ? <><strong style={{ color: "#fff" }}>{insights.nextSkills[0].skill}</strong> rides along with your {insights.nextSkills[0].withSkill} — <strong style={{ color: "#4ADE80" }}>{insights.nextSkills[0].pairPct}%</strong> of postings wanting {insights.nextSkills[0].withSkill} also name it.</>
-                : insights?.skillGaps?.[0]
-                ? <>Learning <strong style={{ color: "#fff" }}>{insights.skillGaps[0].skill}</strong> would line you up with the <strong style={{ color: "#4ADE80" }}>{insights.skillGaps[0].pct}%</strong> of roles in your field that ask for it.</>
-                : <>Keep your skills current — as your profile sharpens, so do your matches.</>}
+              {tip.parts.map((pt, i) =>
+                pt.strong ? <strong key={i} style={{ color: "#fff" }}>{pt.text}</strong>
+                : pt.accent ? <strong key={i} style={{ color: "#4ADE80" }}>{pt.text}</strong>
+                : <span key={i}>{pt.text}</span>
+              )}
             </p>
-            <Link href="/coach" style={{ ...S.coachBtn, cursor: "pointer", color: "#fff", textDecoration: "none" }}>Open your career coach →</Link>
+            <Link href={tip.href} style={{ ...S.coachBtn, cursor: "pointer", color: "#fff", textDecoration: "none" }}>{tip.cta}</Link>
+            {tipCount > 1 && (
+              <button type="button" onClick={() => setTipOffset((o) => o + 1)} style={{ position: "relative", marginTop: 9, width: "100%", background: "none", border: "none", color: "#8B96B5", fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
+                ↻ Another tip
+              </button>
+            )}
           </section>
 
           {/* Coming soon: saved searches */}
@@ -455,7 +488,10 @@ const S: Record<string, CSSProperties> = {
   railH: { margin: 0, fontSize: 15, fontWeight: 700, flex: 1 },
   railEdit: { fontSize: 12, fontWeight: 600, color: C.c1, textDecoration: "none" },
   railP: { color: C.mut, fontSize: 12.5, lineHeight: 1.55, margin: "0 0 4px" },
-  coach: { background: `linear-gradient(160deg, ${C.navy}, ${C.navy2})`, borderRadius: 16, padding: "22px 24px", color: "#fff", position: "relative", overflow: "hidden" },
+  // flex none: the rail is a max-height flex column, and this card's
+  // overflow:hidden zeroes its automatic minimum size — without it flexbox
+  // crushes the card to its header when the rail runs taller than the screen.
+  coach: { background: `linear-gradient(160deg, ${C.navy}, ${C.navy2})`, borderRadius: 16, padding: "22px 24px", color: "#fff", position: "relative", overflow: "hidden", flex: "none" },
   coachGlow: { position: "absolute", top: -60, right: -60, width: 190, height: 190, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.35), transparent 70%)" },
   coachBtn: { position: "relative", marginTop: 14, background: GRAD, borderRadius: 10, padding: "10px", textAlign: "center", fontSize: 12.5, fontWeight: 600, cursor: "default", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 },
 };
