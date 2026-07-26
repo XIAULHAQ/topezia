@@ -20,7 +20,13 @@ import { getStripe } from "@/lib/billing/stripe";
 export const runtime = "nodejs"; // signature check uses node crypto
 
 async function applySubscription(sub: Stripe.Subscription): Promise<void> {
-  const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+  // We always create and pass a v1 Customer, so `customer` is what comes back.
+  // `customer_account` is the v2-accounts shape Stripe uses when Checkout mints
+  // the buyer itself; falling back to it costs nothing and the failure it
+  // prevents is the worst one there is — money taken, tier never flipped.
+  const customerId =
+    (typeof sub.customer === "string" ? sub.customer : sub.customer?.id) ?? sub.customer_account;
+  if (!customerId) throw new Error(`subscription ${sub.id} has no customer`);
   const premium = sub.status === "active" || sub.status === "trialing";
   // Newer API versions carry the period end per item; they end together.
   const periodEnd = sub.items.data[0]?.current_period_end ?? null;
