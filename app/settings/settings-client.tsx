@@ -11,14 +11,18 @@ const MUTED = "#6b7280";
 const DANGER = "#b42318";
 
 interface Alert { id: string; label: string; confirmedAt: string | null; frequency: string; createdAt: string }
+interface Membership { tier: string; premiumUntil: string | null; hasBilling: boolean }
 interface Account {
   authed: boolean;
   email: string | null;
   hasResumeText: boolean;
   activity: { clicks: number; saves: number; dismissals: number };
   alerts: Alert[];
+  membership: Membership;
   profile: unknown;
 }
+
+const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
 export default function SettingsClient() {
   const router = useRouter();
@@ -85,6 +89,26 @@ export default function SettingsClient() {
     }
   }
 
+  /**
+   * Opens Stripe's hosted Billing Portal — invoices, receipts, card, address,
+   * tax id, cancel. We deliberately don't rebuild any of that here: Stripe's
+   * invoices are the actual tax documents, and keeping the card off our
+   * origin is the whole reason this rail is redirect-only.
+   */
+  async function manageBilling() {
+    setBusy("billing");
+    setError(null);
+    try {
+      const res = await fetch("/api/billing/portal", { method: "POST" });
+      const d = await res.json().catch(() => null);
+      if (res.ok && d?.url) { window.location.assign(d.url); return; }
+      setError(d?.error ?? "Couldn't open billing — try again shortly.");
+    } catch {
+      setError("Couldn't open billing — try again shortly.");
+    }
+    setBusy(null);
+  }
+
   async function deleteAccount() {
     setBusy("delete");
     clearClientCaches(); // nothing of a deleted account may linger in the tab
@@ -124,6 +148,42 @@ export default function SettingsClient() {
               </div>
             ))
           )}
+        </section>
+
+        <section style={S.card}>
+          <div style={S.cardLabel}>Membership</div>
+          {(() => {
+            const m = acct.membership;
+            const premium = m?.tier === "PREMIUM";
+            const until = m?.premiumUntil ? DATE.format(new Date(m.premiumUntil)) : null;
+            return (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={premium ? S.planPremium : S.planBasic}>{premium ? "Premium" : "Basic"}</span>
+                  <span style={{ fontSize: 14, color: MUTED }}>
+                    {premium ? (until ? `Renews ${until}` : "Active") : "Free — forever"}
+                  </span>
+                </div>
+                <div style={S.actions}>
+                  {/* Someone who lapsed back to Basic still has invoices worth
+                      reaching, so this shows for anyone with billing history. */}
+                  {m?.hasBilling ? (
+                    <button style={S.btn} disabled={busy !== null} onClick={manageBilling}>
+                      {busy === "billing" ? "Opening…" : "Manage billing"}
+                    </button>
+                  ) : null}
+                  {!premium && (
+                    <button style={S.btn} disabled={busy !== null} onClick={() => router.push("/pricing")}>
+                      See Premium
+                    </button>
+                  )}
+                </div>
+                {m?.hasBilling && (
+                  <div style={S.meta}>Invoices, receipts, payment method and cancellation are handled by Stripe.</div>
+                )}
+              </>
+            );
+          })()}
         </section>
 
         <section style={S.card}>
@@ -170,6 +230,8 @@ const S: Record<string, CSSProperties> = {
   dangerCard: { background: "#fff", border: "1px solid #f3d0cc", borderRadius: 16, padding: 20, marginBottom: 16 },
   cardLabel: { fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: MUTED, marginBottom: 12 },
   empty: { color: MUTED, fontSize: 14, margin: 0 },
+  planPremium: { background: "linear-gradient(135deg,#6366F1,#8B5CF6)", color: "#fff", fontSize: 12.5, fontWeight: 700, borderRadius: 999, padding: "4px 12px" },
+  planBasic: { background: "#f2f2f5", color: INK, fontSize: 12.5, fontWeight: 700, borderRadius: 999, padding: "4px 12px" },
   meta: { color: MUTED, fontSize: 13, lineHeight: 1.5, margin: "4px 0" },
   alertRow: { display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: "1px solid #f2f2f5" },
   actions: { display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 },

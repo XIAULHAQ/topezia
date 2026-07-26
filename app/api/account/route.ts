@@ -34,6 +34,7 @@ export async function GET() {
       currentLocation: true, country: true, industries: true, resumeText: true,
       employmentTypes: true, remoteTypes: true, locations: true, salaryFloor: true,
       salaryTarget: true, salaryPeriod: true, workAuthorization: true, tier: true, createdAt: true,
+      premiumUntil: true, stripeCustomerId: true,
       skills: { select: { proficiency: true, confidence: true, source: true, skill: { select: { name: true } } } },
       // "Export my data" must actually be all of it.
       publications: { select: { type: true, title: true, authors: true, venue: true, year: true, doi: true, isbn: true, url: true, abstract: true } },
@@ -60,7 +61,15 @@ export async function GET() {
     authed,
     email,
     hasResumeText: Boolean(profile.resumeText),
-    profile: { ...profile, resumeText: undefined },
+    // The Stripe customer id is plumbing, not user data — the settings card
+    // only needs to know whether there IS billing history, so that someone
+    // who has lapsed back to FREE can still reach their old invoices.
+    profile: { ...profile, resumeText: undefined, stripeCustomerId: undefined },
+    membership: {
+      tier: profile.tier,
+      premiumUntil: profile.premiumUntil,
+      hasBilling: Boolean(profile.stripeCustomerId),
+    },
     activity: { clicks, saves, dismissals },
     alerts,
   });
