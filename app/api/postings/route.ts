@@ -77,9 +77,14 @@ export async function POST(req: NextRequest) {
   const kind = body.kind === "PROJECT" ? "PROJECT" : "JOB";
   const title = str(body.title, 140);
   const description = text(body.description, 12000);
-  if (!title || description.length < 80) {
-    return NextResponse.json({ error: "A title and a real description (at least 80 characters) are required." }, { status: 400 });
-  }
+  const pickedRole = str(body.role, 100);
+  const pickedSkills = Array.isArray(body.skills) ? body.skills.map((s) => str(s, 60)).filter(Boolean).slice(0, 20) : [];
+  // Posting requirements — enforced here, shown as a live checklist in the
+  // form. A thin posting wastes every applicant's time and poisons matching.
+  if (title.length < 8) return NextResponse.json({ error: "Give it a real title (8+ characters)." }, { status: 400 });
+  if (!pickedRole) return NextResponse.json({ error: "Pick a category — it routes the right people to you." }, { status: 400 });
+  if (description.length < 200) return NextResponse.json({ error: "The description needs at least 200 characters — use the AI writer if you're stuck." }, { status: 400 });
+  if (pickedSkills.length < 2) return NextResponse.json({ error: "List at least 2 required skills." }, { status: 400 });
   const employmentType = kind === "PROJECT"
     ? "CONTRACT" // projects are contract work by definition
     : EMPLOYMENT.has(body.employmentType as string) ? (body.employmentType as string) : "FULL_TIME";
@@ -92,10 +97,12 @@ export async function POST(req: NextRequest) {
   const country = remoteType === "REMOTE_GLOBAL" ? null : locationRaw ? extractCountry(locationRaw) : null;
 
   // Same enrichment a crawled job gets — the matcher must see this posting
-  // exactly the way it sees every other one.
+  // exactly the way it sees every other one. The employer's explicit picks
+  // WIN over extraction: they know their role and skills; the LLM only adds.
   const llm = await extractWithLlm(title, description);
-  const roleId = await resolveRole(title, llm.roleGuess);
-  const skillIds = await resolveSkills(llm.skills);
+  const roleId = (await resolveRole(pickedRole, pickedRole)) ?? (await resolveRole(title, llm.roleGuess));
+  const skillNames = [...new Set([...pickedSkills, ...llm.skills])];
+  const skillIds = await resolveSkills(skillNames);
   const role = roleId ? await prisma.role.findUnique({ where: { id: roleId }, select: { verticalId: true } }) : null;
   let verticalId = role?.verticalId ?? null;
   if (!verticalId && llm.vertical) {
@@ -142,7 +149,7 @@ export async function POST(req: NextRequest) {
   try {
     const embedding = await embedText(buildJobEmbeddingInput({
       titleNormalized: llm.roleGuess || null, titleRaw: title,
-      skills: llm.skills, descriptionText: description,
+      skills: skillNames, descriptionText: description,
     }));
     if (embedding) await writeJobEmbedding(prisma, job.id, embedding);
   } catch (err) {
