@@ -243,6 +243,8 @@ export interface ProfileFieldEdit {
   // come from someone else, through the endorsement request flow — a field
   // the member could type into themselves would undercut every real one.
   photoUrl?: string | null; // set a new photo, or null to remove
+  // Public-profile sections the member chose to HIDE — whitelisted keys only.
+  hiddenSections?: string[];
   // Public links shown on the profile (own + /p). Display-only — matching
   // never reads them. Normalised/validated on write; null clears.
   linkedinUrl?: string | null;
@@ -330,6 +332,10 @@ export async function updateProfileFields(
   if (edit.certifications !== undefined) data.certifications = edit.certifications;
   if (edit.languages !== undefined) data.languages = edit.languages as unknown as Prisma.InputJsonValue;
   if (edit.photoUrl !== undefined) data.photoUrl = edit.photoUrl;
+  if (edit.hiddenSections !== undefined) {
+    const VALID = new Set(["experience", "skills", "education", "certifications", "languages", "publications", "portfolio", "endorsements"]);
+    data.hiddenSections = [...new Set(edit.hiddenSections.filter((k) => VALID.has(k)))];
+  }
   if (edit.linkedinUrl !== undefined) data.linkedinUrl = cleanLinkUrl(edit.linkedinUrl);
   if (edit.githubUrl !== undefined) data.githubUrl = cleanLinkUrl(edit.githubUrl);
   if (edit.websiteUrl !== undefined) data.websiteUrl = cleanLinkUrl(edit.websiteUrl);

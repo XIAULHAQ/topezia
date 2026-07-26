@@ -65,7 +65,7 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     select: {
       publicSlug: true, fullName: true, photoUrl: true, headlineRoleId: true, yearsExperience: true,
       currentLocation: true, industries: true, employmentTypes: true, remoteTypes: true, locations: true,
-      workHistory: true, education: true, certifications: true, languages: true,
+      workHistory: true, education: true, certifications: true, languages: true, hiddenSections: true,
       linkedinUrl: true, githubUrl: true, websiteUrl: true,
       // Only what the member chose to display, newest first.
       endorsements: {
@@ -97,6 +97,9 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     },
   });
   if (!p || !p.publicSlug) return null;
+  // Member-chosen visibility: hidden sections leave the payload EMPTY, so the
+  // cards and tabs disappear the same way genuinely empty sections do.
+  const hid = new Set(p.hiddenSections ?? []);
   const headline = p.headlineRoleId ? (await prisma.role.findUnique({ where: { id: p.headlineRoleId }, select: { name: true } }))?.name ?? null : null;
   return {
     slug: p.publicSlug,
@@ -108,15 +111,15 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     currentLocation: p.currentLocation,
     isRemote: p.remoteTypes.some((r) => r.startsWith("REMOTE")),
     industries: p.industries,
-    skills: p.skills.map((s) => ({ name: s.skill.name, proficiency: s.proficiency, tier: s.tier })),
-    workHistory: (p.workHistory as PubProfile["workHistory"]) ?? [],
-    education: (p.education as PubProfile["education"]) ?? [],
-    certifications: p.certifications,
-    languages: Array.isArray(p.languages) ? (p.languages as PubProfile["languages"]) : [],
+    skills: hid.has("skills") ? [] : p.skills.map((s) => ({ name: s.skill.name, proficiency: s.proficiency, tier: s.tier })),
+    workHistory: hid.has("experience") ? [] : (p.workHistory as PubProfile["workHistory"]) ?? [],
+    education: hid.has("education") ? [] : (p.education as PubProfile["education"]) ?? [],
+    certifications: hid.has("certifications") ? [] : p.certifications,
+    languages: hid.has("languages") || !Array.isArray(p.languages) ? [] : (p.languages as PubProfile["languages"]),
     linkedinUrl: p.linkedinUrl,
     githubUrl: p.githubUrl,
     websiteUrl: p.websiteUrl,
-    endorsements: (p.endorsements ?? []).map((e) => ({
+    endorsements: (hid.has("endorsements") ? [] : p.endorsements ?? []).map((e) => ({
       id: e.id,
       kind: e.kind,
       authorName: e.authorName ?? "",
@@ -128,8 +131,8 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     employmentTypes: p.employmentTypes,
     remoteTypes: p.remoteTypes,
     locations: p.locations,
-    portfolios: p.portfolios.map((w) => ({ slug: w.slug, title: w.title, coverUrl: portfolioImageUrl(w.coverPath) })),
-    publications: p.publications,
+    portfolios: hid.has("portfolio") ? [] : p.portfolios.map((w) => ({ slug: w.slug, title: w.title, coverUrl: portfolioImageUrl(w.coverPath) })),
+    publications: hid.has("publications") ? [] : p.publications,
   };
 });
 

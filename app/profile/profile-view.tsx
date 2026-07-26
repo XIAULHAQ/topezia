@@ -34,6 +34,7 @@ interface Profile {
   linkedinUrl: string | null;
   githubUrl: string | null;
   websiteUrl: string | null;
+  hiddenSections: string[];
 }
 interface Insights {
   fieldLabel: string | null; coveragePct: number | null; reliable: boolean;
@@ -96,6 +97,17 @@ export default function ProfileView() {
     fetch("/api/profile/insights").then((r) => (r.ok ? r.json() : null)).then((d) => d && setIns(d.insights)).catch(() => {});
     fetch("/api/career-score").then((r) => (r.ok ? r.json() : null)).then((d) => d && setCs(d.careerScore)).catch(() => {});
   }
+
+  /** Show/hide a section on the public profile. Optimistic; the PATCH is the
+      same field-edit path every pencil uses. */
+  function toggleSection(key: string) {
+    if (!p) return;
+    const cur = p.hiddenSections ?? [];
+    const next = cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key];
+    setP((x) => (x ? { ...x, hiddenSections: next } : x));
+    fetch("/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hiddenSections: next }) }).catch(() => {});
+  }
+  const hiddenHas = (key: string) => (p?.hiddenSections ?? []).includes(key);
 
   if (!p) return <div style={{ color: C.mut, padding: "40px 0" }}>Loading your profile…</div>;
 
@@ -308,7 +320,7 @@ export default function ProfileView() {
 
           {showExp && (
             <Card>
-              <SectionHead icon="briefcase" title="Experience" action={<EditPencil onClick={() => setEditing("experience")} label="Edit experience" />} />
+              <SectionHead icon="briefcase" title="Experience" action={<Acts><PubToggle hidden={hiddenHas("experience")} onClick={() => toggleSection("experience")} /><EditPencil onClick={() => setEditing("experience")} label="Edit experience" /></Acts>} />
               {p.workHistory.length > 0 ? (
                 <div style={{ display: "flex", flexDirection: "column" }}>
                   {p.workHistory.map((ex, i) => (
@@ -340,7 +352,7 @@ export default function ProfileView() {
               about you always come from someone else. */}
           {tab === "Overview" && (
             <Card>
-              <SectionHead icon="chat" title="Recommendations & reviews" />
+              <SectionHead icon="chat" title="Recommendations & reviews" action={<Acts><PubToggle hidden={hiddenHas("endorsements")} onClick={() => toggleSection("endorsements")} /></Acts>} />
               <EndorsementsPanel />
             </Card>
           )}
@@ -351,6 +363,7 @@ export default function ProfileView() {
                 icon="image"
                 title="My work"
                 tag={<a href="/portfolio/mine" style={{ fontSize: 12.5, fontWeight: 600, color: C.c1, textDecoration: "none" }}>Manage</a>}
+                action={<Acts><PubToggle hidden={hiddenHas("portfolio")} onClick={() => toggleSection("portfolio")} /></Acts>}
               />
               {work === null && <p style={{ ...S.about, color: C.mut, margin: 0 }}>Loading…</p>}
               {work !== null && work.length === 0 && (
@@ -382,7 +395,7 @@ export default function ProfileView() {
           {showEdu && (
             <div className="pv-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
               <Card>
-                <SectionHead icon="grad" title="Education" action={<EditPencil onClick={() => setEditing("education")} label="Edit education" />} />
+                <SectionHead icon="grad" title="Education" action={<Acts><PubToggle hidden={hiddenHas("education")} onClick={() => toggleSection("education")} /><EditPencil onClick={() => setEditing("education")} label="Edit education" /></Acts>} />
                 {p.education.length > 0 ? p.education.map((e, i) => (
                   <div key={i} style={{ marginBottom: i < p.education.length - 1 ? 12 : 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 700 }}>{e.degree ?? "Degree"}</div>
@@ -392,7 +405,7 @@ export default function ProfileView() {
                 )) : <EmptyRow text="No education added." onEdit={() => setEditing("education")} />}
               </Card>
               <Card>
-                <SectionHead icon="award" title="Certifications" action={<EditPencil onClick={() => setEditing("certs")} label="Edit certifications" />} />
+                <SectionHead icon="award" title="Certifications" action={<Acts><PubToggle hidden={hiddenHas("certifications")} onClick={() => toggleSection("certifications")} /><EditPencil onClick={() => setEditing("certs")} label="Edit certifications" /></Acts>} />
                 {p.certifications.length > 0 ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                     {p.certifications.map((c) => (
@@ -413,14 +426,14 @@ export default function ProfileView() {
               record reads naturally. */}
           {showEdu && (
             <Card>
-              <SectionHead icon="doc" title="Publications & research" />
+              <SectionHead icon="doc" title="Publications & research" action={<Acts><PubToggle hidden={hiddenHas("publications")} onClick={() => toggleSection("publications")} /></Acts>} />
               <PublicationsPanel />
             </Card>
           )}
 
           {showSkillsTab && (
             <Card>
-              <SectionHead icon="gauge" title="Core skills" action={<EditPencil onClick={() => setEditing("skills")} label="Edit skills" />} />
+              <SectionHead icon="gauge" title="Core skills" action={<Acts><PubToggle hidden={hiddenHas("skills")} onClick={() => toggleSection("skills")} /><EditPencil onClick={() => setEditing("skills")} label="Edit skills" /></Acts>} />
               <div className="pv-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 28px" }}>
                 {p.skills.filter((s) => s.tier !== "SECONDARY").map((s) => (
                   <div key={s.name}>
@@ -541,7 +554,7 @@ export default function ProfileView() {
 
           {/* REAL: languages */}
           <Card>
-            <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}><h2 style={S.railH}>Languages</h2><EditPencil onClick={() => setEditing("languages")} label="Edit languages" /></div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}><h2 style={S.railH}>Languages</h2><Acts><PubToggle hidden={hiddenHas("languages")} onClick={() => toggleSection("languages")} /><EditPencil onClick={() => setEditing("languages")} label="Edit languages" /></Acts></div>
             {(p.languages ?? []).length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {(p.languages ?? []).map((l) => (
@@ -571,6 +584,33 @@ export default function ProfileView() {
         />
       )}
     </div>
+  );
+}
+
+/** Right-aligned action cluster — keeps toggles/pencils grouped with an
+ *  inset instead of assorted buttons hugging the card edge. */
+function Acts({ children }: { children: ReactNode }) {
+  return <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: 2, flex: "none" }}>{children}</div>;
+}
+
+/** Public-profile visibility switch for one section. Green = shown on /p. */
+function PubToggle({ hidden, onClick }: { hidden: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={hidden ? "Hidden from your public profile — click to show" : "Shown on your public profile — click to hide"}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 7, border: `1px solid ${hidden ? C.line : "#A7F3D0"}`,
+        background: hidden ? "#F8FAFC" : "#ECFDF5", color: hidden ? C.mut : "#047857",
+        borderRadius: 999, padding: "5px 11px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+      }}
+    >
+      <span style={{ width: 24, height: 13, borderRadius: 999, background: hidden ? "#CBD5E1" : "#34D399", position: "relative", display: "inline-block", flex: "none" }}>
+        <span style={{ position: "absolute", top: 1.5, left: hidden ? 2 : 12, width: 10, height: 10, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
+      </span>
+      {hidden ? "Hidden" : "Public"}
+    </button>
   );
 }
 

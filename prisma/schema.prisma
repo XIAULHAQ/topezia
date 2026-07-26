@@ -397,6 +397,10 @@ model Profile {
   dismissals       JobDismissal[]
   matchScores      MatchScore[]
 
+  // Public-profile section visibility: keys the member chose to HIDE from
+  // /p/{slug} ("experience", "skills", …). Empty = everything shows.
+  hiddenSections    String[] @default([])
+
   // Insight alerts (opt-in from /coach): weekly snapshot + diff of the user's
   // market; an email goes out only when something actually moved.
   insightAlerts     Boolean @default(false)
