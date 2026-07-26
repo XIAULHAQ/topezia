@@ -21,14 +21,29 @@ export function billingConfigured(): boolean {
 
 let client: Stripe | null = null;
 
+/**
+ * Pinned explicitly rather than inheriting whatever the installed SDK
+ * defaults to, so an `npm update` can never silently change API behaviour
+ * mid-flight. Bump this deliberately, alongside the SDK.
+ */
+export const STRIPE_API_VERSION = "2026-06-24.dahlia" as const;
+
 /** The Stripe client — null until billing is fully configured. */
 export function getStripe(): Stripe | null {
   if (!billingConfigured()) return null;
-  if (!client) client = new Stripe(process.env.STRIPE_SECRET_KEY!);
+  if (!client) client = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: STRIPE_API_VERSION });
   return client;
 }
 
 export const PREMIUM_PRICE_ID = () => process.env.STRIPE_PREMIUM_PRICE_ID!;
+
+/**
+ * Tags Checkout Sessions in the Stripe Dashboard so this flow can be compared
+ * against any future one (annual plan, employer packages). The random suffix
+ * is part of Stripe's convention for these labels — it stays FIXED; changing
+ * it starts a new series and breaks continuity of the reporting.
+ */
+export const CHECKOUT_INTEGRATION_ID = "topezia-premium-kqmwvbxz";
 
 export interface PremiumPrice {
   amount: number; // in the currency's minor unit, e.g. cents

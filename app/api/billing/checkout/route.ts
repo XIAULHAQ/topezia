@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { createClient } from "@/lib/supabase/server";
-import { getStripe, PREMIUM_PRICE_ID } from "@/lib/billing/stripe";
+import { getStripe, PREMIUM_PRICE_ID, CHECKOUT_INTEGRATION_ID } from "@/lib/billing/stripe";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com").replace(/\/$/, "");
@@ -58,6 +58,22 @@ export async function POST(_req: NextRequest) {
       success_url: `${SITE}/pricing?upgraded=1`,
       cancel_url: `${SITE}/pricing`,
       allow_promotion_codes: true,
+      // NOTE: payment_method_types is deliberately absent. Passing it pins
+      // checkout to one method; omitting it lets Stripe show each member the
+      // eligible methods for their country, configured from the Dashboard.
+      //
+      // Sales tax / VAT / GST. This is INERT until an active tax registration
+      // exists in the Dashboard — Stripe returns no error and simply collects
+      // nothing, which is the classic silent-undercollection trap. The
+      // customer we create carries no address, so customer_update lets
+      // Checkout save the one it collects and tax against it.
+      automatic_tax: { enabled: true },
+      customer_update: { address: "auto", name: "auto" },
+      // Business buyers can enter a VAT/GST id, which is what makes
+      // cross-border B2B reverse-charge work instead of taxing them as
+      // consumers.
+      tax_id_collection: { enabled: true },
+      integration_identifier: CHECKOUT_INTEGRATION_ID,
       metadata: { profileId: profile.id },
     });
     if (!session.url) throw new Error("checkout session has no url");

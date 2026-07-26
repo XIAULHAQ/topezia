@@ -1,0 +1,21 @@
+#!/bin/sh
+# Block Stripe API keys (and other obvious secrets) from ever being committed.
+# Key exposure in a repo is the leading cause of Stripe key takeover, and a
+# pushed key is compromised even if the next commit removes it.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+
+if git diff --cached -U0 | grep -nE '^\+.*(sk|rk)_(live|test)_[A-Za-z0-9]{8}' >/dev/null; then
+  echo "BLOCKED: a Stripe API key (sk_/rk_) appears in your staged changes."
+  echo "Keys belong in Vercel environment variables, never in the repo."
+  echo "If this is a false positive: git commit --no-verify"
+  exit 1
+fi
+
+if git diff --cached -U0 | grep -nE '^\+.*whsec_[A-Za-z0-9]{8}' >/dev/null; then
+  echo "BLOCKED: a Stripe webhook signing secret (whsec_) appears in your staged changes."
+  echo "If this is a false positive: git commit --no-verify"
+  exit 1
+fi
+
+exit 0
