@@ -1,16 +1,19 @@
 /**
  * /pricing — membership packages: Basic (free) and Premium.
  *
- * Honesty rule carried from the whole product: no buy button until a real
- * purchase flow exists. Premium lists what it WILL gate (the AI-cost
- * features), states plainly that everything is free during early access,
- * and takes an email for the launch list instead of pretending to charge.
+ * Honesty rule carried from the whole product: the buy button exists ONLY
+ * while billing is actually live (Stripe fully configured and the price
+ * readable). Until then the Premium card says "Not on sale yet" — never a
+ * dead button, never an invented price. When live, the price shown is read
+ * from Stripe itself, so the page can't drift from what checkout charges.
  */
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import SiteNav from "@/app/_components/SiteNav";
 import { SiteFooter } from "@/app/_components/SiteChrome";
+import { getPremiumPrice, formatPrice } from "@/lib/billing/stripe";
+import UpgradeButton from "./upgrade-button";
 
 export const metadata: Metadata = {
   title: "Membership — Topezia",
@@ -40,7 +43,10 @@ const PREMIUM = [
   "Priority support",
 ];
 
-export default function PricingPage() {
+export default async function PricingPage({ searchParams }: { searchParams: { upgraded?: string } }) {
+  // null until Stripe is fully configured AND the price is readable — the
+  // page falls back to the honest "Not on sale yet" in every failure mode.
+  const price = await getPremiumPrice();
   return (
     <main style={{ background: "#F7F8FB", minHeight: "100vh", display: "flex", flexDirection: "column", fontFamily: "var(--font-jakarta), sans-serif" }}>
       <SiteNav />
@@ -49,6 +55,12 @@ export default function PricingPage() {
         <p style={{ fontSize: 14.5, color: MUTED, textAlign: "center", margin: "12px auto 36px", maxWidth: 520, lineHeight: 1.65 }}>
           Two tiers, no tricks. What&apos;s computed from data is free forever; what costs us AI to run is Premium.
         </p>
+
+        {searchParams.upgraded === "1" && (
+          <div style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", color: "#047857", borderRadius: 12, padding: "13px 18px", fontSize: 13.5, fontWeight: 600, textAlign: "center", margin: "0 auto 26px", maxWidth: 560, lineHeight: 1.55 }}>
+            Payment received — thank you! Premium activates on your account within a minute.
+          </div>
+        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(300px,100%),1fr))", gap: 22 }}>
           <section style={S.card}>
@@ -59,14 +71,22 @@ export default function PricingPage() {
           </section>
 
           <section style={{ ...S.card, border: "2px solid #6366F1", position: "relative" }}>
-            <span style={S.badge}>Coming soon</span>
+            <span style={S.badge}>{price ? "Most complete" : "Coming soon"}</span>
             <h2 style={S.tier}>Premium</h2>
-            <div style={S.price}>Not on sale yet</div>
+            {price ? (
+              <div style={S.price}>{formatPrice(price)}</div>
+            ) : (
+              <div style={S.price}>Not on sale yet</div>
+            )}
             <ul style={S.ul}>{PREMIUM.map((f) => <li key={f} style={S.li}>✓ {f}</li>)}</ul>
-            <div style={{ fontSize: 12.5, color: MUTED, lineHeight: 1.6, marginTop: "auto", paddingTop: 8 }}>
-              During early access <b>everything is free</b> — including most of this list.
-              When Premium launches, early members get first pricing. No card, no countdown timers.
-            </div>
+            {price ? (
+              <UpgradeButton />
+            ) : (
+              <div style={{ fontSize: 12.5, color: MUTED, lineHeight: 1.6, marginTop: "auto", paddingTop: 8 }}>
+                During early access <b>everything is free</b> — including most of this list.
+                When Premium launches, early members get first pricing. No card, no countdown timers.
+              </div>
+            )}
           </section>
         </div>
 

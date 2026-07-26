@@ -381,6 +381,11 @@ model Profile {
   relocateCountries   String[]
   verticalsOptIn   String[] // vertical slugs
   tier             MemberTier @default(FREE) // paywall stub — see MemberTier
+  // Stripe billing: one customer per profile, created on first checkout.
+  // premiumUntil mirrors the subscription's paid-through date (webhook-set) —
+  // the honest expiry behind tier=PREMIUM.
+  stripeCustomerId String?   @unique
+  premiumUntil     DateTime?
 
   // alternate entry path (trucking questionnaire, §3.4) — same shape, resumeFileUrl null
   entryPath        EntryPath @default(RESUME)

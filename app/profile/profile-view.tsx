@@ -317,7 +317,7 @@ export default function ProfileView() {
         {/* Actions strip. The old sample metrics (views / recruiter contacts /
             endorsement counts) lived here — removed until we actually track
             them; invented numbers have no place on a real profile. */}
-        <div style={{ position: "relative", display: "flex", gap: 9, flexWrap: "wrap", alignItems: "center", borderTop: "1px solid rgba(255,255,255,.09)", marginTop: 24, paddingTop: 18 }}>
+        <div style={{ position: "relative", display: "flex", gap: 9, flexWrap: "wrap", alignItems: "center", borderTop: "1px solid rgba(255,255,255,.09)", marginTop: 24, padding: "18px 0 20px" }}>
           <button type="button" onClick={() => setEditing("intro")} style={{ ...S.editBtn, border: "none", fontFamily: "inherit" }}><Icon name="edit" size={15} />Edit profile</button>
           {/* Resume replacement and job preferences re-parse or aren't
               shown on this page, so they keep the full-form editor. */}
@@ -339,13 +339,13 @@ export default function ProfileView() {
           <button
             type="button"
             onClick={() => toggleFlag("publicVisible")}
-            title={p.publicVisible ? "Your public profile is live — click to take it offline" : "Your public profile is offline (the link shows a 404) — click to publish it"}
-            style={{ ...S.shareBtn, cursor: "pointer", fontFamily: "inherit", marginLeft: "auto", borderColor: p.publicVisible ? "rgba(52,211,153,.45)" : "rgba(255,255,255,.16)", color: p.publicVisible ? "#6EE7B7" : "#94A3C0" }}
+            title={p.publicVisible ? "Your public profile is live — click to hide it (the link will show a 404)" : "Your public profile is hidden — click to make it public again"}
+            style={{ ...S.shareBtn, cursor: "pointer", fontFamily: "inherit", marginLeft: "auto", marginRight: 2, borderColor: p.publicVisible ? "rgba(52,211,153,.45)" : "rgba(255,255,255,.16)", color: p.publicVisible ? "#6EE7B7" : "#94A3C0" }}
           >
             <span style={{ width: 26, height: 14, borderRadius: 999, background: p.publicVisible ? "#34D399" : "#475569", position: "relative", display: "inline-block", flex: "none" }}>
               <span style={{ position: "absolute", top: 2, left: p.publicVisible ? 14 : 2, width: 10, height: 10, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
             </span>
-            {p.publicVisible ? "Public page: on" : "Public page: off"}
+            {p.publicVisible ? "Hide your profile" : "Make profile public"}
           </button>
         </div>
       </section>

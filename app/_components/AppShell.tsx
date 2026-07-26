@@ -84,6 +84,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [navigating, setNavigating] = useState(false);
   const [name, setName] = useState<string | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
+  const [tier, setTier] = useState<string | null>(null);
 
   useEffect(() => {
     // Self-contained identity: the top-bar avatar needs the signed-in name/photo,
@@ -91,8 +92,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
     // Shared with the page inside the shell — /feed needs the same endpoint,
     // and two parallel calls cost two auth round-trips for one answer.
     const applyIdentity = (d: Awaited<ReturnType<typeof fetchProfileShared>>) => {
-      const pr = d?.profile as { fullName?: string; photoUrl?: string } | null | undefined;
-      if (pr) { setName(pr.fullName ?? null); setPhoto(pr.photoUrl ?? null); }
+      const pr = d?.profile as { fullName?: string; photoUrl?: string; tier?: string } | null | undefined;
+      if (pr) { setName(pr.fullName ?? null); setPhoto(pr.photoUrl ?? null); setTier(pr.tier ?? null); }
     };
     applyIdentity(readProfileCache()); // instant avatar on repeat visits
     fetchProfileShared().then(applyIdentity).catch(() => {});
@@ -244,13 +245,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
 
-        {expanded && (
+        {/* No upsell to someone already paying — Premium members get their
+            space back. */}
+        {expanded && tier !== "PREMIUM" && (
           <div style={{ flex: "none", margin: "18px 4px 0", background: `linear-gradient(150deg, ${C.navy}, ${C.navy2})`, borderRadius: 14, padding: "18px 16px", color: "#fff", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", right: -30, top: -30, width: 110, height: 110, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.45), transparent 70%)" }} />
             <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 5 }}>Unlock full potential</div>
             <div style={{ fontSize: 11.5, color: "#B9C0D4", lineHeight: 1.5, marginBottom: 12 }}>AI insights, unlimited resume versions and more.</div>
-            {/* Links to the honest pricing page — which itself says Premium
-                isn't on sale yet. No fake checkout behind this button. */}
+            {/* Links to the pricing page — a real checkout when billing is
+                live, the honest "not on sale yet" card when it isn't. */}
             <Link href="/pricing" style={{ display: "inline-block", background: GRAD, borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 600, color: "#fff", textDecoration: "none" }}>See membership →</Link>
           </div>
         )}
