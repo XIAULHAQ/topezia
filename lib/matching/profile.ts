@@ -245,6 +245,13 @@ export interface ProfileFieldEdit {
   photoUrl?: string | null; // set a new photo, or null to remove
   // Public-profile sections the member chose to HIDE — whitelisted keys only.
   hiddenSections?: string[];
+  // Claim a custom /p URL. Validated hard (format + reserved words) and unique;
+  // a conflict surfaces as ProfileEditError(409) so the UI can say "taken".
+  publicSlug?: string;
+  // Availability badge on the public profile.
+  openToWork?: boolean;
+  // Master switch for the whole public page (false = /p 404s).
+  publicVisible?: boolean;
   // Public links shown on the profile (own + /p). Display-only — matching
   // never reads them. Normalised/validated on write; null clears.
   linkedinUrl?: string | null;
@@ -275,6 +282,43 @@ function cleanEmail(v: string | null): string | null {
   if (!v) return null;
   const s = v.trim().slice(0, 200);
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) ? s : null;
+}
+
+/** A field edit the member must be TOLD about (bad slug, taken slug) — carries
+ *  the HTTP status so the PATCH route can pass it through instead of 502ing. */
+export class ProfileEditError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+  }
+}
+
+// Names that would be confusing or abusable as a member's public handle.
+// /p/{slug} has its own namespace so there are no route collisions — this list
+// is about impersonation and support confusion, not routing.
+const RESERVED_SLUGS = new Set([
+  "admin", "topezia", "support", "help", "official", "staff", "team",
+  "www", "api", "jobs", "login", "signup", "settings", "profile", "me",
+]);
+
+/** Lowercase letters/digits/dashes, 3–40 chars, no leading/trailing/double dash. */
+function cleanPublicSlug(v: string): string {
+  const s = v.trim().toLowerCase();
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s) || s.length < 3 || s.length > 40) {
+    throw new ProfileEditError("URLs use 3–40 lowercase letters, numbers and single dashes.", 400);
+  }
+  if (RESERVED_SLUGS.has(s)) {
+    throw new ProfileEditError("That URL is reserved — try another.", 400);
+  }
+  return s;
+}
+
+/** Same contract as the POST /api/profile photo gate: an extracted/uploaded
+ *  data URI under 1MB, or null to remove. Anything else — a foreign URL, an
+ *  oversized blob — is rejected loudly rather than stored on a public page. */
+function cleanPhotoUrl(v: string | null): string | null {
+  if (v === null) return null;
+  if (typeof v === "string" && v.startsWith("data:image/") && v.length < 1_000_000) return v;
+  throw new ProfileEditError("That photo couldn't be used — try a JPG or PNG under 1MB.", 400);
 }
 
 /**
@@ -331,7 +375,10 @@ export async function updateProfileFields(
   if (edit.education !== undefined) data.education = edit.education as unknown as Prisma.InputJsonValue;
   if (edit.certifications !== undefined) data.certifications = edit.certifications;
   if (edit.languages !== undefined) data.languages = edit.languages as unknown as Prisma.InputJsonValue;
-  if (edit.photoUrl !== undefined) data.photoUrl = edit.photoUrl;
+  if (edit.photoUrl !== undefined) data.photoUrl = cleanPhotoUrl(edit.photoUrl);
+  if (edit.publicSlug !== undefined) data.publicSlug = cleanPublicSlug(edit.publicSlug);
+  if (edit.openToWork !== undefined) data.openToWork = Boolean(edit.openToWork);
+  if (edit.publicVisible !== undefined) data.publicVisible = Boolean(edit.publicVisible);
   if (edit.hiddenSections !== undefined) {
     const VALID = new Set(["experience", "skills", "education", "certifications", "languages", "publications", "portfolio", "endorsements"]);
     data.hiddenSections = [...new Set(edit.hiddenSections.filter((k) => VALID.has(k)))];
@@ -341,7 +388,16 @@ export async function updateProfileFields(
   if (edit.websiteUrl !== undefined) data.websiteUrl = cleanLinkUrl(edit.websiteUrl);
   if (edit.contactEmail !== undefined) data.contactEmail = cleanEmail(edit.contactEmail);
 
-  await prisma.profile.update({ where: { id: existing.id }, data });
+  try {
+    await prisma.profile.update({ where: { id: existing.id }, data });
+  } catch (e) {
+    // publicSlug is the only unique field this path writes, so P2002 here can
+    // only mean "someone already has that URL".
+    if (edit.publicSlug !== undefined && e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      throw new ProfileEditError("That URL is already taken — try another.", 409);
+    }
+    throw e;
+  }
 
   let skillNames: { name: string; tier: SkillTier }[] | null = null;
   if (edit.skills !== undefined) {

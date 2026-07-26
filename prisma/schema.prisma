@@ -400,6 +400,11 @@ model Profile {
   // Public-profile section visibility: keys the member chose to HIDE from
   // /p/{slug} ("experience", "skills", …). Empty = everything shows.
   hiddenSections    String[] @default([])
+  // Master switch for the whole public page: false = /p/{slug} 404s. Sits
+  // above hiddenSections, which stay untouched for when it flips back on.
+  publicVisible     Boolean  @default(true)
+  // Member-chosen availability badge on the public profile.
+  openToWork        Boolean  @default(false)
 
   // Insight alerts (opt-in from /coach): weekly snapshot + diff of the user's
   // market; an email goes out only when something actually moved.

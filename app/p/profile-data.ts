@@ -23,6 +23,8 @@ export interface PubProfile {
   yearsExperience: number | null;
   currentLocation: string | null;
   isRemote: boolean;
+  /** Member-chosen availability badge — false renders nothing, not "closed". */
+  openToWork: boolean;
   industries: string[];
   skills: { name: string; proficiency: string | null; tier: string }[];
   workHistory: { title?: string; company?: string; years?: string }[];
@@ -66,6 +68,7 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
       publicSlug: true, fullName: true, photoUrl: true, headlineRoleId: true, yearsExperience: true,
       currentLocation: true, industries: true, employmentTypes: true, remoteTypes: true, locations: true,
       workHistory: true, education: true, certifications: true, languages: true, hiddenSections: true,
+      publicVisible: true, openToWork: true,
       linkedinUrl: true, githubUrl: true, websiteUrl: true,
       // Only what the member chose to display, newest first.
       endorsements: {
@@ -97,6 +100,10 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     },
   });
   if (!p || !p.publicSlug) return null;
+  // Master switch: a member who turned their public page off gets a plain 404
+  // — same answer as a slug that never existed, so nothing confirms the
+  // profile is merely hidden.
+  if (!p.publicVisible) return null;
   // Member-chosen visibility: hidden sections leave the payload EMPTY, so the
   // cards and tabs disappear the same way genuinely empty sections do.
   const hid = new Set(p.hiddenSections ?? []);
@@ -110,6 +117,7 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     yearsExperience: p.yearsExperience,
     currentLocation: p.currentLocation,
     isRemote: p.remoteTypes.some((r) => r.startsWith("REMOTE")),
+    openToWork: p.openToWork,
     industries: p.industries,
     skills: hid.has("skills") ? [] : p.skills.map((s) => ({ name: s.skill.name, proficiency: s.proficiency, tier: s.tier })),
     workHistory: hid.has("experience") ? [] : (p.workHistory as PubProfile["workHistory"]) ?? [],

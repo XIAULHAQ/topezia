@@ -7,7 +7,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { createOrUpdateProfile, updateProfileFields, type ProfileFieldEdit } from "@/lib/matching/profile";
+import { createOrUpdateProfile, updateProfileFields, ProfileEditError, type ProfileFieldEdit } from "@/lib/matching/profile";
 import { prisma } from "@/lib/prisma";
 import type { ParsedResume } from "@/lib/matching/parse-resume";
 import type { ProfilePreferences } from "@/lib/matching/profile";
@@ -77,7 +77,7 @@ export async function GET() {
       workHistory: true, education: true, certifications: true, entryPath: true,
       languages: true,
       linkedinUrl: true, githubUrl: true, websiteUrl: true, contactEmail: true,
-      hiddenSections: true,
+      hiddenSections: true, publicVisible: true, openToWork: true,
       skills: { select: { proficiency: true, confidence: true, source: true, tier: true, skill: { select: { name: true } } } },
     },
   });
@@ -114,6 +114,7 @@ export async function GET() {
       languages: Array.isArray(p.languages) ? p.languages : [],
       linkedinUrl: p.linkedinUrl, githubUrl: p.githubUrl, websiteUrl: p.websiteUrl, contactEmail: p.contactEmail,
       hiddenSections: p.hiddenSections ?? [],
+      publicVisible: p.publicVisible, openToWork: p.openToWork,
       skills: p.skills.map((s) => ({ name: s.skill.name, proficiency: s.proficiency, confidence: s.confidence, source: s.source, tier: s.tier })),
     },
   });
@@ -136,6 +137,11 @@ export async function PATCH(req: NextRequest) {
     if (!result) return NextResponse.json({ error: "No profile to edit." }, { status: 404 });
     return NextResponse.json(result);
   } catch (err) {
+    // Validation problems (bad/taken URL, unusable photo) are the member's to
+    // fix and carry their own message; only real failures 502.
+    if (err instanceof ProfileEditError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error("profile edit failed:", err);
     return NextResponse.json({ error: "Couldn't save your changes — try again." }, { status: 502 });
   }

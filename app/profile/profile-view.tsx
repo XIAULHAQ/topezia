@@ -10,7 +10,7 @@
  * but carry a clear "Sample" badge so nothing reads as a real number about
  * this person.
  */
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { C, GRAD, Icon, Card, initials } from "@/app/_components/ui";
 import { COUNTRY_NAMES } from "@/lib/countries";
 import ShareMenu from "@/app/_components/ShareMenu";
@@ -35,6 +35,8 @@ interface Profile {
   githubUrl: string | null;
   websiteUrl: string | null;
   hiddenSections: string[];
+  publicVisible: boolean;
+  openToWork: boolean;
 }
 interface Insights {
   fieldLabel: string | null; coveragePct: number | null; reliable: boolean;
@@ -109,6 +111,70 @@ export default function ProfileView() {
   }
   const hiddenHas = (key: string) => (p?.hiddenSections ?? []).includes(key);
 
+  /** Flip a boolean profile field optimistically over the same PATCH path. */
+  function toggleFlag(key: "openToWork" | "publicVisible") {
+    if (!p) return;
+    const next = !p[key];
+    setP((x) => (x ? { ...x, [key]: next } : x));
+    fetch("/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [key]: next }) }).catch(() => {});
+  }
+
+  // ── Photo upload: same client-side downscale as the edit panel, straight
+  // from a camera button on the avatar. The PATCH path validates server-side.
+  const photoInput = useRef<HTMLInputElement>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  function pickPhoto(file: File) {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const max = 480;
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUri = canvas.toDataURL("image/jpeg", 0.85);
+      URL.revokeObjectURL(url);
+      setPhotoBusy(true);
+      fetch("/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ photoUrl: dataUri }) })
+        .then((r) => { if (r.ok) setP((x) => (x ? { ...x, photoUrl: dataUri } : x)); })
+        .finally(() => setPhotoBusy(false));
+    };
+    img.onerror = () => URL.revokeObjectURL(url);
+    img.src = url;
+  }
+
+  // ── Custom public URL editor ──
+  const [slugOpen, setSlugOpen] = useState(false);
+  const [slugVal, setSlugVal] = useState("");
+  const [slugErr, setSlugErr] = useState<string | null>(null);
+  const [slugSaving, setSlugSaving] = useState(false);
+  function openSlugEditor() {
+    setSlugVal(p?.publicSlug ?? "");
+    setSlugErr(null);
+    setSlugOpen(true);
+  }
+  async function saveSlug() {
+    const next = slugVal.trim().toLowerCase();
+    if (!p || next === p.publicSlug) { setSlugOpen(false); return; }
+    setSlugSaving(true);
+    setSlugErr(null);
+    try {
+      const res = await fetch("/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ publicSlug: next }) });
+      if (res.ok) {
+        setP((x) => (x ? { ...x, publicSlug: next } : x));
+        setSlugOpen(false);
+      } else {
+        const d = await res.json().catch(() => null);
+        setSlugErr(d?.error ?? "Couldn't save that URL — try again.");
+      }
+    } catch {
+      setSlugErr("Couldn't save that URL — try again.");
+    } finally {
+      setSlugSaving(false);
+    }
+  }
+
   if (!p) return <div style={{ color: C.mut, padding: "40px 0" }}>Loading your profile…</div>;
 
   const name = p.fullName || "Your profile";
@@ -123,16 +189,21 @@ export default function ProfileView() {
     })
     .slice(0, 6);
 
-  // Real, computed completion — counts what's actually filled in.
-  const filled = [!!p.headline, p.skills.length > 0, !!p.currentLocation, p.workHistory.length > 0, p.education.length > 0, p.industries.length > 0];
-  const completion = Math.round((filled.filter(Boolean).length / filled.length) * 100);
-  const checklist: { label: string; done: boolean; section: SectionKey }[] = [
+  // Real, computed completion — counts what's actually filled in. Each item
+  // knows where to fix itself: a section modal, or a page for the ones that
+  // live elsewhere (portfolio).
+  const checklist: { label: string; done: boolean; section?: SectionKey; href?: string }[] = [
     { label: "Role & field", done: !!p.headline, section: "intro" },
-    { label: "Skills", done: p.skills.length > 0, section: "skills" },
+    { label: "Photo", done: !!p.photoUrl, section: "intro" },
     { label: "Location", done: !!p.currentLocation, section: "intro" },
+    { label: "Skills", done: p.skills.length > 0, section: "skills" },
     { label: "Experience", done: p.workHistory.length > 0, section: "experience" },
     { label: "Education", done: p.education.length > 0, section: "education" },
+    { label: "Languages", done: (p.languages ?? []).length > 0, section: "languages" },
+    { label: "Links", done: !!(p.linkedinUrl || p.githubUrl || p.websiteUrl), section: "links" },
+    { label: "Published work", done: (work ?? []).some((w) => w.status === "PUBLISHED"), href: "/portfolio/new" },
   ];
+  const completion = Math.round((checklist.filter((c) => c.done).length / checklist.length) * 100);
 
   const showAbout = tab === "Overview";
   const showExp = tab === "Overview" || tab === "Experience";
@@ -159,18 +230,34 @@ export default function ProfileView() {
         <div style={S.heroGlow1} />
         <div style={S.heroGlow2} />
         <div style={{ position: "relative", display: "flex", gap: 26, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <div style={{ flex: "none", padding: 4, borderRadius: "50%", background: GRAD }}>
+          <div style={{ position: "relative", flex: "none", padding: 4, borderRadius: "50%", background: GRAD }}>
             {p.photoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={p.photoUrl} alt={name} style={{ width: 112, height: 112, borderRadius: "50%", objectFit: "cover", objectPosition: "center top", display: "block", background: C.navy }} />
+              <img src={p.photoUrl} alt={name} style={{ width: 112, height: 112, borderRadius: "50%", objectFit: "cover", objectPosition: "center top", display: "block", background: C.navy, opacity: photoBusy ? 0.5 : 1 }} />
             ) : (
               <div style={{ width: 112, height: 112, borderRadius: "50%", background: C.navy, display: "grid", placeItems: "center", fontSize: 34, fontWeight: 800, color: "#fff" }}>{avatarInitials}</div>
             )}
+            <button
+              type="button"
+              onClick={() => photoInput.current?.click()}
+              title={p.photoUrl ? "Change photo" : "Add a photo"}
+              style={{ position: "absolute", right: 0, bottom: 2, width: 32, height: 32, borderRadius: "50%", background: "#fff", border: `1px solid ${C.line}`, display: "grid", placeItems: "center", cursor: "pointer", color: C.ink, boxShadow: "0 3px 10px rgba(0,0,0,.3)" }}
+            ><Icon name="camera" size={15} /></button>
+            <input ref={photoInput} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) pickPhoto(f); e.target.value = ""; }} />
           </div>
           <div style={{ flex: 1, minWidth: 280, paddingTop: 6 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: "-0.6px" }}>{name}</h1>
-              <span style={S.otwPill}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ADE80" }} />Open to opportunities</span>
+              {/* Real and member-controlled — mirrored on the public page only when ON. */}
+              <button
+                type="button"
+                onClick={() => toggleFlag("openToWork")}
+                title={p.openToWork ? "Shown on your public profile — click to turn off" : "Click to show “Open to opportunities” on your public profile"}
+                style={{ ...(p.openToWork ? S.otwPill : S.otwPillOff), cursor: "pointer", fontFamily: "inherit" }}
+              >
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.openToWork ? "#4ADE80" : "#64748B" }} />
+                {p.openToWork ? "Open to opportunities" : "Open to opportunities: off"}
+              </button>
             </div>
             <div style={{ fontSize: 15, color: "#C7CEE4", marginTop: 7, fontWeight: 500 }}>
               {p.headline || "Set your role"} · <span style={S.fieldGrad}>{field}</span>
@@ -235,7 +322,7 @@ export default function ProfileView() {
           {/* Resume replacement and job preferences re-parse or aren't
               shown on this page, so they keep the full-form editor. */}
           <a href="/profile/edit" style={{ ...S.shareBtn, cursor: "pointer", textDecoration: "none" }}><Icon name="sliders" size={15} />Preferences</a>
-          {p.publicSlug && (
+          {p.publicSlug && p.publicVisible && (
             <ShareMenu
               url={p.publicSlug ? `${origin}/p/${p.publicSlug}` : ""}
               title="My Topezia profile"
@@ -243,6 +330,23 @@ export default function ProfileView() {
               buttonStyle={{ ...S.shareBtn, cursor: "pointer", fontFamily: "inherit" }}
             ><Icon name="share" size={15} />Share</ShareMenu>
           )}
+          {p.publicSlug && p.publicVisible && (
+            <button type="button" onClick={openSlugEditor} style={{ ...S.shareBtn, cursor: "pointer", fontFamily: "inherit" }} title={`topezia.com/p/${p.publicSlug}`}>
+              <Icon name="link" size={15} />Edit URL
+            </button>
+          )}
+          {/* Master switch — the whole public page, above the per-section toggles. */}
+          <button
+            type="button"
+            onClick={() => toggleFlag("publicVisible")}
+            title={p.publicVisible ? "Your public profile is live — click to take it offline" : "Your public profile is offline (the link shows a 404) — click to publish it"}
+            style={{ ...S.shareBtn, cursor: "pointer", fontFamily: "inherit", marginLeft: "auto", borderColor: p.publicVisible ? "rgba(52,211,153,.45)" : "rgba(255,255,255,.16)", color: p.publicVisible ? "#6EE7B7" : "#94A3C0" }}
+          >
+            <span style={{ width: 26, height: 14, borderRadius: 999, background: p.publicVisible ? "#34D399" : "#475569", position: "relative", display: "inline-block", flex: "none" }}>
+              <span style={{ position: "absolute", top: 2, left: p.publicVisible ? 14 : 2, width: 10, height: 10, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
+            </span>
+            {p.publicVisible ? "Public page: on" : "Public page: off"}
+          </button>
         </div>
       </section>
 
@@ -480,7 +584,8 @@ export default function ProfileView() {
                     ? <span style={{ width: 18, height: 18, borderRadius: "50%", background: GRAD, color: "#fff", display: "grid", placeItems: "center", flex: "none" }}><Icon name="check" size={11} /></span>
                     : <span style={{ width: 18, height: 18, borderRadius: "50%", border: "1.5px dashed #94A3B8", flex: "none" }} />}
                   <span style={{ flex: 1 }}>{ck.label}</span>
-                  {!ck.done && <button type="button" onClick={() => setEditing(ck.section)} style={{ fontSize: 11, color: C.c1, fontWeight: 600, border: "none", background: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>Add</button>}
+                  {!ck.done && ck.section && <button type="button" onClick={() => setEditing(ck.section!)} style={{ fontSize: 11, color: C.c1, fontWeight: 600, border: "none", background: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>Add</button>}
+                  {!ck.done && ck.href && <a href={ck.href} style={{ fontSize: 11, color: C.c1, fontWeight: 600, textDecoration: "none" }}>Add</a>}
                 </div>
               ))}
             </div>
@@ -583,6 +688,38 @@ export default function ProfileView() {
           onSaved={applyPatch}
         />
       )}
+
+      {/* ── Custom public URL editor ── */}
+      {slugOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 60, display: "grid", placeItems: "center", padding: 20 }} onClick={() => !slugSaving && setSlugOpen(false)}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "22px 24px", width: "min(460px, 100%)", boxShadow: "0 24px 60px rgba(15,23,42,.35)" }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: 0, fontSize: 16.5, fontWeight: 800, color: C.ink }}>Your public URL</h3>
+            <p style={{ fontSize: 12.5, color: C.mut, margin: "8px 0 14px", lineHeight: 1.55 }}>
+              Claim a clean handle for your public profile. 3–40 lowercase letters, numbers and dashes.
+            </p>
+            <div style={{ display: "flex", alignItems: "center", border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+              <span style={{ background: "#F8FAFC", color: C.mut, fontSize: 13, fontWeight: 600, padding: "10px 12px", borderRight: `1px solid ${C.line}`, whiteSpace: "nowrap" }}>topezia.com/p/</span>
+              <input
+                value={slugVal}
+                onChange={(e) => { setSlugVal(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "")); setSlugErr(null); }}
+                onKeyDown={(e) => { if (e.key === "Enter") saveSlug(); }}
+                autoFocus
+                style={{ flex: 1, border: "none", outline: "none", fontSize: 13.5, fontWeight: 600, padding: "10px 12px", color: C.ink, fontFamily: "inherit", minWidth: 0 }}
+              />
+            </div>
+            {slugErr && <div style={{ fontSize: 12.5, color: "#B91C1C", fontWeight: 600, marginTop: 9 }}>{slugErr}</div>}
+            <p style={{ fontSize: 11.5, color: C.mut, margin: "12px 0 0", lineHeight: 1.55 }}>
+              Changing it breaks your old link immediately — anywhere you shared it (including QR codes on printed resumes) will point at a dead page until reshared.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 9, marginTop: 18 }}>
+              <button type="button" disabled={slugSaving} onClick={() => setSlugOpen(false)} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600, color: C.slate, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+              <button type="button" disabled={slugSaving || slugVal.length < 3} onClick={saveSlug} style={{ background: GRAD, border: "none", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 700, color: "#fff", cursor: slugSaving ? "default" : "pointer", fontFamily: "inherit", opacity: slugSaving || slugVal.length < 3 ? 0.6 : 1 }}>
+                {slugSaving ? "Saving…" : "Save URL"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -641,6 +778,7 @@ const S: Record<string, CSSProperties> = {
   heroGlow1: { position: "absolute", top: -120, right: -60, width: 400, height: 400, borderRadius: "50%", background: "radial-gradient(circle, rgba(99,102,241,.34), transparent 68%)" },
   heroGlow2: { position: "absolute", bottom: -140, left: "22%", width: 360, height: 360, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.22), transparent 68%)" },
   otwPill: { display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", color: "#4ADE80", fontSize: 11.5, fontWeight: 600, borderRadius: 999, padding: "5px 12px" },
+  otwPillOff: { display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", color: "#94A3C0", fontSize: 11.5, fontWeight: 600, borderRadius: 999, padding: "5px 12px" },
   fieldGrad: { background: "linear-gradient(135deg,#A5B4FC,#C4B5FD)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", fontWeight: 600 },
   metaItem: { display: "inline-flex", alignItems: "center", gap: 6 },
   social: { width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.12)", display: "grid", placeItems: "center", color: "#C7CEE4", cursor: "default" },

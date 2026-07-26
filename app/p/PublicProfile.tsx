@@ -149,7 +149,7 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
             <div style={{ flex: 1, minWidth: 300, paddingTop: 6 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800, letterSpacing: "-0.6px" }}>{name}</h1>
-                <span style={S.otw}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ADE80" }} />Open to opportunities</span>
+                {p.openToWork && <span style={S.otw}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ADE80" }} />Open to opportunities</span>}
               </div>
               <div style={{ fontSize: 15.5, color: "#C7CEE4", marginTop: 7, fontWeight: 500 }}>
                 {p.headline || "Professional"}{p.field ? <> · <span style={S.fieldGrad}>{p.field}</span></> : null}
