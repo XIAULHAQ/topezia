@@ -25,7 +25,7 @@ import { scoreResume } from "@/lib/resume/score";
 import type { AssistStatus } from "@/lib/resume/assist-quota";
 import type { DemandSkill } from "@/lib/matching/insights";
 import type { FocusDirection } from "@/app/api/resume/focus/route";
-import { TEMPLATES, BLEEDS, ResumeSheet, sheetData, SHEET_W } from "./templates";
+import { TEMPLATES, BLEEDS, ResumeSheet, sheetData, SHEET_W, SHEET_H } from "./templates";
 
 type Busy = null | "save" | "sync" | "summary" | `bullets-${number}`;
 
@@ -97,12 +97,17 @@ export default function ResumeClient() {
    * like our own Download PDF button, and unwinds on afterprint so the screen
    * layout is never left altered.
    */
+  const bleed = doc ? BLEEDS[doc.template] : true;
   useEffect(() => {
     const mark = () => {
       let el = document.getElementById("resume-print")?.parentElement ?? null;
       while (el && el !== document.body) { el.classList.add(PRINT_CHAIN); el = el.parentElement; }
+      fitSheetToPages(bleed);
     };
-    const unmark = () => document.querySelectorAll(`.${PRINT_CHAIN}`).forEach((e) => e.classList.remove(PRINT_CHAIN));
+    const unmark = () => {
+      document.querySelectorAll(`.${PRINT_CHAIN}`).forEach((e) => e.classList.remove(PRINT_CHAIN));
+      fitSheetToPages(null);
+    };
     window.addEventListener("beforeprint", mark);
     window.addEventListener("afterprint", unmark);
     return () => {
@@ -110,7 +115,7 @@ export default function ResumeClient() {
       window.removeEventListener("afterprint", unmark);
       unmark();
     };
-  }, []);
+  }, [bleed]);
 
   // Keep the scale in step with the column width AND the sheet's own height,
   // which changes with content and with the chosen template.
@@ -800,6 +805,83 @@ function ChipEditor({ values, placeholder, max, onChange }: { values: string[]; 
       />
     </div>
   );
+}
+
+/** A4 height at 96dpi. Valid because the designed templates print @page margin 0. */
+const PAGE_H = 1122.5;
+/** Below this the type gets too small to be worth saving a page over. */
+const MIN_FIT_ZOOM = 0.78;
+
+/**
+ * Fit the sheet to a whole number of pages, on beforeprint. Pass null to undo.
+ *
+ * Two distinct bugs this kills. A resume that runs a little over — say 1379px
+ * against a 1123px page — used to spill a near-empty page 2 holding nothing
+ * but the portfolio row, while the navy rail carried on as a stub of empty
+ * colour partway down it. Shrinking slightly puts it back on one page.
+ *
+ * When that isn't possible without shrinking past legibility, we instead round
+ * the sheet UP to a whole number of pages: the rail then reaches the bottom of
+ * the last page, so a genuine two-pager reads as designed rather than as a
+ * layout that ran out partway.
+ *
+ * `zoom` (not `transform: scale`) because only zoom changes layout, and layout
+ * is what pagination measures — a transformed sheet keeps its original height,
+ * still breaks in the old place, and gets clipped at the break.
+ */
+function fitSheetToPages(bleed: boolean | null) {
+  // Two levels down, not one: #resume-print holds a measuring wrapper, and the
+  // sheet ResumeSheet draws — the element carrying the fixed 794px width and
+  // the full-height rail — is that wrapper's child. Styling the wrapper leaves
+  // the sheet at its original width and prints a blank strip down the side.
+  const sheet = document.getElementById("resume-print")?.firstElementChild?.firstElementChild as HTMLElement | null;
+  if (!sheet) return;
+  // Restore rather than remove: width and min-height are React's own inline
+  // styles from sheet(), so deleting them would leave the on-screen preview
+  // un-sized after the print dialog closes, until some unrelated re-render
+  // happened to put them back.
+  sheet.style.removeProperty("zoom");
+  sheet.style.width = `${SHEET_W}px`;
+  sheet.style.minHeight = `${SHEET_H}px`;
+  // ATS-safe prints with a normal document margin and is plain single-column
+  // text, which the browser already breaks sensibly. Nothing to fit.
+  if (bleed !== true) return;
+
+  // offsetHeight, never getBoundingClientRect: beforeprint runs while SCREEN
+  // css is still live, and on screen the sheet carries a transform: scale()
+  // that fits it into the preview column. A rect would return that shrunken
+  // size — measuring ~500px against a 1123px page, concluding everything fits,
+  // and silently doing nothing. offsetHeight is layout, so transforms miss it.
+  const natural = sheet.offsetHeight;
+  if (natural <= PAGE_H + 1) return;
+  const pages = Math.ceil(natural / PAGE_H - 0.001);
+  const target = (pages - 1) * PAGE_H;
+
+  // Shrinking narrows the sheet, so compensate the width and re-measure —
+  // wider lines wrap less and the height doesn't fall linearly with zoom.
+  let zoom = 1;
+  for (let i = 0; i < 8; i++) {
+    const printed = sheet.offsetHeight * zoom;
+    if (printed <= target) break;
+    const next = zoom * (target / printed) * 0.997; // undershoot; rounding is unkind
+    if (next < MIN_FIT_ZOOM) { zoom = 0; break; }
+    zoom = next;
+    sheet.style.width = `${SHEET_W / zoom}px`;
+  }
+
+  if (zoom === 0) {
+    // Couldn't save the page. Fill the last one instead so the rail ends at
+    // the paper edge rather than mid-page.
+    sheet.style.removeProperty("zoom");
+    sheet.style.width = `${SHEET_W}px`;
+    sheet.style.minHeight = `${pages * PAGE_H}px`;
+    return;
+  }
+  // Applied once, at the end: the loop measures unzoomed layout on purpose and
+  // multiplies by the candidate zoom itself, so applying it mid-loop would
+  // double-count and the search would never settle.
+  sheet.style.setProperty("zoom", String(zoom));
+  sheet.style.minHeight = `${target / zoom}px`;
 }
 
 /**

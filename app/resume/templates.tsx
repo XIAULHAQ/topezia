@@ -23,6 +23,8 @@ import type { ResumeContent } from "@/lib/resume/doc";
 
 /** A4 at 96dpi — the width every design was drawn against. */
 export const SHEET_W = 794;
+/** A4 height at 96dpi — one page. The sheet never starts shorter than this. */
+export const SHEET_H = 1123;
 
 export type TemplateId = "signal" | "ledger" | "grid" | "prism" | "atlas" | "studio" | "ats";
 
@@ -95,7 +97,7 @@ export function sheetData(doc: ResumeContent, photo: string | null, publicUrl: s
 
 /** Every sheet: fixed A4 width, natural height, its own font stack. */
 const sheet = (font: string, bg: string, color: string): CSSProperties => ({
-  width: SHEET_W, minHeight: 1123, background: bg, color, fontFamily: font,
+  width: SHEET_W, minHeight: SHEET_H, background: bg, color, fontFamily: font,
   display: "flex", flexDirection: "column", overflow: "hidden",
 });
 
