@@ -5,6 +5,7 @@
  */
 import type { MetadataRoute } from "next";
 import { listPublishedPages } from "@/lib/seo/pages";
+import { jobPath } from "@/lib/seo/job-slug";
 import { prisma } from "@/lib/prisma";
 
 export const revalidate = 3600;
@@ -58,5 +59,43 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // Never let a DB hiccup break sitemap.xml — ship the static routes at least.
   }
 
-  return [...staticRoutes, ...portfolioPages, ...jobPages];
+  // NATIVE postings only: first-party pages with real URL lifespans and an
+  // in-app apply. Crawled jobs stay out — they expire within days and their
+  // canonical content lives on the source's own site; listing thousands of
+  // soon-dead URLs would train crawlers to distrust the sitemap. Companies
+  // with live roles ride along for the same first-party reason.
+  let nativePages: MetadataRoute.Sitemap = [];
+  try {
+    const [jobs, companies] = await Promise.all([
+      prisma.job.findMany({
+        where: { source: "NATIVE", status: "LIVE" },
+        orderBy: { createdAt: "desc" },
+        take: 5000,
+        select: { id: true, titleRaw: true, companyName: true, updatedAt: true },
+      }),
+      prisma.company.findMany({
+        where: { jobs: { some: { status: "LIVE" } } },
+        take: 1000,
+        select: { slug: true, updatedAt: true },
+      }),
+    ]);
+    nativePages = [
+      ...jobs.map((j) => ({
+        url: `${base}${jobPath(j)}`,
+        lastModified: j.updatedAt,
+        changeFrequency: "daily" as const,
+        priority: 0.8,
+      })),
+      ...companies.map((c) => ({
+        url: `${base}/company/${c.slug}`,
+        lastModified: c.updatedAt,
+        changeFrequency: "daily" as const,
+        priority: 0.6,
+      })),
+    ];
+  } catch {
+    /* leave empty */
+  }
+
+  return [...staticRoutes, ...portfolioPages, ...jobPages, ...nativePages];
 }
