@@ -15,6 +15,34 @@ import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com").replace(/\/$/, "");
 
+/**
+ * Sales tax / VAT / GST, opt-in via STRIPE_AUTOMATIC_TAX=1.
+ *
+ * Off by default because live mode REJECTS the whole Checkout Session with
+ * "You must have a valid head office address to enable automatic tax
+ * calculation in live mode" unless Stripe Tax is onboarded — a paid add-on.
+ * A sandbox accepts the same call happily, so this only ever surfaces against
+ * real money. Leaving it on would mean nobody could buy at all.
+ *
+ * Turning the flag on is not enough on its own: tax is collected only in
+ * jurisdictions with an ACTIVE registration, and the product needs a tax code.
+ * Without those Stripe returns no error and simply collects nothing.
+ *
+ * The three fields belong together — customer_update lets Checkout save the
+ * address it collects onto the customer (ours is created without one) so
+ * there's something to tax against, and tax_id_collection is what makes
+ * cross-border B2B reverse-charge work instead of taxing businesses as
+ * consumers. Sending them without automatic_tax just adds checkout friction.
+ */
+function taxParams() {
+  if (process.env.STRIPE_AUTOMATIC_TAX !== "1") return {};
+  return {
+    automatic_tax: { enabled: true },
+    customer_update: { address: "auto", name: "auto" },
+    tax_id_collection: { enabled: true },
+  } as const;
+}
+
 export async function POST(_req: NextRequest) {
   const stripe = getStripe();
   if (!stripe) return NextResponse.json({ error: "Premium isn't on sale yet." }, { status: 503 });
@@ -61,18 +89,7 @@ export async function POST(_req: NextRequest) {
       // NOTE: payment_method_types is deliberately absent. Passing it pins
       // checkout to one method; omitting it lets Stripe show each member the
       // eligible methods for their country, configured from the Dashboard.
-      //
-      // Sales tax / VAT / GST. This is INERT until an active tax registration
-      // exists in the Dashboard — Stripe returns no error and simply collects
-      // nothing, which is the classic silent-undercollection trap. The
-      // customer we create carries no address, so customer_update lets
-      // Checkout save the one it collects and tax against it.
-      automatic_tax: { enabled: true },
-      customer_update: { address: "auto", name: "auto" },
-      // Business buyers can enter a VAT/GST id, which is what makes
-      // cross-border B2B reverse-charge work instead of taxing them as
-      // consumers.
-      tax_id_collection: { enabled: true },
+      ...taxParams(),
       integration_identifier: CHECKOUT_INTEGRATION_ID,
       metadata: { profileId: profile.id },
     });
