@@ -21,9 +21,9 @@ export async function GET(req: NextRequest) {
     // Employer view. Ownership check: the posting's company must be theirs.
     const job = await prisma.job.findUnique({
       where: { id: jobId },
-      select: { titleRaw: true, kind: true, status: true, company: { select: { ownerUserId: true } } },
+      select: { titleRaw: true, kind: true, status: true, postedByUserId: true, company: { select: { ownerUserId: true } } },
     });
-    if (!job || job.company?.ownerUserId !== userId) {
+    if (!job || (job.postedByUserId !== userId && job.company?.ownerUserId !== userId)) {
       return NextResponse.json({ error: "Not your posting." }, { status: 404 });
     }
     const rows = await prisma.application.findMany({
@@ -67,13 +67,13 @@ export async function POST(req: NextRequest) {
 
   const job = await prisma.job.findUnique({
     where: { id: jobId },
-    select: { source: true, status: true, kind: true, company: { select: { ownerUserId: true } } },
+    select: { source: true, status: true, kind: true, postedByUserId: true, company: { select: { ownerUserId: true } } },
   });
   // In-app applications exist ONLY for native postings — crawled jobs click
   // out to their real source, and pretending otherwise would fake a pipeline.
   if (!job || job.source !== "NATIVE") return NextResponse.json({ error: "This posting doesn't take applications here." }, { status: 404 });
   if (job.status !== "LIVE") return NextResponse.json({ error: "This posting is closed." }, { status: 409 });
-  if (job.company?.ownerUserId === userId) return NextResponse.json({ error: "That's your own posting." }, { status: 409 });
+  if (job.postedByUserId === userId || job.company?.ownerUserId === userId) return NextResponse.json({ error: "That's your own posting." }, { status: 409 });
 
   const coverNote = text(body.coverNote, 3000) || null;
   const proposedRate =

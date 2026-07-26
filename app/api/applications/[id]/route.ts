@@ -28,12 +28,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     select: {
       stage: true,
       profile: { select: { userId: true } },
-      job: { select: { company: { select: { ownerUserId: true } } } },
+      job: { select: { postedByUserId: true, company: { select: { ownerUserId: true } } } },
     },
   });
   if (!app) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
-  const isEmployer = app.job.company?.ownerUserId === userId;
+  const isEmployer = app.job.postedByUserId === userId || app.job.company?.ownerUserId === userId;
   const isApplicant = app.profile.userId === userId;
 
   // A withdrawn application stays withdrawn — the applicant left the process,

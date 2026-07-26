@@ -34,15 +34,14 @@ async function ownCompany(userId: string) {
   return prisma.company.findUnique({ where: { ownerUserId: userId }, select: { id: true, name: true, slug: true, website: true, location: true } });
 }
 
-/** GET — the employer's own postings, with pipeline counts per stage. */
+/** GET — the poster's own postings, with pipeline counts per stage. */
 export async function GET() {
   const { userId } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   const company = await ownCompany(userId);
-  if (!company) return NextResponse.json({ postings: [], company: null });
 
   const rows = await prisma.job.findMany({
-    where: { companyId: company.id },
+    where: { OR: [{ postedByUserId: userId }, ...(company ? [{ companyId: company.id }] : [])] },
     orderBy: { createdAt: "desc" },
     select: {
       id: true, kind: true, titleRaw: true, status: true, createdAt: true,
@@ -64,8 +63,12 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const { userId, authed } = await currentIdentity();
   if (!userId || !authed) return NextResponse.json({ error: "Sign in to post." }, { status: 401 });
+  // Anyone can post — a company page is optional branding. Individuals post
+  // under their own profile name, and the posting says so.
   const company = await ownCompany(userId);
-  if (!company) return NextResponse.json({ error: "Create your company page first." }, { status: 409 });
+  const profile = await prisma.profile.findUnique({ where: { userId }, select: { fullName: true } });
+  const posterName = company?.name ?? profile?.fullName ?? null;
+  if (!posterName) return NextResponse.json({ error: "Complete your profile (or create a company page) first — applicants must see who's posting." }, { status: 409 });
 
   let body: Record<string, unknown>;
   try {
@@ -93,7 +96,7 @@ export async function POST(req: NextRequest) {
   const salaryMin = int(body.salaryMin);
   const salaryMax = int(body.salaryMax);
   const currency = /^[A-Z]{3}$/.test(str(body.salaryCurrency, 3).toUpperCase()) ? str(body.salaryCurrency, 3).toUpperCase() : "USD";
-  const locationRaw = str(body.location, 140) || company.location || null;
+  const locationRaw = str(body.location, 140) || company?.location || null;
   const country = remoteType === "REMOTE_GLOBAL" ? null : locationRaw ? extractCountry(locationRaw) : null;
 
   // Same enrichment a crawled job gets — the matcher must see this posting
@@ -117,15 +120,16 @@ export async function POST(req: NextRequest) {
       kind,
       source: "NATIVE",
       sourceUrl: `${SITE}/job/${id}`, // click-out lands on our own detail page
-      sourceCompanySlug: company.slug,
+      sourceCompanySlug: company?.slug ?? null,
       externalId: id,
       titleRaw: title,
       titleNormalized: llm.roleGuess || null,
       roleId,
       verticalId,
-      companyId: company.id,
-      companyName: company.name,
-      companyDomain: company.website ? new URL(company.website).hostname.replace(/^www\./, "") : null,
+      postedByUserId: userId,
+      companyId: company?.id ?? null,
+      companyName: posterName,
+      companyDomain: company?.website ? new URL(company.website).hostname.replace(/^www\./, "") : null,
       descriptionRaw: description,
       descriptionHash: hashDescription(`${title}\n${description}`),
       seniority: llm.seniority,

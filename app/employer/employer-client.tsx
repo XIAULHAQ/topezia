@@ -84,18 +84,25 @@ export default function EmployerClient() {
           <p style={{ color: C.mut, fontSize: 14, margin: "4px 0 0", lineHeight: 1.55 }}>
             {company
               ? <>Your public page: <a href={`/company/${company.slug}`} style={{ color: C.c1, fontWeight: 600 }}>topezia.com/company/{company.slug}</a></>
-              : "Set up your company page once — every posting hangs off it."}
+              : "Anyone can post — as yourself, or under a company page."}
           </p>
         </div>
-        {company && (
-          <div style={{ marginLeft: "auto", display: "flex", gap: 9 }}>
-            <button type="button" onClick={openEdit} style={S.ghost}>Edit company</button>
-            <Link href="/employer/new" style={S.cta}><Icon name="plus" size={15} />Post a job or project</Link>
-          </div>
-        )}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 9 }}>
+          {company
+            ? <button type="button" onClick={openEdit} style={S.ghost}>Edit company</button>
+            : !editing && <button type="button" onClick={() => setEditing(true)} style={S.ghost}>Add a company page (optional)</button>}
+          <Link href="/employer/new" style={S.cta}><Icon name="plus" size={15} />Post a job or project</Link>
+        </div>
       </div>
 
-      {(!company || editing) && (
+      {!company && !editing && (
+        <p style={{ fontSize: 12.5, color: C.mut, margin: "0 0 18px", lineHeight: 1.6 }}>
+          Postings without a company page appear under your own name. A company page adds a public
+          profile all your postings link back to.
+        </p>
+      )}
+
+      {editing && (
         <Card style={{ marginBottom: 22 }}>
           <h2 style={S.h2}>{company ? "Edit company" : "Create your company page"}</h2>
           {(["name", "tagline", "location", "website"] as const).map((k) => (
@@ -110,16 +117,16 @@ export default function EmployerClient() {
           {error && <div style={{ color: "#b42318", fontSize: 13, marginTop: 8 }}>{error}</div>}
           <div style={{ display: "flex", gap: 9, marginTop: 14 }}>
             <button type="button" onClick={saveCompany} disabled={saving} style={{ ...S.cta, border: "none", cursor: "pointer", fontFamily: "inherit" }}>{saving ? "Saving…" : company ? "Save" : "Create company"}</button>
-            {company && <button type="button" onClick={() => setEditing(false)} style={S.ghost}>Cancel</button>}
+            <button type="button" onClick={() => setEditing(false)} style={S.ghost}>Cancel</button>
           </div>
         </Card>
       )}
 
-      {company && postings !== null && (
+      {postings !== null && (
         <>
           <h2 style={{ ...S.h2, margin: "0 0 12px" }}>Your postings</h2>
           {postings.length === 0 && (
-            <Card><p style={{ color: C.mut, fontSize: 13.5, margin: 0 }}>Nothing yet. Your first posting goes live immediately — same feed, same honest matching as every other job here.</p></Card>
+            <Card><p style={{ color: C.mut, fontSize: 13.5, margin: 0 }}>Nothing yet. Your first posting goes live immediately — same feed, same honest matching as every other job here. No company page needed.</p></Card>
           )}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {postings.map((p) => (

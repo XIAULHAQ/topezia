@@ -209,7 +209,9 @@ model Job {
 
   cpcFeedId          String?  // revenue attribution
 
-  // NATIVE postings only: the company that posted it here.
+  // NATIVE postings only: who posted it (always), and the optional company
+  // branding — individuals post under their own name.
+  postedByUserId     String?
   companyId          String?
   company            Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
   applications       Application[]
@@ -231,6 +233,7 @@ model Job {
   @@index([locationState])
   @@index([roleId])
   @@index([companyId])
+  @@index([postedByUserId])
 }
 
 model JobSkill {

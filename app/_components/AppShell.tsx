@@ -288,6 +288,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 <div style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", zIndex: 41, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, boxShadow: "0 12px 32px rgba(15,23,42,.14)", padding: 6, minWidth: 190 }}>
                   {name && <div style={{ padding: "8px 12px 6px", fontSize: 12, color: C.mut, borderBottom: `1px solid ${C.line}`, marginBottom: 4 }}>Signed in as<div style={{ color: C.ink, fontWeight: 700, fontSize: 13 }}>{name}</div></div>}
                   <Link href="/profile/edit" prefetch={false} onClick={navClicked} style={S_menuItem}><Icon name="edit" size={16} />Edit profile</Link>
+                  <Link href="/employer" prefetch={false} onClick={navClicked} style={S_menuItem}><Icon name="briefcase" size={16} />Company page</Link>
                   <Link href="/settings" prefetch={false} onClick={navClicked} style={S_menuItem}><Icon name="settings" size={16} />Settings</Link>
                   <div style={{ height: 1, background: C.line, margin: "4px 0" }} />
                   <button onClick={() => { setMenuOpen(false); logout(); }} style={{ ...S_menuItem, width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", color: "#b42318" }}><Icon name="logout" size={16} />Log out</button>

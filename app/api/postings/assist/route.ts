@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   const { userId, authed } = await currentIdentity();
   if (!userId || !authed) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   const company = await prisma.company.findUnique({ where: { ownerUserId: userId }, select: { name: true, tagline: true, about: true, location: true } });
-  if (!company) return NextResponse.json({ error: "Create your company page first." }, { status: 409 });
+  const profile = company ? null : await prisma.profile.findUnique({ where: { userId }, select: { fullName: true, currentLocation: true } });
   if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "AI writing isn't available right now." }, { status: 503 });
 
   let body: Record<string, unknown>;
@@ -40,8 +40,11 @@ export async function POST(req: NextRequest) {
 
   const system = `You write ${kind} descriptions for a job platform. Write ONLY from the facts provided — never invent benefits, salary, team size, funding, or company claims the notes don't contain. Plain text with short paragraphs and dash bullets (no markdown headers). Structure: 2-3 sentence opening on the ${kind} and company; "What you'll do" bullets; "What we're looking for" bullets${kind === "project" ? '; "Scope & deliverables" with timeline if the notes give one' : ""}. 150-350 words. Professional, direct, zero buzzword filler ("rockstar", "fast-paced", "wear many hats"). If the notes mention pay or location, keep those exact numbers/places; otherwise stay silent on them.`;
 
-  const user = `Company: ${company.name}${company.tagline ? ` — ${company.tagline}` : ""}${company.location ? ` (${company.location})` : ""}
-${company.about ? `About the company: ${company.about.slice(0, 600)}\n` : ""}Title: ${title}${role ? `\nRole category: ${role}` : ""}${skills.length ? `\nRequired skills: ${skills.join(", ")}` : ""}
+  const poster = company
+    ? `Company: ${company.name}${company.tagline ? ` — ${company.tagline}` : ""}${company.location ? ` (${company.location})` : ""}`
+    : `Posted by an individual: ${profile?.fullName ?? "a Topezia member"}${profile?.currentLocation ? ` (${profile.currentLocation})` : ""}`;
+  const user = `${poster}
+${company?.about ? `About the company: ${company.about.slice(0, 600)}\n` : ""}Title: ${title}${role ? `\nRole category: ${role}` : ""}${skills.length ? `\nRequired skills: ${skills.join(", ")}` : ""}
 Employer's notes:
 ${notes}`;
 
