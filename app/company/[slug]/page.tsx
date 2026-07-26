@@ -16,6 +16,7 @@ import { prisma } from "@/lib/prisma";
 import SiteNav from "@/app/_components/SiteNav";
 import { SiteFooter } from "@/app/_components/SiteChrome";
 import { curSym } from "@/lib/currency";
+import { jobPath } from "@/lib/seo/job-slug";
 
 export const revalidate = 900;
 
@@ -132,7 +133,7 @@ export default async function CompanyPage({ params }: { params: { slug: string }
                   const [tint, fg] = TAG_TINTS[i % TAG_TINTS.length];
                   const p = pay(j);
                   return (
-                    <Link key={j.id} href={`/job/${j.id}`} style={S.roleRow}>
+                    <Link key={j.id} href={jobPath({ id: j.id, titleRaw: j.titleRaw, companyName: c.name })} style={S.roleRow}>
                       <span style={{ flex: "none", width: 42, height: 42, borderRadius: 12, background: tint, color: fg, display: "grid", placeItems: "center", fontSize: 12, fontWeight: 800, letterSpacing: ".4px" }}>
                         {j.titleRaw.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase()}
                       </span>

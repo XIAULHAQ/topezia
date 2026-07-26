@@ -18,6 +18,7 @@ import { curSym } from "@/lib/currency";
 import { fetchProfileShared } from "@/lib/fetch-profile";
 import { ensureFreshSession } from "@/lib/ensure-session";
 import { buildTips, pickTip, type TipChange, type TipScore } from "@/lib/coach/tips";
+import { jobPath } from "@/lib/seo/job-slug";
 
 type Match = {
   jobId: string; title: string; company: string; verticalSlug: string; cardLayout: string;
@@ -344,7 +345,7 @@ export default function FeedPage() {
                         <div onClick={() => toggleSave(m.jobId)} title={saved.has(m.jobId) ? "Saved — click to remove" : "Save this job"} style={{ ...S.iconBtn, cursor: "pointer", ...(saved.has(m.jobId) ? { background: "#EEF2FF", color: C.c1, borderColor: "#C7D2FE" } : {}) }}>
                           <Icon name="bookmark" size={15} />
                         </div>
-                        <a href={`/job/${m.jobId}?score=${m.score}&pos=${i + 1}`} style={S.applyBtn}>{m.kind === "PROJECT" ? "View & bid" : "View job"}</a>
+                        <a href={`${jobPath({ id: m.jobId, titleRaw: m.title, companyName: m.company })}?score=${m.score}&pos=${i + 1}`} style={S.applyBtn}>{m.kind === "PROJECT" ? "View & bid" : "View job"}</a>
                       </div>
                     </div>
                   </div>

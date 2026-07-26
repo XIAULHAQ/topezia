@@ -13,6 +13,7 @@ import { currentIdentity } from "@/lib/identity";
 import { extractWithLlm, hashDescription } from "@/lib/ingestion/llm-extract";
 import { resolveRole, resolveSkills } from "@/lib/ingestion/resolve-taxonomy";
 import { embedText, buildJobEmbeddingInput, writeJobEmbedding } from "@/lib/ingestion/embed";
+import { jobPath } from "@/lib/seo/job-slug";
 import { extractCountry } from "@/lib/ingestion/normalize-rules";
 
 export const maxDuration = 60; // LLM extraction + embedding on create
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
       id,
       kind,
       source: "NATIVE",
-      sourceUrl: `${SITE}/job/${id}`, // click-out lands on our own detail page
+      sourceUrl: `${SITE}${jobPath({ id, titleRaw: title, companyName: posterName })}`, // our own canonical detail page
       sourceCompanySlug: company?.slug ?? null,
       externalId: id,
       titleRaw: title,

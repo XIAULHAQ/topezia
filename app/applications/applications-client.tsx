@@ -8,6 +8,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { C, FONT } from "@/app/_components/ui";
+import { jobPath } from "@/lib/seo/job-slug";
 
 type Row = {
   id: string; stage: string; createdAt: string;
@@ -58,7 +59,7 @@ export default function ApplicationsClient() {
             <div key={r.id} style={S.row}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <Link href={`/job/${r.job.id}`} style={{ fontSize: 15, fontWeight: 700, color: C.ink, textDecoration: "none" }}>{r.job.titleRaw}</Link>
+                  <Link href={jobPath({ id: r.job.id, titleRaw: r.job.titleRaw, companyName: r.job.companyName })} style={{ fontSize: 15, fontWeight: 700, color: C.ink, textDecoration: "none" }}>{r.job.titleRaw}</Link>
                   <span style={{ fontSize: 11, fontWeight: 700, color: st.color, background: st.bg, borderRadius: 999, padding: "3px 10px" }}>{st.label}</span>
                   {r.job.status !== "LIVE" && <span style={{ fontSize: 11, color: C.mut }}>posting closed</span>}
                 </div>

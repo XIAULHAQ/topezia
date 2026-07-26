@@ -18,12 +18,13 @@
  * Lives at /job/{id} (singular) so it can't collide with the /jobs/* SEO lattice.
  */
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 import { prisma } from "@/lib/prisma";
 import { renderJobDescription, jobDescriptionText } from "@/lib/sanitize";
 import { MIN_JOBS_FOR_PAGE } from "@/lib/seo/pages";
+import { jobPath, extractJobId } from "@/lib/seo/job-slug";
 import SiteNav from "@/app/_components/SiteNav";
 import ApplyGate from "./ApplyGate";
 import ApplyBox from "./ApplyBox";
@@ -41,9 +42,10 @@ export const revalidate = 900;
 
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
 
-async function getJob(id: string) {
-  // A bad uuid would throw in Prisma; treat it as "not found".
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+async function getJob(param: string) {
+  // Accepts the slugged form (…-{uuid}), a bare uuid, or garbage (not found).
+  const id = extractJobId(param);
+  if (!id) return null;
   return prisma.job.findUnique({
     where: { id },
     select: {
@@ -115,12 +117,19 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
   if (!job) return { title: "Job — Topezia" };
   const title = `${job.titleRaw} at ${job.companyName} | Topezia`;
   const description = jobDescriptionText(job.descriptionRaw);
-  return { title, description, alternates: { canonical: `/job/${job.id}` }, openGraph: { title, description, type: "article" } };
+  return { title, description, alternates: { canonical: jobPath(job) }, openGraph: { title, description, type: "article" } };
 }
 
 export default async function JobDetailPage({ params, searchParams }: { params: { id: string }; searchParams: { score?: string; pos?: string } }) {
   const job = await getJob(params.id);
   if (!job) notFound();
+
+  // One canonical URL per job: bare-uuid links and stale slugs 301 here.
+  const canonical = jobPath(job);
+  if (`/job/${decodeURIComponent(params.id)}` !== canonical) {
+    const qs = new URLSearchParams(searchParams as Record<string, string>).toString();
+    permanentRedirect(qs ? `${canonical}?${qs}` : canonical);
+  }
 
   const [parent, similar] = await Promise.all([parentLink(job), similarRoles(job)]);
   const dead = job.status === "EXPIRED" || job.status === "SUSPECTED_DEAD";
@@ -294,7 +303,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
                 <h2 style={{ ...S.h2, fontSize: 15 }}>Similar roles</h2>
                 <div style={{ display: "flex", flexDirection: "column", gap: 11, marginTop: 12 }}>
                   {similar.map((sm) => (
-                    <Link key={sm.id} href={`/job/${sm.id}`} style={S.similarRow}>
+                    <Link key={sm.id} href={jobPath(sm)} style={S.similarRow}>
                       <div style={{ width: 38, height: 38, borderRadius: 10, background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 14, fontWeight: 800, flex: "none" }}>
                         {sm.companyName.slice(0, 1).toUpperCase()}
                       </div>

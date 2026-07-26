@@ -19,6 +19,7 @@
  * before we ask them for anything else. Everything after that is optional and
  * can be abandoned without losing the endorsement.
  */
+import { jobPath } from "@/lib/seo/job-slug";
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { C, GRAD, FONT, BrandMark, Icon } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/client";
@@ -409,7 +410,7 @@ function Row({ l }: { l: Listing }) {
     ? `${l.salaryCurrency === "USD" ? "$" : `${l.salaryCurrency ?? ""} `}${[l.salaryMin, l.salaryMax].filter(Boolean).map((n) => (n! >= 1000 ? `${Math.round(n! / 1000)}k` : n)).join("–")}${l.salaryPeriod === "HOUR" ? "/hr" : ""}`
     : null;
   return (
-    <a href={`/job/${l.id}`} style={S.row}>
+    <a href={jobPath({ id: l.id, titleRaw: l.title, companyName: l.company ?? "" })} style={S.row}>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: C.ink }}>{l.title}</span>
         <span style={{ display: "block", fontSize: 11.5, color: C.mut, marginTop: 2 }}>

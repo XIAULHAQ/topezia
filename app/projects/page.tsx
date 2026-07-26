@@ -15,6 +15,7 @@
  */
 import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import { jobPath } from "@/lib/seo/job-slug";
 import AppShell from "@/app/_components/AppShell";
 import { C, GRAD, FONT, Icon, MatchRing } from "@/app/_components/ui";
 import { curSym } from "@/lib/currency";
@@ -190,7 +191,7 @@ export default function ProjectsPage() {
                       >
                         <Icon name="bookmark" size={15} />
                       </div>
-                      <a href={`/job/${m.jobId}?score=${m.score}&pos=${i + 1}`} style={S.applyBtn}>View &amp; bid</a>
+                      <a href={`${jobPath({ id: m.jobId, titleRaw: m.title, companyName: m.company })}?score=${m.score}&pos=${i + 1}`} style={S.applyBtn}>View &amp; bid</a>
                     </div>
                   </div>
                 </div>

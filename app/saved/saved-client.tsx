@@ -8,6 +8,7 @@
  * is a budget in the poster's own currency rather than a salary.
  */
 import { useEffect, useState, type CSSProperties } from "react";
+import { jobPath } from "@/lib/seo/job-slug";
 import { C, GRAD, Icon, Card } from "@/app/_components/ui";
 import { curSym } from "@/lib/currency";
 
@@ -83,7 +84,7 @@ export default function SavedClient({ kind = "JOB" }: { kind?: "JOB" | "PROJECT"
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <div onClick={() => unsave(j.jobId)} title="Remove from saved" style={S.remove}><Icon name="bookmark" size={15} /></div>
-                  <a href={`/job/${j.jobId}`} style={S.view}>{isProject ? "View project" : "View job"}</a>
+                  <a href={jobPath({ id: j.jobId, titleRaw: j.title, companyName: j.company ?? "" })} style={S.view}>{isProject ? "View project" : "View job"}</a>
                 </div>
               </div>
             </Card>
