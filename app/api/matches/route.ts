@@ -14,11 +14,13 @@ import { countrySlugFor, countryName } from "@/lib/seo/pages";
 
 export const maxDuration = 60;
 
-async function resolveIdentity(): Promise<{ profileId: string | null; authed: boolean }> {
+async function resolveIdentity(): Promise<{ profileId: string | null; country: string | null; authed: boolean }> {
   const { userId, authed } = await currentIdentity();
-  if (!userId) return { profileId: null, authed };
-  const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
-  return { profileId: profile?.id ?? null, authed };
+  if (!userId) return { profileId: null, country: null, authed };
+  // country rides along so the eligible-count query below doesn't need its own
+  // profile round-trip.
+  const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true, country: true } });
+  return { profileId: profile?.id ?? null, country: profile?.country ?? null, authed };
 }
 
 /**
@@ -50,7 +52,7 @@ function respond(matches: JobMatch[], totalLive: number, authed: boolean, alert:
 }
 
 export async function GET(req: NextRequest) {
-  const { profileId, authed } = await resolveIdentity();
+  const { profileId, country, authed } = await resolveIdentity();
   if (!profileId) return NextResponse.json({ error: "no-profile" }, { status: 401 });
 
   // ?kind=PROJECT (+ optional &period=HOUR|PROJECT, &currency=USD) — the
@@ -63,9 +65,12 @@ export async function GET(req: NextRequest) {
   const period = kind && (periodRaw === "HOUR" || periodRaw === "PROJECT") ? periodRaw : undefined;
   const currency = kind && sp.get("currency") === "USD" ? ("USD" as const) : undefined;
 
-  const profile = await prisma.profile.findUnique({ where: { id: profileId }, select: { country: true } });
-  const matches = await getMatches(profileId, { rerankN: 12, rerank: false, kind, period, currency });
-  const totalLive = await eligibleLiveCount(profile?.country ?? null); // jobs open to them, not the whole corpus
-  const alert = await feedAlert(profileId);
+  // Independent reads — running them serially was pure added latency on the
+  // feed's critical path.
+  const [matches, totalLive, alert] = await Promise.all([
+    getMatches(profileId, { rerankN: 12, rerank: false, kind, period, currency }),
+    eligibleLiveCount(country), // jobs open to them, not the whole corpus
+    feedAlert(profileId),
+  ]);
   return respond(matches, totalLive, authed, alert);
 }

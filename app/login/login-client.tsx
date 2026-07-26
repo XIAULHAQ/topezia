@@ -19,6 +19,7 @@ import type { CSSProperties, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { clearClientCaches } from "@/lib/client-cache";
 
 const C = { c1: "#8B5CF6", c2: "#3B82F6", ink: "#0F172A", slate: "#334155", mut: "#64748B", line: "#E2E8F0" };
 const GRAD = `linear-gradient(135deg,${C.c1},${C.c2})`;
@@ -108,6 +109,11 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
     const p = pwRef.current?.value;
     if (p) setPassword((cur) => cur || p);
   }, []);
+
+  // Anyone on this page intends to sign in (possibly as someone else) — the
+  // previous account's cached dashboard must not survive into the next one.
+  // Covers the OAuth path too, which starts here before redirecting away.
+  useEffect(() => { clearClientCaches(); }, []);
 
   const dest = next ? DESTINATIONS.find((d) => next === d.prefix || next.startsWith(`${d.prefix}/`)) : undefined;
 

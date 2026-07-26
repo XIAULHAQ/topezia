@@ -15,7 +15,8 @@ import AppShell from "@/app/_components/AppShell";
 import AlertCapture from "@/app/jobs/_components/AlertCapture";
 import { C, GRAD, FONT, Icon, MatchRing, Card, SoonTag } from "@/app/_components/ui";
 import { curSym } from "@/lib/currency";
-import { fetchProfileShared } from "@/lib/fetch-profile";
+import { fetchProfileShared, readProfileCache } from "@/lib/fetch-profile";
+import { readCache, writeCache, cachedFetchJson } from "@/lib/client-cache";
 import { ensureFreshSession } from "@/lib/ensure-session";
 import { buildTips, pickTip, type TipChange, type TipScore } from "@/lib/coach/tips";
 import { jobPath } from "@/lib/seo/job-slug";
@@ -142,22 +143,15 @@ export default function FeedPage() {
       // the token still has time left — no network call in the common case.
       await ensureFreshSession();
 
-      (async () => {
-        try {
-          const r = await fetch("/api/profile/insights");
-          if (r.ok) {
-            const d = await r.json();
-            setInsights(d.insights ?? null);
-            setInsightChanges(d.changes ?? null); // "since last week" — tip fuel
-          }
-        } catch { /* optional */ }
-      })();
-      (async () => {
-        try {
-          const r = await fetch("/api/career-score");
-          if (r.ok) setCareerScore((await r.json()).careerScore ?? null);
-        } catch { /* optional — the tip pool just loses the score moves */ }
-      })();
+      // Cached-then-fresh: each panel paints from the last response instantly
+      // and updates in place when the network answers.
+      cachedFetchJson<{ insights?: FeedInsights | null; changes?: TipChange[] | null }>("/api/profile/insights", (d) => {
+        setInsights(d.insights ?? null);
+        setInsightChanges(d.changes ?? null); // "since last week" — tip fuel
+      });
+      cachedFetchJson<{ careerScore?: TipScore | null }>("/api/career-score", (d) => {
+        setCareerScore(d.careerScore ?? null);
+      });
       (async () => {
         try {
           const r = await fetch("/api/saves");
@@ -165,11 +159,14 @@ export default function FeedPage() {
         } catch { /* optional */ }
       })();
       (async () => {
-        try {
-          // Shared with AppShell's avatar fetch — same endpoint, one request.
-          const d = await fetchProfileShared();
+        const applyPrefs = (d: { profile?: Record<string, unknown> | null } | null) => {
           const p = d?.profile as Prefs | null | undefined;
           if (p) setPrefs({ fullName: p.fullName, headline: p.headline, remoteTypes: p.remoteTypes ?? [], locations: p.locations ?? [], salaryFloor: p.salaryFloor, salaryTarget: p.salaryTarget, salaryPeriod: p.salaryPeriod });
+        };
+        applyPrefs(readProfileCache()); // instant on repeat visits
+        try {
+          // Shared with AppShell's avatar fetch — same endpoint, one request.
+          applyPrefs(await fetchProfileShared());
         } catch { /* optional */ }
       })();
     })();
@@ -177,6 +174,17 @@ export default function FeedPage() {
 
   useEffect(() => {
     let cancelled = false;
+    // Paint the last session's matches instantly — no spinner on a repeat
+    // visit. pending is stripped so a stale "scoring…" shimmer can't show;
+    // the fresh response replaces everything in place a moment later.
+    const cachedFeed = readCache<{ matches: Match[]; stats: { strong: number; totalLive: number } | null; alert: { slug: string; place?: string; label: string } | null }>("/api/matches");
+    const hadCache = Boolean(cachedFeed?.matches?.length);
+    if (cachedFeed && hadCache) {
+      setMatches(cachedFeed.matches.map((m) => ({ ...m, pending: false })));
+      setStats(cachedFeed.stats ?? null);
+      setAlert(cachedFeed.alert ?? null);
+      setLoading(false);
+    }
     (async () => {
       try {
         // Same guard, and it dedupes — this joins the effect above rather than
@@ -192,6 +200,7 @@ export default function FeedPage() {
         setStats(data.stats || null);
         setAlert(data.alert ?? null);
         setLoading(false);
+        writeCache("/api/matches", { matches: data.matches || [], stats: data.stats || null, alert: data.alert ?? null });
 
         if (data.pending) {
           setEnriching(true);
@@ -200,6 +209,7 @@ export default function FeedPage() {
             if (r2.ok) {
               const d2 = await r2.json();
               if (!cancelled) { setMatches(d2.matches || []); setStats(d2.stats || null); }
+              writeCache("/api/matches", { matches: d2.matches || [], stats: d2.stats || null, alert: data.alert ?? null });
             } else if (!cancelled) {
               setMatches((prev) => prev.map((m) => ({ ...m, pending: false })));
             }
@@ -211,7 +221,11 @@ export default function FeedPage() {
         }
       } catch {
         if (cancelled) return;
-        setError("Scoring your matches is taking longer than expected — the first load can be slow. Please try again.");
+        // With a hydrated view on screen, a failed refresh should cost nothing
+        // visible — the full-page error is for having nothing to show at all.
+        if (!hadCache) {
+          setError("Scoring your matches is taking longer than expected — the first load can be slow. Please try again.");
+        }
         setLoading(false);
       }
     })();

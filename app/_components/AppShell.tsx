@@ -15,7 +15,8 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { C, GRAD, FONT, Icon, BrandMark, initials } from "./ui";
-import { fetchProfileShared } from "@/lib/fetch-profile";
+import { fetchProfileShared, readProfileCache } from "@/lib/fetch-profile";
+import { clearClientCaches } from "@/lib/client-cache";
 
 type NavItem = { icon: string; label: string; href?: string; soon?: boolean };
 
@@ -89,12 +90,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
     // and this shell wraps pages that don't otherwise fetch it.
     // Shared with the page inside the shell — /feed needs the same endpoint,
     // and two parallel calls cost two auth round-trips for one answer.
-    fetchProfileShared()
-      .then((d) => {
-        const pr = d?.profile as { fullName?: string; photoUrl?: string } | null | undefined;
-        setName(pr?.fullName ?? null); setPhoto(pr?.photoUrl ?? null);
-      })
-      .catch(() => {});
+    const applyIdentity = (d: Awaited<ReturnType<typeof fetchProfileShared>>) => {
+      const pr = d?.profile as { fullName?: string; photoUrl?: string } | null | undefined;
+      if (pr) { setName(pr.fullName ?? null); setPhoto(pr.photoUrl ?? null); }
+    };
+    applyIdentity(readProfileCache()); // instant avatar on repeat visits
+    fetchProfileShared().then(applyIdentity).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -176,6 +177,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
+    clearClientCaches(); // this account's dashboard data must not outlive it
     try {
       await createClient().auth.signOut();
     } catch {

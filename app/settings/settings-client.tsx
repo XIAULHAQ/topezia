@@ -3,6 +3,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { clearClientCaches } from "@/lib/client-cache";
 
 const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
@@ -74,6 +75,7 @@ export default function SettingsClient() {
 
   async function signOut() {
     setBusy("signout");
+    clearClientCaches(); // cached dashboard data belongs to this sign-in
     try {
       await createClient().auth.signOut();
       router.push("/");
@@ -85,6 +87,7 @@ export default function SettingsClient() {
 
   async function deleteAccount() {
     setBusy("delete");
+    clearClientCaches(); // nothing of a deleted account may linger in the tab
     try {
       const res = await fetch("/api/account", { method: "DELETE" });
       if (!res.ok) throw new Error();

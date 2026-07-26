@@ -61,6 +61,29 @@ export async function POST(req: NextRequest) {
 }
 
 
+/**
+ * The role taxonomy changes only when an ingestion run adds roles, but it was
+ * being re-queried on EVERY profile GET — the app's single hottest endpoint
+ * (the shell's avatar and the feed both hit it on each page). Ten minutes of
+ * staleness on a picker list is free; the two queries per page view were not.
+ */
+let roleGroupsCache: { at: number; data: { field: string; roles: string[] }[] } | null = null;
+const ROLE_GROUPS_TTL_MS = 10 * 60 * 1000;
+
+async function getRoleGroups(): Promise<{ field: string; roles: string[] }[]> {
+  if (roleGroupsCache && Date.now() - roleGroupsCache.at < ROLE_GROUPS_TTL_MS) return roleGroupsCache.data;
+  const verticals = await prisma.vertical.findMany({
+    where: { slug: { not: "unsorted" } },
+    select: { name: true, roles: { select: { name: true }, orderBy: { name: "asc" } } },
+    orderBy: { name: "asc" },
+  });
+  const data = verticals
+    .filter((v) => v.roles.length > 0)
+    .map((v) => ({ field: v.name, roles: v.roles.map((r) => r.name) }));
+  roleGroupsCache = { at: Date.now(), data };
+  return data;
+}
+
 /** GET — the current user's profile, shaped for the edit page (with skill provenance). */
 export async function GET() {
   const { userId, authed } = await currentIdentity();
@@ -83,21 +106,15 @@ export async function GET() {
   });
   if (!p) return NextResponse.json({ error: "No profile." }, { status: 404 });
 
-  const headline = p.headlineRoleId
-    ? (await prisma.role.findUnique({ where: { id: p.headlineRoleId }, select: { name: true } }))?.name ?? null
-    : null;
-
   // The role taxonomy, grouped by field — so the profile can offer a real
   // PICKER instead of free text that silently fails to resolve. Picking is
   // authoritative: no guessing which field someone is in.
-  const verticals = await prisma.vertical.findMany({
-    where: { slug: { not: "unsorted" } },
-    select: { name: true, roles: { select: { name: true }, orderBy: { name: "asc" } } },
-    orderBy: { name: "asc" },
-  });
-  const roleGroups = verticals
-    .filter((v) => v.roles.length > 0)
-    .map((v) => ({ field: v.name, roles: v.roles.map((r) => r.name) }));
+  const [headline, roleGroups] = await Promise.all([
+    p.headlineRoleId
+      ? prisma.role.findUnique({ where: { id: p.headlineRoleId }, select: { name: true } }).then((r) => r?.name ?? null)
+      : Promise.resolve(null),
+    getRoleGroups(),
+  ]);
 
   return NextResponse.json({
     authed,
