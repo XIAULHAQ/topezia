@@ -17,8 +17,12 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { rateLimit, clientIp, RATE_LIMITED } from "@/lib/rate-limit";
 
 const FOUNDING_MEMBER_CAP = 100;
+
+/** Coerce an untyped body field to a bounded string — anything else is "". */
+const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
 function isValidUrl(value: string): boolean {
   try {
@@ -30,13 +34,30 @@ function isValidUrl(value: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  // Every submission creates a WaitlistSignup row AND an ingestion Source —
+  // a loop here pollutes the crawl queue, not just a lead list.
+  if (!rateLimit(`waitlist:${clientIp(req)}`, 5, 60 * 60 * 1000)) {
+    return NextResponse.json(RATE_LIMITED, { status: 429 });
+  }
+
   const body = await req.json().catch(() => null);
 
-  if (!body) {
+  if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { companyName, contactName, email, phone, careersPageUrl, hiringVolume, verticalSlug } = body;
+  const companyName = str(body.companyName, 200);
+  const contactName = str(body.contactName, 200);
+  const email = str(body.email, 320).toLowerCase();
+  const phone = str(body.phone, 50);
+  const careersPageUrl = str(body.careersPageUrl, 500);
+  // Prisma enum — an unknown value must become null here, not a 500 at write.
+  const HIRING_VOLUMES = ["ONE_TO_FIVE", "SIX_TO_TWENTY", "TWENTY_PLUS"] as const;
+  const rawVolume = str(body.hiringVolume, 100);
+  const hiringVolume = (HIRING_VOLUMES as readonly string[]).includes(rawVolume)
+    ? (rawVolume as (typeof HIRING_VOLUMES)[number])
+    : null;
+  const verticalSlug = str(body.verticalSlug, 100);
 
   if (!companyName || !contactName || !email || !careersPageUrl) {
     return NextResponse.json(

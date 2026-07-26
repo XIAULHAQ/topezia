@@ -25,6 +25,7 @@ import { prisma } from "@/lib/prisma";
 import { renderJobDescription, jobDescriptionText } from "@/lib/sanitize";
 import { MIN_JOBS_FOR_PAGE } from "@/lib/seo/pages";
 import { jobPath, extractJobId } from "@/lib/seo/job-slug";
+import { safeJsonLd } from "@/lib/seo/json-ld";
 import SiteNav from "@/app/_components/SiteNav";
 import ApplyGate from "./ApplyGate";
 import ApplyBox from "./ApplyBox";
@@ -177,7 +178,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
 
   return (
     <main style={S.page}>
-      {jsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />}
+      {jsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />}
       <SiteNav />
 
       <div style={S.wrap}>

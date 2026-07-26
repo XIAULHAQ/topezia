@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
+import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 
 export const maxDuration = 60;
 
@@ -19,6 +20,10 @@ const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice
 export async function POST(req: NextRequest) {
   const { userId, authed } = await currentIdentity();
   if (!userId || !authed) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+  // Iterating on a draft is normal; scripting the writer is not.
+  if (!rateLimit(`postings-assist:${userId}`, 20, 60 * 60 * 1000)) {
+    return NextResponse.json(RATE_LIMITED, { status: 429 });
+  }
   const company = await prisma.company.findUnique({ where: { ownerUserId: userId }, select: { name: true, tagline: true, about: true, location: true } });
   const profile = company ? null : await prisma.profile.findUnique({ where: { userId }, select: { fullName: true, currentLocation: true } });
   if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "AI writing isn't available right now." }, { status: 503 });

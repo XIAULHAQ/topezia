@@ -22,6 +22,7 @@ import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { SiteHeader, SiteFooter } from "@/app/_components/SiteChrome";
 import { portfolioImageUrl } from "@/lib/portfolio/storage";
+import { safeJsonLd } from "@/lib/seo/json-ld";
 import { categoryLabel, categorySlug } from "@/lib/portfolio/categories";
 import { videoEmbedUrl, videoPosterUrl } from "@/lib/portfolio/video";
 import PortfolioRail from "./portfolio-rail";
@@ -143,7 +144,7 @@ export default async function PortfolioDetailPage({ params }: { params: { slug: 
 
   return (
     <div style={{ minHeight: "100vh", background: "#fff", fontFamily: FONT, color: C.ink, overflowX: "clip" }}>
-      {jsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />}
+      {jsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />}
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
       <SiteHeader />
 

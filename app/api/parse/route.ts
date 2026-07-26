@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { parseResume, parseScannedResume } from "@/lib/matching/parse-resume";
 import { extractResumeText, ResumeExtractError, ResumeScannedError, MAX_RESUME_BYTES } from "@/lib/matching/extract-text";
 import { extractResumePhoto, cropScannedPhoto } from "@/lib/matching/extract-photo";
+import { rateLimit, clientIp, RATE_LIMITED } from "@/lib/rate-limit";
 
 export const maxDuration = 60;
 export const runtime = "nodejs"; // pdf/docx parsing needs Node, not edge
@@ -47,6 +48,13 @@ async function resumeInputFrom(req: NextRequest): Promise<ResumeInput> {
 }
 
 export async function POST(req: NextRequest) {
+  // Anonymous by design (onboarding starts before signup), and every call is
+  // an LLM parse — so the loop must not be free. Generous for a human who
+  // re-uploads a few drafts; hostile to a script.
+  if (!rateLimit(`parse:${clientIp(req)}`, 10, 60 * 60 * 1000)) {
+    return NextResponse.json(RATE_LIMITED, { status: 429 });
+  }
+
   let input: ResumeInput;
   try {
     input = await resumeInputFrom(req);

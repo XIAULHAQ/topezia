@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import type { SeoPage, SeoJob } from "@/lib/seo/pages";
 import { countrySlugFor, countryName } from "@/lib/seo/pages";
 import { decodeHtmlEntities } from "@/lib/sanitize";
+import { safeJsonLd } from "@/lib/seo/json-ld";
 import AlertCapture from "./AlertCapture";
 import SiteNav from "@/app/_components/SiteNav";
 import { SiteFooter } from "@/app/_components/SiteChrome";
@@ -136,7 +137,7 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
   const projects = page.projects ?? [];
   return (
     <main style={S.page}>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd(page)) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd(page)) }} />
 
       <SiteNav />
 

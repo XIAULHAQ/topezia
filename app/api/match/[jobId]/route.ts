@@ -9,12 +9,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { scoreOneJob } from "@/lib/matching/match";
+import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 
 export const maxDuration = 30;
 
 export async function GET(_req: NextRequest, { params }: { params: { jobId: string } }) {
   const { userId } = await currentIdentity();
   if (!userId) return NextResponse.json({ none: "no-profile" });
+  // A cache miss costs a model call, and job ids are enumerable from the
+  // sitemap — cap the walk. High enough that a human browsing never sees it.
+  if (!rateLimit(`match:${userId}`, 180, 60 * 60 * 1000)) {
+    return NextResponse.json(RATE_LIMITED, { status: 429 });
+  }
   const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
   if (!profile) return NextResponse.json({ none: "no-profile" });
 

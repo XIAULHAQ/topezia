@@ -11,10 +11,18 @@ import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { resolveAlertTarget, alertQueryKey } from "@/lib/alerts/query";
 import { sendEmail, renderConfirmEmail } from "@/lib/alerts/send";
+import { rateLimit, clientIp, RATE_LIMITED } from "@/lib/rate-limit";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export async function POST(req: NextRequest) {
+  // This endpoint emails an address the caller typed — the classic
+  // spam-cannon shape. Double opt-in already stops recurring mail to a victim;
+  // this stops the confirmation emails themselves from being the spam.
+  if (!rateLimit(`alerts:${clientIp(req)}`, 10, 60 * 60 * 1000)) {
+    return NextResponse.json(RATE_LIMITED, { status: 429 });
+  }
+
   let body: { email?: string; slug?: string; place?: string | null; state?: string | null };
   try {
     body = await req.json();
