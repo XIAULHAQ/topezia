@@ -1,11 +1,19 @@
 /**
- * Job detail page — /job/{id}
+ * Job detail page — /job/{id}, in the reference design's shape: dark hero,
+ * per-viewer AI match card, skills, about-the-company, and a sticky apply
+ * rail with at-a-glance facts and similar roles.
  *
  * Visitors land HERE first (from the feed, SEO pages and alert emails) instead
  * of being bounced straight to the publisher. "Apply on company site" then goes
  * out through the tracked /go redirect, so we keep the spec's neutrality (§1:
  * the application always happens at the source, never trapped here) while
- * actually showing people the job.
+ * actually showing people the job. NATIVE postings apply in-app instead.
+ *
+ * The page is ONE cached document for everyone (revalidate 900, SEO) — all
+ * per-viewer material (match card, apply gating) is client-fetched. Honesty:
+ * the mock's invented bits (per-dimension match bars, "ACTIVELY HIRING",
+ * fabricated applicant counts) are not rendered; applicant counts appear only
+ * on native postings where we actually count them.
  *
  * Lives at /job/{id} (singular) so it can't collide with the /jobs/* SEO lattice.
  */
@@ -17,14 +25,17 @@ import { prisma } from "@/lib/prisma";
 import { renderJobDescription, jobDescriptionText } from "@/lib/sanitize";
 import { MIN_JOBS_FOR_PAGE } from "@/lib/seo/pages";
 import SiteNav from "@/app/_components/SiteNav";
-import ApplyGate, { SignedInOnly } from "./ApplyGate";
+import ApplyGate from "./ApplyGate";
 import ApplyBox from "./ApplyBox";
+import MatchCard from "./MatchCard";
 import { SiteFooter } from "@/app/_components/SiteChrome";
 import { curSym } from "@/lib/currency";
 
 const INDIGO = "#4f46e5";
-const INK = "#1a1a2e";
-const MUTED = "#6b7280";
+const INK = "#0F172A";
+const MUTED = "#64748B";
+const LINE = "#E2E8F0";
+const GRAD = "linear-gradient(135deg,#8B5CF6,#3B82F6)";
 
 export const revalidate = 900;
 
@@ -43,6 +54,8 @@ async function getJob(id: string) {
       vertical: { select: { name: true, slug: true } },
       role: { select: { name: true, slug: true } },
       skills: { select: { skill: { select: { name: true } } } },
+      company: { select: { name: true, slug: true, tagline: true, about: true, location: true } },
+      _count: { select: { applications: true } },
     },
   });
 }
@@ -84,6 +97,19 @@ async function parentLink(job: {
   return null;
 }
 
+/** Same role first, then same vertical — real live postings, no invented "match %". */
+async function similarRoles(job: { id: string; roleId: string | null; verticalId: string }) {
+  const where = job.roleId
+    ? { status: "LIVE" as const, roleId: job.roleId, id: { not: job.id } }
+    : { status: "LIVE" as const, verticalId: job.verticalId, id: { not: job.id } };
+  return prisma.job.findMany({
+    where,
+    orderBy: { lastVerifiedAt: "desc" },
+    take: 3,
+    select: { id: true, titleRaw: true, companyName: true, locationRaw: true, remoteType: true },
+  });
+}
+
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const job = await getJob(params.id);
   if (!job) return { title: "Job — Topezia" };
@@ -96,19 +122,22 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
   const job = await getJob(params.id);
   if (!job) notFound();
 
-  const parent = await parentLink(job);
+  const [parent, similar] = await Promise.all([parentLink(job), similarRoles(job)]);
   const dead = job.status === "EXPIRED" || job.status === "SUSPECTED_DEAD";
   const pay = salaryText(job);
   const clean = renderJobDescription(job.descriptionRaw);
-  // Carry feed score/position through so the click-out still logs the ranking
-  // signal it would have if the feed linked straight to /go.
   const q = new URLSearchParams();
   if (searchParams.score) q.set("score", searchParams.score);
   if (searchParams.pos) q.set("pos", searchParams.pos);
   const applyHref = `/go/${job.id}${q.toString() ? `?${q}` : ""}`;
   const isProject = job.kind === "PROJECT";
+  const isNative = job.source === "NATIVE";
   const applyLabel = isProject ? "Bid on Freelancer.com →" : "Apply on company site →";
-  const sourceLabel = job.source === "FREELANCER_COM" ? "Freelancer.com" : job.source === "NATIVE" ? "posted on Topezia" : label(job.source);
+  const applyNote = isProject
+    ? "Bidding happens on Freelancer.com — we never sit between you and the client."
+    : `Applies at ${job.companyName} — we never sit between you and the employer.`;
+  const sourceLabel = job.source === "FREELANCER_COM" ? "Freelancer.com" : isNative ? "posted on Topezia" : label(job.source);
+  const applicants = isNative ? job._count.applications : null;
 
   // Google's JobPosting policy covers employment, not freelance bid work —
   // emitting it for projects would risk the whole site's rich-result standing.
@@ -120,8 +149,6 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
     datePosted: (job.postedAt ?? job.lastVerifiedAt).toISOString(),
     employmentType: job.employmentType,
     hiringOrganization: { "@type": "Organization", name: job.companyName },
-    // Use the job's real country, and omit it when unknown — hardcoding "US"
-    // told Google every UK/German posting was American.
     jobLocation: {
       "@type": "Place",
       address: {
@@ -131,20 +158,21 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
       },
     },
     ...(job.remoteType.startsWith("REMOTE") ? { jobLocationType: "TELECOMMUTE" } : {}),
-    directApply: false,
+    directApply: isNative,
     url: job.sourceUrl,
   };
+
+  const applyBlock = dead ? null : isNative
+    ? <ApplyBox jobId={job.id} kind={job.kind} companyName={job.companyName} />
+    : <ApplyGate jobId={job.id} applyHref={applyHref} applyLabel={applyLabel} note={applyNote} />;
 
   return (
     <main style={S.page}>
       {jsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />}
-
       <SiteNav />
 
       <div style={S.wrap}>
-        {parent && (
-          <Link href={parent.href} style={S.crumb}>← {parent.label}</Link>
-        )}
+        {parent && <Link href={parent.href} style={S.crumb}>← {parent.label}</Link>}
 
         {dead && (
           <div style={S.deadBanner}>
@@ -152,55 +180,135 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
           </div>
         )}
 
-        <h1 style={S.h1}>{job.titleRaw}</h1>
-        <div style={S.meta}>
-          <strong style={{ color: INK }}>{job.companyName}</strong> · {job.locationRaw || job.locationState || label(job.remoteType)} · {label(job.employmentType)}
-          {pay ? ` · ${pay}` : ""}
-        </div>
-        <div style={S.fresh}>● {freshness(job.lastVerifiedAt)} · via {sourceLabel}</div>
+        <div style={{ display: "flex", gap: 22, alignItems: "flex-start", flexWrap: "wrap" }}>
+          {/* ── Main column ── */}
+          <div style={{ flex: "1 1 480px", minWidth: 0 }}>
 
-        {!dead && (job.source === "NATIVE" ? (
-          <ApplyBox jobId={job.id} kind={job.kind} companyName={job.companyName} />
-        ) : (
-          <ApplyGate
-            jobId={job.id}
-            applyHref={applyHref}
-            applyLabel={applyLabel}
-            note={isProject ? "Bidding happens on Freelancer.com — we never sit between you and the client." : `Applies at ${job.companyName} — we never sit between you and the employer.`}
-          />
-        ))}
+            {/* Dark hero */}
+            <section style={S.hero}>
+              <div style={S.heroGlow} />
+              <div style={{ position: "relative" }}>
+                <div style={{ display: "flex", gap: 18, alignItems: "flex-start", flexWrap: "wrap" }}>
+                  <div style={S.logo}>{job.companyName.slice(0, 1).toUpperCase()}</div>
+                  <div style={{ flex: 1, minWidth: 240 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <h1 style={S.h1}>{job.titleRaw}</h1>
+                      {!dead && <span style={S.livePill}>● {freshness(job.lastVerifiedAt)}</span>}
+                    </div>
+                    <div style={{ fontSize: 14, color: "#C7CEE4", fontWeight: 600, marginTop: 6 }}>
+                      {job.company
+                        ? <Link href={`/company/${job.company.slug}`} style={{ color: "#C7CEE4" }}>{job.companyName} ↗</Link>
+                        : job.companyName}
+                      {" · "}via {sourceLabel}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginTop: 12, fontSize: 12.5, color: "#9AA3BD" }}>
+                      <span>📍 {job.locationRaw || job.locationState || label(job.remoteType)}</span>
+                      <span>{isProject ? "Freelance project" : label(job.employmentType)}</span>
+                      {pay && <span style={{ color: "#4ADE80", fontWeight: 600 }}>{pay}</span>}
+                      {job.seniority !== "NOT_APPLICABLE" && <span>{label(job.seniority)} level</span>}
+                    </div>
+                  </div>
+                </div>
+                {applicants !== null && (
+                  <div style={{ fontSize: 11.5, color: "#9AA3BD", marginTop: 16 }}>
+                    {applicants === 0 ? "No applicants yet — be the first." : `${applicants} ${isProject ? (applicants === 1 ? "proposal" : "proposals") : (applicants === 1 ? "applicant" : "applicants")} so far`}
+                  </div>
+                )}
+              </div>
+            </section>
 
-        {job.skills.length > 0 && (
-          <div style={S.chips}>
-            {job.skills.slice(0, 12).map((s) => (
-              <span key={s.skill.name} style={S.chip}>{s.skill.name}</span>
-            ))}
+            {/* Per-viewer AI match — client-fetched, cache-first */}
+            <MatchCard jobId={job.id} />
+
+            <section style={S.card}>
+              <h2 style={S.h2}>About the {isProject ? "project" : "role"}</h2>
+              <article style={S.body} dangerouslySetInnerHTML={{ __html: clean }} />
+            </section>
+
+            {job.skills.length > 0 && (
+              <section style={S.card}>
+                <h2 style={S.h2}>Skills for this {isProject ? "project" : "role"}</h2>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                  {job.skills.slice(0, 14).map((s) => (
+                    <span key={s.skill.name} style={S.skillChip}>{s.skill.name}</span>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11.5, color: MUTED, marginTop: 12 }}>Your match card above shows which of these you have and which are gaps.</div>
+              </section>
+            )}
+
+            {job.company && (job.company.about || job.company.tagline) && (
+              <section style={S.card}>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
+                  <div style={{ ...S.logo, width: 48, height: 48, fontSize: 19, borderRadius: 12 }}>{job.company.name.slice(0, 1).toUpperCase()}</div>
+                  <div style={{ flex: 1 }}>
+                    <h2 style={{ ...S.h2, margin: 0 }}>{job.company.name}</h2>
+                    {(job.company.tagline || job.company.location) && (
+                      <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{[job.company.tagline, job.company.location].filter(Boolean).join(" · ")}</div>
+                    )}
+                  </div>
+                  <Link href={`/company/${job.company.slug}`} style={S.ghostBtn}>View company</Link>
+                </div>
+                {job.company.about && <p style={{ margin: 0, fontSize: 13, lineHeight: 1.7, color: "#334155", whiteSpace: "pre-wrap" }}>{job.company.about}</p>}
+              </section>
+            )}
+
+            {applyBlock}
           </div>
-        )}
 
-        <SignedInOnly>
-        <div style={S.matchCta}>
-          <div>
-            <div style={S.matchTitle}>Is this actually worth your time?</div>
-            <div style={S.matchSub}>Upload your resume once — get an honest match score, and the skill gaps, for this and every other job.</div>
+          {/* ── Rail ── */}
+          <div style={S.rail}>
+            <section style={{ ...S.card, margin: 0, position: "sticky", top: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".8px", color: MUTED, textTransform: "uppercase", marginBottom: 4 }}>
+                {isProject ? "Send a proposal" : "Your application"}
+              </div>
+              {applyBlock ?? <p style={{ fontSize: 12.5, color: MUTED, margin: "10px 0 0" }}>This posting has closed.</p>}
+              {!dead && (
+                <Link href="/resume" style={{ display: "block", marginTop: 4, border: `1px solid ${LINE}`, borderRadius: 11, padding: 12, textAlign: "center", fontSize: 12.5, fontWeight: 600, color: "#334155", textDecoration: "none" }}>
+                  Tailor your resume with AI
+                </Link>
+              )}
+            </section>
+
+            <section style={{ ...S.card, margin: 0 }}>
+              <h2 style={{ ...S.h2, fontSize: 15 }}>At a glance</h2>
+              <div style={{ display: "flex", flexDirection: "column", gap: 11, fontSize: 12.5, marginTop: 12 }}>
+                {([
+                  ["Type", isProject ? "Freelance project" : label(job.employmentType)],
+                  ["Work model", label(job.remoteType)],
+                  job.seniority !== "NOT_APPLICABLE" ? ["Experience", label(job.seniority)] : null,
+                  pay ? [isProject ? "Budget" : "Salary", pay] : null,
+                  job.role ? ["Category", job.role.name] : job.vertical.slug !== "unsorted" ? ["Category", job.vertical.name] : null,
+                  job.postedAt ? ["Posted", job.postedAt.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })] : null,
+                  ["Source", sourceLabel],
+                ].filter(Boolean) as [string, string][]).map(([k, v]) => (
+                  <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                    <span style={{ color: MUTED }}>{k}</span><span style={{ fontWeight: 600, textAlign: "right" }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {similar.length > 0 && (
+              <section style={{ ...S.card, margin: 0 }}>
+                <h2 style={{ ...S.h2, fontSize: 15 }}>Similar roles</h2>
+                <div style={{ display: "flex", flexDirection: "column", gap: 11, marginTop: 12 }}>
+                  {similar.map((sm) => (
+                    <Link key={sm.id} href={`/job/${sm.id}`} style={S.similarRow}>
+                      <div style={{ width: 38, height: 38, borderRadius: 10, background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 14, fontWeight: 800, flex: "none" }}>
+                        {sm.companyName.slice(0, 1).toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sm.titleRaw}</div>
+                        <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>{sm.companyName} · {sm.locationRaw || label(sm.remoteType)}</div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
-          <Link href="/onboard" style={S.matchBtn}>Show my matches →</Link>
         </div>
-        </SignedInOnly>
-
-        <article style={S.body} dangerouslySetInnerHTML={{ __html: clean }} />
-
-        {!dead && (job.source === "NATIVE" ? (
-          <ApplyBox jobId={job.id} kind={job.kind} companyName={job.companyName} />
-        ) : (
-          <ApplyGate
-            jobId={job.id}
-            applyHref={applyHref}
-            applyLabel={applyLabel}
-            note=""
-            compact
-          />
-        ))}
       </div>
       <SiteFooter />
     </main>
@@ -208,21 +316,20 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
 }
 
 const S: Record<string, CSSProperties> = {
-  page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "var(--font-jakarta), sans-serif", color: INK },
-  nav: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", background: "#fff", borderBottom: "1px solid #ececf2" },
-  brand: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, textDecoration: "none" },
-  navLink: { color: MUTED, textDecoration: "none", fontSize: 14, fontWeight: 600 },
-  wrap: { maxWidth: 740, margin: "0 auto", padding: "28px 20px 80px" },
-  crumb: { color: INDIGO, fontSize: 14, fontWeight: 600, textDecoration: "none", display: "inline-block", marginBottom: 18 },
-  deadBanner: { background: "#fff7ed", border: "1px solid #fdba74", color: "#9a3412", borderRadius: 12, padding: "12px 16px", fontSize: 14, marginBottom: 18 },
-  h1: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 30, margin: "0 0 10px", lineHeight: 1.2 },
-  meta: { color: MUTED, fontSize: 16, marginBottom: 6 },
-  fresh: { color: "#059669", fontSize: 13, fontWeight: 600, marginBottom: 20 },
-  chips: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 22 },
-  chip: { padding: "5px 10px", background: "#eef0ff", color: INDIGO, border: "1px solid #d9dcff", borderRadius: 999, fontSize: 13, fontWeight: 600 },
-  matchCta: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, background: "#eef0ff", border: "1px solid #d9dcff", borderRadius: 16, padding: 18, marginBottom: 28, flexWrap: "wrap" },
-  matchTitle: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 700, fontSize: 16, marginBottom: 3 },
-  matchSub: { color: MUTED, fontSize: 14, lineHeight: 1.45 },
-  matchBtn: { padding: "11px 20px", background: INDIGO, color: "#fff", borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: "none", whiteSpace: "nowrap" },
-  body: { background: "#fff", border: "1px solid #ececf2", borderRadius: 16, padding: 28, fontSize: 15, lineHeight: 1.7, color: "#374151", overflowWrap: "break-word" },
+  page: { minHeight: "100vh", background: "#F1F5F9", fontFamily: "var(--font-sora), var(--font-jakarta), sans-serif", color: INK },
+  wrap: { maxWidth: 1080, margin: "0 auto", padding: "24px 24px 56px" },
+  crumb: { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: MUTED, marginBottom: 16, textDecoration: "none" },
+  deadBanner: { background: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412", borderRadius: 12, padding: "13px 16px", fontSize: 13, marginBottom: 16, lineHeight: 1.5 },
+  hero: { background: INK, borderRadius: 18, padding: "26px 30px", color: "#fff", position: "relative", overflow: "hidden" },
+  heroGlow: { position: "absolute", top: -110, right: -50, width: 340, height: 340, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.36), transparent 68%)" },
+  logo: { width: 60, height: 60, borderRadius: 15, background: GRAD, display: "grid", placeItems: "center", fontSize: 24, fontWeight: 800, flex: "none", color: "#fff" },
+  h1: { margin: 0, fontSize: 23, fontWeight: 800, letterSpacing: "-0.5px" },
+  livePill: { background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", color: "#4ADE80", fontSize: 10.5, fontWeight: 700, borderRadius: 999, padding: "3px 11px", whiteSpace: "nowrap" },
+  card: { background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, padding: "22px 26px", margin: "18px 0" },
+  h2: { margin: 0, fontSize: 16, fontWeight: 700 },
+  body: { fontSize: 13.5, lineHeight: 1.75, color: "#334155", marginTop: 10, overflowWrap: "break-word" },
+  skillChip: { border: `1px solid ${LINE}`, background: "#F8FAFC", color: "#334155", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600 },
+  rail: { flex: "1 1 280px", maxWidth: 320, display: "flex", flexDirection: "column", gap: 18 },
+  ghostBtn: { fontSize: 12.5, fontWeight: 600, border: `1px solid ${LINE}`, borderRadius: 9, padding: "8px 16px", color: "#334155", textDecoration: "none", flex: "none" },
+  similarRow: { display: "flex", alignItems: "center", gap: 12, border: `1px solid ${LINE}`, borderRadius: 12, padding: "12px 13px", color: INK, textDecoration: "none" },
 };

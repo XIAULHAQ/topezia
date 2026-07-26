@@ -436,7 +436,7 @@ async function rerankBatch(
     salaryPeriod: string | null;
     workAuthorization: string;
   },
-  jobs: CandidateRow[]
+  jobs: { id: string; titleRaw: string; titleNormalized: string | null; descriptionRaw: string }[]
 ): Promise<Map<string, RerankResult>> {
   const out = new Map<string, RerankResult>();
   if (jobs.length === 0 || !process.env.ANTHROPIC_API_KEY) return out;
@@ -508,4 +508,89 @@ function stripToSnippet(html: string, max: number): string {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, max);
+}
+
+/**
+ * Score ONE job for a profile, on demand — the job detail page's match card.
+ *
+ * Same brain as the feed: the cached MatchScore wins when it's current
+ * (zero cost — most detail views come FROM the feed, which already scored
+ * it); a cache miss runs the same single rerank the feed would and stores it
+ * under the same key, so the detail page and the feed can never disagree.
+ * If the LLM is unreachable, falls back to the provisional similarity score
+ * rather than showing nothing.
+ */
+export interface OneJobScore {
+  score: number;
+  matchedSkills: string[];
+  gapSkills: string[];
+  whyLine: string;
+  provisional: boolean; // true = similarity fallback, not the reranker
+}
+
+export async function scoreOneJob(profileId: string, jobId: string): Promise<OneJobScore | null> {
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: {
+      seniority: true, yearsExperience: true, currentLocation: true, industries: true,
+      salaryTarget: true, salaryPeriod: true, workAuthorization: true,
+      headlineRoleId: true, matchVersion: true,
+      skills: { select: { proficiency: true, tier: true, skill: { select: { name: true } } } },
+    },
+  });
+  if (!profile) return null;
+  const version = profile.matchVersion ?? "unversioned";
+
+  const cached = await prisma.matchScore.findUnique({
+    where: { profileId_jobId: { profileId, jobId } },
+    select: { matchVersion: true, score: true, matchedSkills: true, gapSkills: true, whyLine: true },
+  });
+  if (cached && cached.matchVersion === version) {
+    return { score: cached.score, matchedSkills: cached.matchedSkills, gapSkills: cached.gapSkills, whyLine: cached.whyLine, provisional: false };
+  }
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    select: { id: true, titleRaw: true, titleNormalized: true, descriptionRaw: true },
+  });
+  if (!job) return null;
+
+  const skillLabel = (s: (typeof profile.skills)[number]) =>
+    s.proficiency ? `${s.skill.name} (${s.proficiency.toLowerCase()})` : s.skill.name;
+  const headlineRole = profile.headlineRoleId
+    ? await prisma.role.findUnique({ where: { id: profile.headlineRoleId }, select: { name: true } })
+    : null;
+
+  const fresh = await rerankBatch(
+    {
+      headline: headlineRole?.name ?? null,
+      seniority: profile.seniority ?? "NOT_APPLICABLE",
+      yearsExperience: profile.yearsExperience,
+      coreSkills: profile.skills.filter((s) => s.tier !== "SECONDARY").map(skillLabel),
+      secondarySkills: profile.skills.filter((s) => s.tier === "SECONDARY").map(skillLabel),
+      currentLocation: profile.currentLocation,
+      industries: profile.industries,
+      salaryTarget: profile.salaryTarget,
+      salaryPeriod: profile.salaryPeriod,
+      workAuthorization: profile.workAuthorization,
+    },
+    [job]
+  );
+  const r = fresh.get(jobId);
+  if (r) {
+    await prisma.matchScore.deleteMany({ where: { profileId, jobId } });
+    await prisma.matchScore.create({ data: { profileId, jobId, matchVersion: version, ...r } });
+    return { ...r, provisional: false };
+  }
+
+  // LLM unreachable — provisional similarity, same fallback the feed shows.
+  const sim = await prisma.$queryRawUnsafe<{ similarity: number | null }[]>(
+    `SELECT 1 - (j.embedding <=> p.embedding) AS similarity
+     FROM "Job" j CROSS JOIN "Profile" p
+     WHERE j.id = $1 AND p.id = $2 AND j.embedding IS NOT NULL AND p.embedding IS NOT NULL`,
+    jobId, profileId
+  );
+  const similarity = sim[0]?.similarity;
+  if (similarity == null) return null;
+  return { score: Math.round(similarity * 100), matchedSkills: [], gapSkills: [], whyLine: "", provisional: true };
 }
