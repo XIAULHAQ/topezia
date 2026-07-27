@@ -60,6 +60,21 @@ export async function embedText(text: string): Promise<number[] | null> {
     console.warn("Voyage rate-limited after retries — skipping embedding, will backfill.");
     return null;
   }
+  if (res!.status === 400) {
+    // Bad INPUT, not a bad account/service — one malformed posting (stray
+    // invalid-UTF-8 bytes surviving HTML-strip is the case that surfaced
+    // this) must never take down the whole batch behind it. backfill-embeddings.ts
+    // processes oldest-first with no try/catch around this call, so before
+    // this branch existed, one poison job permanently blocked every job
+    // queued after it — including the entire cron, forever, since the same
+    // row is always first in line until it's dealt with. Same "skip, don't
+    // fail the job" philosophy as the 429 branch above; only the reason differs.
+    // NOTE: the row's embedding stays NULL, so this exact job will be picked
+    // up and rejected again on every future run until its underlying text is
+    // fixed — that's an accepted cost of "never let one job block the rest".
+    console.warn(`Voyage rejected this input (400) — skipping embedding for this job: ${await res!.text()}`);
+    return null;
+  }
   if (!res!.ok) {
     throw new Error(`Embedding request failed: ${res!.status} ${await res!.text()}`);
   }

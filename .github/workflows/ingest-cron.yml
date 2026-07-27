@@ -73,3 +73,14 @@ jobs:
           fi
           echo "npx tsx scripts/run-ingestion.ts $ARGS"
           npx tsx scripts/run-ingestion.ts $ARGS
+      - name: Run Freelancer.com project ingestion
+        # Previously manual-only, so the Projects feed never auto-updated.
+        # Same --skip-embeddings deferral as the ATS run above, same reason:
+        # stay well inside the 60-minute budget and let the embeddings-backfill
+        # cron pick these up out of band.
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+        run: npx tsx scripts/run-project-ingestion.ts --skip-embeddings

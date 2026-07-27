@@ -425,29 +425,48 @@ export function extractSalary(descriptionText: string): ExtractedSalary {
   const rangePattern =
     /\$\s?(\d{2,3}(?:,\d{3})?|\d+)(k)?(?:\s?\/\s?(?:hr|hour|yr|year))?\s?(?:-|to|–|—)\s?\$?\s?(\d{2,3}(?:,\d{3})?|\d+)(k)?\s?(\/\s?(hr|hour)|per hour|k|USD|\/yr|\/year|annually)?/i;
 
-  const match = descriptionText.match(rangePattern);
-  if (!match) return { min: null, max: null, period: null };
-
   const parseNum = (raw: string, hasK: boolean) => {
     const n = parseFloat(raw.replace(/,/g, ""));
     return hasK ? n * 1000 : n;
   };
 
-  const min = parseNum(match[1], Boolean(match[2]));
-  const max = parseNum(match[3], Boolean(match[4]));
+  const match = descriptionText.match(rangePattern);
+  if (match) {
+    const min = parseNum(match[1], Boolean(match[2]));
+    const max = parseNum(match[3], Boolean(match[4]));
 
-  if (min < 5 || max < 5) return { min: null, max: null, period: null }; // guards against unrelated number pairs
-  if (max < min) return { min: null, max: null, period: null }; // not a valid ascending range
+    if (min < 5 || max < 5) return { min: null, max: null, period: null }; // guards against unrelated number pairs
+    if (max < min) return { min: null, max: null, period: null }; // not a valid ascending range
 
-  const suffix = (match[5] || "").toLowerCase();
-  const period: ExtractedSalary["period"] =
-    suffix.includes("hr") || suffix.includes("hour")
-      ? "HOUR"
-      : min < 500 // heuristic: sub-$500 range with no suffix is almost certainly hourly
-      ? "HOUR"
-      : "YEAR";
+    const suffix = (match[5] || "").toLowerCase();
+    const period: ExtractedSalary["period"] =
+      suffix.includes("hr") || suffix.includes("hour")
+        ? "HOUR"
+        : min < 500 // heuristic: sub-$500 range with no suffix is almost certainly hourly
+        ? "HOUR"
+        : "YEAR";
 
-  return { min: Math.round(min), max: Math.round(max), period };
+    return { min: Math.round(min), max: Math.round(max), period };
+  }
+
+  // Fallback: a single figure, e.g. "$34/hour" — never a range, so never
+  // caught above. The `$` stays required, same reasoning as the range
+  // pattern, but a bare amount with no rate word ("$100,000") is still
+  // rejected here too: it's genuinely ambiguous (could be a budget, a
+  // funding figure, a signing bonus) in a way "$34/hour" simply isn't. An
+  // explicit rate suffix is what turns an arbitrary dollar figure into an
+  // unambiguous salary — so unlike the range branch, this one requires it.
+  const singlePattern = /\$\s?(\d{2,3}(?:,\d{3})?|\d+)(k)?\s?(\/\s?(?:hr|hour)|per hour|\/\s?(?:yr|year)|per year|annually)/i;
+  const single = descriptionText.match(singlePattern);
+  if (!single) return { min: null, max: null, period: null };
+
+  const amount = parseNum(single[1], Boolean(single[2]));
+  if (amount < 5) return { min: null, max: null, period: null };
+
+  const suffix = single[3].toLowerCase();
+  const period: ExtractedSalary["period"] = suffix.includes("hr") || suffix.includes("hour") ? "HOUR" : "YEAR";
+
+  return { min: Math.round(amount), max: Math.round(amount), period };
 }
 
 /**
