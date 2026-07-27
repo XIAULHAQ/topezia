@@ -27,7 +27,7 @@ export interface PubProfile {
   openToWork: boolean;
   industries: string[];
   skills: { name: string; proficiency: string | null; tier: string }[];
-  workHistory: { title?: string; company?: string; years?: string }[];
+  workHistory: { title?: string; company?: string; years?: string; bullets?: string[] }[];
   education: { degree?: string; institution?: string; year?: string }[];
   certifications: string[];
   languages: { name: string; level?: string }[];

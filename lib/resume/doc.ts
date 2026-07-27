@@ -1,10 +1,16 @@
 /**
  * The Resume Builder document: shape, caps, seeding.
  *
- * The PROFILE stores facts — roles, dates, skills. This document stores the
- * WRITTEN resume built on those facts: a professional summary and per-role
- * achievement bullets, which exist nowhere else in the product. It is stored
- * as one JSON blob on ResumeDoc; this module is the shape's only authority.
+ * The PROFILE stores facts — roles, dates, skills, and (as of the bullets
+ * unification) each role's achievement bullets too: adding them from /profile,
+ * a resume upload, or here all write the same Profile.workHistory[].bullets,
+ * so whichever surface you use, the others see it. This document stores what's
+ * additionally WRITTEN on top of those facts — a professional summary, plus
+ * layout/template choices — which exist nowhere else in the product. It is
+ * stored as one JSON blob on ResumeDoc; this module is the shape's only
+ * authority. `experience` is re-derived from the live profile on every load
+ * (see GET /api/resume) rather than trusted from the saved doc, the same way
+ * `recommendations` already was — this document isn't where it's owned.
  *
  * Everything arriving here is member-authored and will be rendered back to
  * them (and printed), so caps exist for the same reason as portfolio's: one
@@ -200,10 +206,11 @@ export interface SeedProfile {
 
 /**
  * First-open seeding: the resume starts as the profile's facts, so nobody
- * begins from a blank page. Bullets and summary start EMPTY on purpose —
- * they are the written layer this tool exists to add, and pre-filling them
- * with generated prose before the person asked would put words in their
- * mouth. The assist endpoint drafts them on request instead.
+ * begins from a blank page. Bullets come along too now — they're a profile
+ * fact, not resume-only prose (see the module comment). Only the summary
+ * starts EMPTY: it's genuinely this tool's own written layer, and pre-filling
+ * it with generated prose before the person asked would put words in their
+ * mouth. The assist endpoint drafts it on request instead.
  */
 export function seedFromProfile(p: SeedProfile): ResumeContent {
   const wh = Array.isArray(p.workHistory) ? p.workHistory : [];
@@ -224,7 +231,7 @@ export function seedFromProfile(p: SeedProfile): ResumeContent {
     summary: "",
     experience: wh.map((w) => {
       const x = (w ?? {}) as Record<string, unknown>;
-      return { title: x.title ?? "", company: x.company ?? "", years: x.years ?? "", bullets: [] };
+      return { title: x.title ?? "", company: x.company ?? "", years: x.years ?? "", bullets: Array.isArray(x.bullets) ? x.bullets : [] };
     }),
     education: edu.map((e) => {
       const x = (e ?? {}) as Record<string, unknown>;

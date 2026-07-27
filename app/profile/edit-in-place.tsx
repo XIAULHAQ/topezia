@@ -38,7 +38,7 @@ export type EditableProfile = {
   currentLocation: string | null;
   industries: string[];
   skills: EditSkill[];
-  workHistory: { title?: string; company?: string; years?: string }[];
+  workHistory: { title?: string; company?: string; years?: string; bullets?: string[] }[];
   education: { degree?: string; institution?: string; year?: string }[];
   certifications: string[];
   languages: EditLanguage[];
@@ -133,7 +133,11 @@ export default function EditInPlace({
     // server-side, which is the whole safety story of per-section editing.
     const patch: ProfilePatch = { ...draft };
     if (section === "intro") patch.industries = industriesText.split(",").map((s) => s.trim()).filter(Boolean);
-    if (section === "experience") patch.workHistory = (draft.workHistory ?? []).filter((w) => w.title || w.company);
+    if (section === "experience") {
+      patch.workHistory = (draft.workHistory ?? [])
+        .filter((w) => w.title || w.company)
+        .map((w) => ({ ...w, bullets: (w.bullets ?? []).map((b) => b.trim()).filter(Boolean) }));
+    }
     if (section === "education") patch.education = (draft.education ?? []).filter((e) => e.degree || e.institution);
     if (section === "languages") patch.languages = (draft.languages ?? []).map((l) => ({ name: l.name.trim(), level: l.level?.trim() || undefined })).filter((l) => l.name);
     if (section === "eligibility") {
@@ -297,20 +301,42 @@ export default function EditInPlace({
 
   if (section === "experience") {
     const rows = draft.workHistory ?? [];
+    const upRow = (i: number, patch: Partial<EditableProfile["workHistory"][number]>) =>
+      set("workHistory", rows.map((x, j) => (j === i ? { ...x, ...patch } : x)));
     body = (
       <>
         {rows.length === 0 && <div style={S.hint}>Nothing yet — add your roles so your matches reflect them.</div>}
-        {rows.map((w, i) => (
-          <div key={i} style={S.histRow}>
-            <input style={S.wide} placeholder="Job title" value={w.title ?? ""} onChange={(e) => set("workHistory", rows.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))} />
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <input style={S.grow} placeholder="Company" value={w.company ?? ""} onChange={(e) => set("workHistory", rows.map((x, j) => (j === i ? { ...x, company: e.target.value } : x)))} />
-              <input style={S.grow} placeholder="e.g. 2021–Present" value={w.years ?? ""} onChange={(e) => set("workHistory", rows.map((x, j) => (j === i ? { ...x, years: e.target.value } : x)))} />
-              <button type="button" aria-label="Remove" style={S.x} onClick={() => set("workHistory", rows.filter((_, j) => j !== i))}>×</button>
+        {rows.map((w, i) => {
+          const bullets = w.bullets ?? [];
+          return (
+            <div key={i} style={S.histRow}>
+              <input style={S.wide} placeholder="Job title" value={w.title ?? ""} onChange={(e) => upRow(i, { title: e.target.value })} />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <input style={S.grow} placeholder="Company" value={w.company ?? ""} onChange={(e) => upRow(i, { company: e.target.value })} />
+                <input style={S.grow} placeholder="e.g. 2021–Present" value={w.years ?? ""} onChange={(e) => upRow(i, { years: e.target.value })} />
+                <button type="button" aria-label="Remove" style={S.x} onClick={() => set("workHistory", rows.filter((_, j) => j !== i))}>×</button>
+              </div>
+              <div style={{ marginTop: 10 }}>
+                {bullets.map((b, bi) => (
+                  <div key={bi} style={{ display: "flex", gap: 8, marginTop: bi === 0 ? 0 : 6, alignItems: "center" }}>
+                    <span style={{ color: C.mut, flex: "none" }}>•</span>
+                    <input
+                      style={S.grow}
+                      placeholder="What you did / achieved in this role"
+                      value={b}
+                      onChange={(e) => upRow(i, { bullets: bullets.map((x, j) => (j === bi ? e.target.value.slice(0, 260) : x)) })}
+                    />
+                    <button type="button" aria-label="Remove bullet" style={S.x} onClick={() => upRow(i, { bullets: bullets.filter((_, j) => j !== bi) })}>×</button>
+                  </div>
+                ))}
+                {bullets.length < 6 && (
+                  <button type="button" style={{ ...S.ghostBtn, marginTop: 8 }} onClick={() => upRow(i, { bullets: [...bullets, ""] })}>+ Add bullet</button>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
-        <button type="button" style={S.addBtn} onClick={() => set("workHistory", [...rows, { title: "", company: "", years: "" }])}>+ Add experience</button>
+          );
+        })}
+        <button type="button" style={S.addBtn} onClick={() => set("workHistory", [...rows, { title: "", company: "", years: "", bullets: [] }])}>+ Add experience</button>
       </>
     );
   }

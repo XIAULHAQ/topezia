@@ -15,6 +15,7 @@ import { currentIdentity } from "@/lib/identity";
 import { sanitizeContent, seedFromProfile, asJson, type ResumeContent } from "@/lib/resume/doc";
 import { peekAssistStatus } from "@/lib/resume/assist-quota";
 import { loadProjects, loadQuotes } from "@/lib/resume/load";
+import { updateProfileFields } from "@/lib/matching/profile";
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com").replace(/\/$/, "");
 
@@ -63,6 +64,10 @@ export async function GET() {
     // Recommendations are never the doc's to keep: always the live set of
     // received endorsements, so nothing self-typed can survive in old rows.
     fill.recommendations = sanitizeContent({ recommendations: await loadQuotes(profile.id) }).recommendations;
+    // Same for experience: it's profile-owned now (title/company/years/
+    // bullets), so this loads whatever /profile or the last resume upload
+    // last wrote — not whatever happened to be in this doc's last save.
+    fill.experience = sanitizeContent({ experience: profile.workHistory }).experience;
     return NextResponse.json({ content: { ...content, ...fill }, saved: true, updatedAt: doc.updatedAt, assist, photo, publicUrl, qr });
   }
 
@@ -112,6 +117,14 @@ export async function PUT(req: NextRequest) {
       create: { profileId: profile.id, content: asJson(content) },
       update: { content: asJson(content) },
       select: { updatedAt: true },
+    });
+    // Experience is profile-owned (see lib/resume/doc.ts's module comment) —
+    // every resume save writes title/company/years/bullets straight back to
+    // Profile.workHistory, so /profile and a future resume upload see it too.
+    // Deliberately best-effort: a hiccup here must never fail the resume save
+    // the person actually asked for.
+    await updateProfileFields(userId, { workHistory: content.experience }).catch((err) => {
+      console.error("resume experience -> profile sync failed:", err);
     });
     return NextResponse.json({ ok: true, updatedAt: saved.updatedAt });
   } catch (err) {

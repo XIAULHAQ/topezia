@@ -35,7 +35,7 @@ export interface ParsedResume {
   currentLocation: string | null; // where they are now — not where they'd work
   industries: string[]; // sectors they've worked in
   skills: ParsedSkill[];
-  workHistory: { title: string; company: string; years?: string }[];
+  workHistory: { title: string; company: string; years?: string; bullets?: string[] }[];
   education: { degree: string; institution: string; year?: string }[];
   certifications: string[];
 }
@@ -68,7 +68,11 @@ const PARSE_PROMPT = `You parse a job seeker's resume into structured JSON. Retu
                                      //          e-commerce stores and designs graphics -> SEO/PPC/marketing strategy are CORE; web development,
                                      //          e-commerce and graphic design are SECONDARY. When in doubt, ask: would their last two job titles
                                      //          exist without this skill? If yes, it's SECONDARY.
-  "workHistory": [ { "title": string, "company": string, "years": string } ],  // most recent first, up to 5
+  "workHistory": [ { "title": string, "company": string, "years": string, "bullets": string[] } ],
+                                     // most recent first, up to 5 roles. bullets = up to 4 achievement/responsibility
+                                     // lines PER ROLE, taken near-verbatim from the resume's own wording under that
+                                     // role (trim boilerplate, keep the substance) — never invented or paraphrased
+                                     // into new claims. Empty array if the resume gives no bullets for that role.
   "education": [ { "degree": string, "institution": string, "year": string } ],
   "certifications": string[]
 }
@@ -192,7 +196,15 @@ function normalizeParsed(parsed: Partial<ParsedResume>): ParsedResume {
           : null, // never trust an unrecognized level into the DB enum
         tier: s.tier === "SECONDARY" ? ("SECONDARY" as const) : ("CORE" as const), // unknown -> CORE (safe default)
       })),
-    workHistory: (parsed.workHistory ?? []).filter((w) => w && w.title),
+    workHistory: (parsed.workHistory ?? [])
+      .filter((w) => w && w.title)
+      .map((w) => ({
+        ...w,
+        bullets: (Array.isArray(w.bullets) ? w.bullets : [])
+          .filter((b): b is string => typeof b === "string" && b.trim().length > 0)
+          .map((b) => b.trim().slice(0, 260))
+          .slice(0, 6),
+      })),
     education: (parsed.education ?? []).filter((e) => e && e.degree),
     certifications: (parsed.certifications ?? []).filter((c): c is string => typeof c === "string"),
   };

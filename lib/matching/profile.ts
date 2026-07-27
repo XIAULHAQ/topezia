@@ -238,8 +238,10 @@ export interface ProfileFieldEdit {
   skills?: { name: string; proficiency: import("@prisma/client").SkillProficiency | null; source?: SkillSource; tier?: SkillTier }[];
   // Resume-derived history the profile view/edit surfaces. Stored as-is; these
   // don't affect matching (the embedding is built from headline + skills), so
-  // editing them never triggers a re-embed.
-  workHistory?: { title?: string; company?: string; years?: string }[];
+  // editing them never triggers a re-embed. bullets is the single canonical
+  // copy shared by /profile, resume upload, and Resume Builder — whichever
+  // surface writes it, the others read the same value back.
+  workHistory?: { title?: string; company?: string; years?: string; bullets?: string[] }[];
   education?: { degree?: string; institution?: string; year?: string }[];
   certifications?: string[];
   languages?: { name: string; level?: string }[];

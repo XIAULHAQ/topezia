@@ -38,7 +38,7 @@ interface Profile {
   workAuthorization: string;
   tier: string;
   skills: Skill[];
-  workHistory: { title?: string; company?: string; years?: string }[];
+  workHistory: { title?: string; company?: string; years?: string; bullets?: string[] }[];
   education: { degree?: string; institution?: string; year?: string }[];
   certifications: string[];
   authorizedCountries: string[];

@@ -217,6 +217,15 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
                           </div>
                           {ex.company && <div style={{ fontSize: 12.5, color: C.c1, fontWeight: 600, marginTop: 3 }}>{ex.company}</div>}
                           {ex.years && <div style={{ fontSize: 11.5, color: C.mut, marginTop: 3 }}>{ex.years}</div>}
+                          {!!ex.bullets?.length && (
+                            <ul style={{ margin: "8px 0 0", padding: 0, listStyle: "none" }}>
+                              {ex.bullets.map((b, bi) => (
+                                <li key={bi} style={{ display: "flex", gap: 8, fontSize: 12.5, color: C.slate, lineHeight: 1.5, marginTop: bi === 0 ? 0 : 4 }}>
+                                  <span style={{ color: C.mut, flex: "none" }}>•</span>{b}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
                         </div>
                       </div>
                     ))}

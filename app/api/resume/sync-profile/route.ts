@@ -3,10 +3,12 @@
  *
  * The forward direction (profile → resume seed) has existed since the builder
  * shipped; this is the reverse: after polishing a resume, one click makes the
- * profile match it. Mapping is deliberately conservative:
+ * profile match it. workHistory (including bullets) is also synced on every
+ * PUT /api/resume save now — see lib/resume/doc.ts's module comment — so this
+ * button's workHistory write is largely a no-op in practice; it's kept here
+ * so a direct call to this endpoint still carries bullets, not a stale copy.
+ * Mapping is otherwise deliberately conservative:
  *
- *  - Bullets stay on the resume. The profile's workHistory is {title, company,
- *    years} — prose lives in the resume document, facts live on the profile.
  *  - The headline syncs ONLY when it resolves to a taxonomy Role. A free-text
  *    headline like "Video Editor & Motion Designer" resolving to null would
  *    WIPE the profile's role and mis-scope the person's whole feed — a resume
@@ -40,7 +42,7 @@ export async function POST(req: NextRequest) {
   const c = sanitizeContent((body as { content?: unknown }).content);
 
   const edit: ProfileFieldEdit = {
-    workHistory: c.experience.map((e) => ({ title: e.title, company: e.company, years: e.years })),
+    workHistory: c.experience.map((e) => ({ title: e.title, company: e.company, years: e.years, bullets: e.bullets })),
     education: c.education.map((e) => ({ degree: e.degree, institution: e.institution, year: e.year })),
     certifications: c.certifications,
     languages: c.languages.map((l) => ({ name: l.name, level: l.level || undefined })),
