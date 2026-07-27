@@ -83,7 +83,6 @@ export default function ProfileEditor() {
     return () => clearTimeout(t);
   }, [reup]);
   const [industriesText, setIndustriesText] = useState("");
-  const [locationsText, setLocationsText] = useState("");
   const [insights, setInsights] = useState<Insights | null>(null);
   const [roleGroups, setRoleGroups] = useState<{ field: string; roles: string[] }[]>([]);
   // Role gate: people pick their field/role in a popup before they reach the
@@ -118,7 +117,6 @@ export default function ProfileEditor() {
         setP(data.profile);
         setRoleGroups(data.roleGroups || []);
         setIndustriesText((data.profile.industries || []).join(", "));
-        setLocationsText((data.profile.locations || []).join(", "));
         // No role yet → gate the screen with the role popup (only if we have a
         // taxonomy to offer, so we never trap someone with an empty list).
         if (!data.profile.headline && (data.roleGroups?.length ?? 0) > 0) {
@@ -185,7 +183,7 @@ export default function ProfileEditor() {
           industries: industriesText.split(",").map((s) => s.trim()).filter(Boolean),
           employmentTypes: p.employmentTypes,
           remoteTypes: p.remoteTypes,
-          locations: locationsText.split(",").map((s) => s.trim()).filter(Boolean),
+          locations: p.locations,
           salaryFloor: p.salaryFloor,
           salaryTarget: p.salaryTarget,
           salaryPeriod: p.salaryPeriod ?? "YEAR",
@@ -378,9 +376,6 @@ export default function ProfileEditor() {
           <div style={S.chips}>
             {REMOTE.map((r) => <button key={r.label} style={remoteOn(r.values) ? S.pillOn : S.pillOff} onClick={() => toggleRemote(r.values)}>{r.label}</button>)}
           </div>
-          <div style={S.qLabel}>Where you'd consider working</div>
-          <input style={S.wide} value={locationsText} placeholder="Austin, Denver, anywhere in California" onChange={(e) => { setLocationsText(e.target.value); setSaved(false); }} />
-          <div style={S.hint}>Shown on your public profile as a stated preference — it doesn&apos;t filter your feed. &quot;Where you can work&quot; above is what does that.</div>
 
           <div style={S.grid}>
             <div>
