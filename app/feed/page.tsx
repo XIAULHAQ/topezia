@@ -337,7 +337,15 @@ export default function FeedPage() {
                         {m.kind === "PROJECT" && <span style={S.projTag}>PROJECT</span>}
                         {isNew && <span style={S.newTag}>NEW</span>}
                       </div>
-                      <div style={{ fontSize: 12.5, color: C.slate, fontWeight: 600, marginTop: 4 }}>{m.company}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 4, flexWrap: "wrap" }}>
+                        <div style={{ fontSize: 12.5, color: C.slate, fontWeight: 600 }}>{m.company}</div>
+                        {m.geoNote && (
+                          <span style={S.geoTag} title={m.geoNote.text}>
+                            <Icon name="globe" size={10} />
+                            {m.geoNote.label}
+                          </span>
+                        )}
+                      </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginTop: 8, fontSize: 11.5, color: C.mut }}>
                         <span style={S.metaItem}><Icon name="pin" size={13} />{placeLabel(m)}</span>
                         <span style={S.metaItem}><Icon name="clock" size={13} />{label(m.employmentType)}</span>
@@ -363,15 +371,6 @@ export default function FeedPage() {
                       </div>
                     </div>
                   </div>
-                  {/* Honest geographic caveat — sponsorship needed, or a
-                      country-scoped remote role you'd have to live in. Shown
-                      on the card so nobody finds out at the rejection email. */}
-                  {m.geoNote && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 18px", background: "#FFF7ED", borderTop: "1px solid #FED7AA", color: "#9A3412", fontSize: 11.5, lineHeight: 1.45 }} title={m.geoNote.text}>
-                      <Icon name="globe" size={13} />
-                      <span>{m.geoNote.text}</span>
-                    </div>
-                  )}
                   {(m.whyLine || m.pending) && (
                     <div style={S.cardFoot}>
                       <Icon name="spark" size={14} color={C.c1} />
@@ -492,6 +491,12 @@ const S: Record<string, CSSProperties> = {
   topRibbon: { position: "absolute", top: 0, left: 0, background: GRAD, color: "#fff", fontSize: 10, fontWeight: 700, letterSpacing: ".5px", padding: "4px 12px", borderRadius: "0 0 10px 0" },
   logo: { width: 48, height: 48, borderRadius: 13, color: "#fff", display: "grid", placeItems: "center", fontSize: 17, fontWeight: 800, flex: "none" },
   newTag: { background: "#EEF2FF", color: "#4F46E5", fontSize: 10, fontWeight: 700, borderRadius: 999, padding: "2px 9px" },
+  // The honest geographic caveat — sponsorship needed, or a country-scoped
+  // remote role you'd have to live in — as a capsule next to the company
+  // name rather than a full-width strip. Still shown on the card itself, so
+  // nobody finds out only at the rejection email; the full sentence (m.geoNote.text)
+  // is one hover away via the title attribute, not lost by compacting it.
+  geoTag: { display: "inline-flex", alignItems: "center", gap: 3, background: "#FFF7ED", color: "#9A3412", border: "1px solid #FED7AA", fontSize: 10, fontWeight: 700, borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" },
   projTag: { background: "#F5F3FF", color: "#7C3AED", border: "1px solid #DDD6FE", fontSize: 10, fontWeight: 700, borderRadius: 999, padding: "2px 9px" },
   metaItem: { display: "inline-flex", alignItems: "center", gap: 5 },
   tagHave: { background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", borderRadius: 7, padding: "3px 10px", fontSize: 10.5, fontWeight: 600 },

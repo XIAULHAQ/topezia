@@ -498,7 +498,7 @@ export default function ProfileView() {
           )}
 
           {showEdu && (
-            <div className="pv-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
+            <div className="pv-2col" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 22 }}>
               <Card>
                 <SectionHead icon="grad" title="Education" action={<Acts><PubToggle hidden={hiddenHas("education")} onClick={() => toggleSection("education")} /><EditPencil onClick={() => setEditing("education")} label="Edit education" /></Acts>} />
                 {p.education.length > 0 ? p.education.map((e, i) => (
@@ -539,7 +539,7 @@ export default function ProfileView() {
           {showSkillsTab && (
             <Card>
               <SectionHead icon="gauge" title="Core skills" action={<Acts><PubToggle hidden={hiddenHas("skills")} onClick={() => toggleSection("skills")} /><EditPencil onClick={() => setEditing("skills")} label="Edit skills" /></Acts>} />
-              <div className="pv-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 28px" }}>
+              <div className="pv-2col" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: "16px 28px" }}>
                 {p.skills.filter((s) => s.tier !== "SECONDARY").map((s) => (
                   <div key={s.name}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600, marginBottom: 7 }}><span>{s.name}</span><span style={{ color: C.c1 }}>{s.proficiency ? label(s.proficiency) : "—"}</span></div>
