@@ -46,15 +46,17 @@ async function main() {
   // sponsorship-needing person's feed, and nothing from an authorised one's.
   const authorised = workContext({ country: "PK", authorizedCountries: ["US"], relocateCountries: [] });
   const needsSponsor = workContext({ country: "PK", authorizedCountries: [], relocateCountries: ["US"] });
+  const anywhere = workContext({ country: "PK", authorizedCountries: [], relocateCountries: [], relocateAnywhere: true });
   const countFor = async (ctx: ReturnType<typeof workContext>) => {
     const [{ n }] = await prisma.$queryRawUnsafe<{ n: number }[]>(
-      `SELECT COUNT(*)::int AS n FROM "Job" j WHERE j.status = 'LIVE' AND j.country = 'US' AND ${eligibilitySql({ targets: 1, regions: 2, sponsorNeeded: 3, rx: 4 })}`,
+      `SELECT COUNT(*)::int AS n FROM "Job" j WHERE j.status = 'LIVE' AND j.country = 'US' AND ${eligibilitySql({ targets: 1, regions: 2, sponsorNeeded: 3, rx: 4, anywhere: 5, authorized: 6 })}`,
       ...eligibilityParams(ctx)
     );
     return n;
   };
-  const [a, b] = [await countFor(authorised), await countFor(needsSponsor)];
-  console.log(`\nUS postings visible — authorised: ${a}, needs sponsorship: ${b}, hidden by explicit refusal: ${a - b} (expected ${refusing})`);
+  const [a, b, c] = [await countFor(authorised), await countFor(needsSponsor), await countFor(anywhere)];
+  console.log(`\nUS postings visible — authorised: ${a}, needs sponsorship: ${b}, relocate anywhere: ${c}, hidden by explicit refusal: ${a - b} (expected ${refusing})`);
+  console.log(`relocate-anywhere should equal needs-sponsorship for a single country: ${b === c ? "match" : `MISMATCH (${b} vs ${c})`}`);
 
   // ── 2. Scenarios ──
   const scenarios = [
@@ -63,13 +65,15 @@ async function main() {
     { name: "Pakistani wanting US sponsorship", country: "PK", authorizedCountries: ["PK"], relocateCountries: ["US"] },
     { name: "Dual UK/US national in London", country: "GB", authorizedCountries: ["GB", "US"], relocateCountries: [] },
     { name: "Never answered (falls back to location)", country: "PK", authorizedCountries: [], relocateCountries: [] },
+    { name: "Pakistani, relocate ANYWHERE (new toggle)", country: "PK", authorizedCountries: [], relocateCountries: [], relocateAnywhere: true },
+    { name: "Pakistani, anywhere but PK-authorised", country: "PK", authorizedCountries: ["PK"], relocateCountries: [], relocateAnywhere: true },
   ];
 
   console.log(`\n── Eligible live jobs per scenario ──`);
   for (const s of scenarios) {
     const ctx = workContext(s);
     const params = eligibilityParams(ctx);
-    const sql = eligibilitySql({ targets: 1, regions: 2, sponsorNeeded: 3, rx: 4 });
+    const sql = eligibilitySql({ targets: 1, regions: 2, sponsorNeeded: 3, rx: 4, anywhere: 5, authorized: 6 });
     const [{ n }] = await prisma.$queryRawUnsafe<{ n: number }[]>(
       `SELECT COUNT(*)::int AS n FROM "Job" j WHERE j.status = 'LIVE' AND j.kind = 'JOB' AND ${sql}`,
       ...params
@@ -81,11 +85,14 @@ async function main() {
   console.log(`\n── Honest labels ──`);
   const pkToUs = workContext({ country: "PK", authorizedCountries: ["PK"], relocateCountries: ["US"] });
   const usAbroad = workContext({ country: "PK", authorizedCountries: ["US"], relocateCountries: [] });
+  const anywherePk = workContext({ country: "PK", authorizedCountries: ["PK"], relocateCountries: [], relocateAnywhere: true });
   const cases: [string, ReturnType<typeof workContext>, { country: string | null; remoteScope: string | null }][] = [
     ["US onsite job / needs sponsorship", pkToUs, { country: "US", remoteScope: null }],
     ["Remote-US job / US citizen abroad", usAbroad, { country: null, remoteScope: "US" }],
     ["Global remote / US citizen abroad", usAbroad, { country: null, remoteScope: "GLOBAL" }],
     ["Local PK job / Pakistani", workContext({ country: "PK", authorizedCountries: ["PK"], relocateCountries: [] }), { country: "PK", remoteScope: null }],
+    ["DE job / Pakistani, relocate anywhere", anywherePk, { country: "DE", remoteScope: null }],
+    ["PK job (home, authorised) / relocate anywhere", anywherePk, { country: "PK", remoteScope: null }],
   ];
   for (const [label, ctx, job] of cases) {
     const note = geoNote(job, ctx);

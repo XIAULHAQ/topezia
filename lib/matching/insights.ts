@@ -265,7 +265,7 @@ async function computeProfileInsights(profileId: string): Promise<ProfileInsight
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
     select: {
-      country: true, authorizedCountries: true, relocateCountries: true,
+      country: true, authorizedCountries: true, relocateCountries: true, relocateAnywhere: true,
       headlineRoleId: true, seniority: true,
       skills: { select: { skillId: true, proficiency: true, skill: { select: { name: true } } } },
     },

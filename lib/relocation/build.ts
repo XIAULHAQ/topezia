@@ -43,6 +43,7 @@ export interface RelocationProfile {
   country: string | null;
   authorizedCountries?: string[] | null;
   relocateCountries?: string[] | null;
+  relocateAnywhere?: boolean | null;
 }
 
 export interface RelocationSalary {

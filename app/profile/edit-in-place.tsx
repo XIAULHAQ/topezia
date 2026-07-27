@@ -45,6 +45,8 @@ export type EditableProfile = {
   /** Where they may work without sponsorship, and where they'd move to. */
   authorizedCountries: string[];
   relocateCountries: string[];
+  /** Skip the country picker: needs sponsorship anywhere they aren't authorized. */
+  relocateAnywhere: boolean;
   /** Public links shown in the hero — null when unset. No email here:
    *  contact addresses are deliberately not a public-profile field. */
   linkedinUrl: string | null;
@@ -99,6 +101,7 @@ export default function EditInPlace({
         return {
           authorizedCountries: [...(profile.authorizedCountries ?? [])],
           relocateCountries: [...(profile.relocateCountries ?? [])],
+          relocateAnywhere: profile.relocateAnywhere ?? false,
         };
       case "links":
         return {
@@ -135,7 +138,11 @@ export default function EditInPlace({
     if (section === "languages") patch.languages = (draft.languages ?? []).map((l) => ({ name: l.name.trim(), level: l.level?.trim() || undefined })).filter((l) => l.name);
     if (section === "eligibility") {
       patch.authorizedCountries = draft.authorizedCountries ?? [];
-      patch.relocateCountries = draft.relocateCountries ?? [];
+      patch.relocateAnywhere = draft.relocateAnywhere ?? false;
+      // Explicit even when the toggle is on and the picker was hidden — the
+      // server also clears this, but the patch body is what onSaved() merges
+      // into the page's optimistic state, so it has to say so too.
+      patch.relocateCountries = patch.relocateAnywhere ? [] : draft.relocateCountries ?? [];
     }
     if (section === "links") {
       // Empty string → null (a cleared field removes the link). The server
@@ -358,6 +365,7 @@ export default function EditInPlace({
   if (section === "eligibility") {
     const authorized = draft.authorizedCountries ?? [];
     const relocate = draft.relocateCountries ?? [];
+    const anywhere = draft.relocateAnywhere ?? false;
     body = (
       <>
         <div style={S.hint}>
@@ -370,17 +378,41 @@ export default function EditInPlace({
           onChange={(v) => setDraft((d) => ({ ...d, authorizedCountries: v, relocateCountries: (d.relocateCountries ?? []).filter((c) => !v.includes(c)) }))}
         />
         <div style={{ height: 18 }} />
-        <CountryPicker
-          label="I'd move here for the right job"
-          hint="You'd need sponsorship. We'll show these jobs and hide the ones that say outright they don't sponsor."
-          selected={relocate}
-          exclude={authorized}
-          onChange={(v) => setDraft((d) => ({ ...d, relocateCountries: v }))}
-        />
-        {relocate.length > 0 && (
+
+        <button
+          type="button"
+          onClick={() => setDraft((d) => ({ ...d, relocateAnywhere: !anywhere, relocateCountries: !anywhere ? [] : d.relocateCountries }))}
+          style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", border: `1px solid ${anywhere ? C.c1 : C.line}`, background: anywhere ? "#EEF2FF" : "#fff", borderRadius: 10, padding: "10px 12px", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}
+        >
+          <span style={{ flex: "none", width: 34, height: 20, borderRadius: 999, background: anywhere ? C.c1 : "#CBD5E1", position: "relative", transition: "background .15s" }}>
+            <span style={{ position: "absolute", top: 2, left: anywhere ? 16 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
+          </span>
+          <span style={{ flex: 1 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: C.ink }}>I&apos;d relocate anywhere for the right job</div>
+            <div style={{ fontSize: 12, color: C.mut, marginTop: 2, lineHeight: 1.4 }}>Skip picking countries one at a time — needs sponsorship everywhere you aren&apos;t already authorized.</div>
+          </span>
+        </button>
+
+        {anywhere ? (
           <div style={{ ...S.hint, background: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412", borderRadius: 10, padding: "9px 12px", marginTop: 14 }}>
             Most postings never mention sponsorship at all. We can only remove the ones that explicitly refuse it — the rest are shown with an honest &quot;not stated&quot; note, not a promise.
           </div>
+        ) : (
+          <>
+            <div style={{ height: 18 }} />
+            <CountryPicker
+              label="I'd move here for the right job"
+              hint="You'd need sponsorship. We'll show these jobs and hide the ones that say outright they don't sponsor."
+              selected={relocate}
+              exclude={authorized}
+              onChange={(v) => setDraft((d) => ({ ...d, relocateCountries: v }))}
+            />
+            {relocate.length > 0 && (
+              <div style={{ ...S.hint, background: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412", borderRadius: 10, padding: "9px 12px", marginTop: 14 }}>
+                Most postings never mention sponsorship at all. We can only remove the ones that explicitly refuse it — the rest are shown with an honest &quot;not stated&quot; note, not a promise.
+              </div>
+            )}
+          </>
         )}
       </>
     );

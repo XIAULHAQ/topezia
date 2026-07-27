@@ -231,6 +231,10 @@ export interface ProfileFieldEdit {
   // uppercase ISO-2 on write; a stray "us" would silently match nothing.
   authorizedCountries?: string[];
   relocateCountries?: string[];
+  // Skip the picker: needs sponsorship anywhere they aren't authorized.
+  // Writing this true also clears relocateCountries server-side — see
+  // updateProfileFields — so a stale finite list never sits alongside it.
+  relocateAnywhere?: boolean;
   skills?: { name: string; proficiency: import("@prisma/client").SkillProficiency | null; source?: SkillSource; tier?: SkillTier }[];
   // Resume-derived history the profile view/edit surfaces. Stored as-is; these
   // don't affect matching (the embedding is built from headline + skills), so
@@ -370,6 +374,13 @@ export async function updateProfileFields(
     const authorized = data.authorizedCountries ?? (edit.authorizedCountries ? isoList(edit.authorizedCountries) : null);
     const relocate = isoList(edit.relocateCountries);
     data.relocateCountries = authorized ? relocate.filter((c) => !(authorized as string[]).includes(c)) : relocate;
+  }
+  if (edit.relocateAnywhere !== undefined) {
+    data.relocateAnywhere = Boolean(edit.relocateAnywhere);
+    // Superseded — a finite list sitting alongside "anywhere" would be
+    // stale and misleading. Placed after the block above so it wins if a
+    // client ever sends both keys in the same patch.
+    if (edit.relocateAnywhere) data.relocateCountries = [];
   }
   if (edit.workHistory !== undefined) data.workHistory = edit.workHistory as unknown as Prisma.InputJsonValue;
   if (edit.education !== undefined) data.education = edit.education as unknown as Prisma.InputJsonValue;

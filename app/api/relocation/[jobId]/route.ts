@@ -23,7 +23,7 @@ export async function GET(_req: NextRequest, { params }: { params: { jobId: stri
 
   const profile = await prisma.profile.findUnique({
     where: { userId },
-    select: { country: true, authorizedCountries: true, relocateCountries: true },
+    select: { country: true, authorizedCountries: true, relocateCountries: true, relocateAnywhere: true },
   });
   if (!profile) return NextResponse.json({ show: false });
 

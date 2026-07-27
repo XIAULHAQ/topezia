@@ -31,6 +31,7 @@ interface Profile {
   languages: { name: string; level?: string }[];
   authorizedCountries: string[];
   relocateCountries: string[];
+  relocateAnywhere: boolean;
   linkedinUrl: string | null;
   githubUrl: string | null;
   websiteUrl: string | null;
@@ -626,7 +627,7 @@ export default function ProfileView() {
               gets a card of its own rather than hiding inside preferences. */}
           <Card>
             <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}><h2 style={S.railH}>Where you can work</h2><EditPencil onClick={() => setEditing("eligibility")} label="Edit where you can work" /></div>
-            {(p.authorizedCountries ?? []).length > 0 || (p.relocateCountries ?? []).length > 0 ? (
+            {(p.authorizedCountries ?? []).length > 0 || (p.relocateCountries ?? []).length > 0 || p.relocateAnywhere ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {(p.authorizedCountries ?? []).length > 0 && (
                   <div>
@@ -638,7 +639,12 @@ export default function ProfileView() {
                     </div>
                   </div>
                 )}
-                {(p.relocateCountries ?? []).length > 0 && (
+                {p.relocateAnywhere ? (
+                  <div>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: C.mut, marginBottom: 5 }}>Would relocate — needs sponsorship</div>
+                    <span style={{ background: "#FFF7ED", color: "#9A3412", border: "1px solid #FED7AA", borderRadius: 999, padding: "3px 9px", fontSize: 11.5, fontWeight: 600 }}>Anywhere</span>
+                  </div>
+                ) : (p.relocateCountries ?? []).length > 0 && (
                   <div>
                     <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: C.mut, marginBottom: 5 }}>Would relocate — needs sponsorship</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>

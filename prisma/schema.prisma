@@ -379,6 +379,10 @@ model Profile {
   // Jobs here are shown but honestly labelled, and postings whose text
   // explicitly refuses sponsorship are filtered out — see lib/matching/eligibility.ts.
   relocateCountries   String[]
+  // Skip the country picker entirely: needs sponsorship ANYWHERE they aren't
+  // already authorized. Mutually exclusive with relocateCountries in practice
+  // (writing this true clears that list) — see lib/matching/eligibility.ts.
+  relocateAnywhere Boolean @default(false)
   verticalsOptIn   String[] // vertical slugs
   tier             MemberTier @default(FREE) // paywall stub — see MemberTier
   // Stripe billing: one customer per profile, created on first checkout.

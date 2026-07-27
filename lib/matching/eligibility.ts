@@ -36,6 +36,14 @@ export interface WorkContext {
   authorized: string[];
   /** Where they'd move for the right job, needing sponsorship (ISO-2). */
   relocate: string[];
+  /**
+   * Skip the country picker entirely: needs sponsorship ANYWHERE they aren't
+   * already authorized. Not just "a very long relocate list" — see
+   * targetCountries() and needsSponsorshipFor() for why that distinction
+   * matters (an enumerated list can never cover a country the picker itself
+   * doesn't know about, e.g. Job.country = 'BY').
+   */
+  relocateAnywhere: boolean;
 }
 
 export interface GeoJob {
@@ -50,11 +58,13 @@ export function workContext(p: {
   country: string | null;
   authorizedCountries?: string[] | null;
   relocateCountries?: string[] | null;
+  relocateAnywhere?: boolean | null;
 }): WorkContext {
   return {
     located: p.country ? p.country.toUpperCase() : null,
     authorized: up(p.authorizedCountries ?? []),
     relocate: up(p.relocateCountries ?? []),
+    relocateAnywhere: Boolean(p.relocateAnywhere),
   };
 }
 
@@ -64,6 +74,12 @@ export function workContext(p: {
  * profiles see no change until they answer.
  */
 export function targetCountries(ctx: WorkContext): string[] {
+  // "Anywhere" reuses the SAME fast path as "we know nothing" (empty array),
+  // not a materialized list of every country — see eligibilitySql()'s
+  // cardinality($1)=0 branch. An enumerated list would silently exclude any
+  // country the picker doesn't itself list (e.g. Job.country = 'BY'), which
+  // is exactly backwards for someone who said "anywhere."
+  if (ctx.relocateAnywhere) return [];
   const chosen = [...new Set([...ctx.authorized, ...ctx.relocate])];
   if (chosen.length) return chosen;
   return ctx.located ? [ctx.located] : [];
@@ -72,6 +88,16 @@ export function targetCountries(ctx: WorkContext): string[] {
 /** Targets where they would need sponsorship — i.e. relocation-only targets. */
 export function sponsorshipCountries(ctx: WorkContext): string[] {
   return ctx.relocate.filter((c) => !ctx.authorized.includes(c));
+}
+
+/**
+ * Would THIS specific place require sponsorship for this person? The single
+ * check eligibleIn(), geoNote(), and eligibilitySql() all derive from, so
+ * "anywhere" only has to be reasoned about once.
+ */
+export function needsSponsorshipFor(place: string, ctx: WorkContext): boolean {
+  if (ctx.authorized.includes(place)) return false;
+  return ctx.relocateAnywhere || ctx.relocate.includes(place);
 }
 
 /** Region codes (EMEA, APAC…) that cover ANY of the given countries. */
@@ -111,10 +137,16 @@ export function refusesSponsorship(text: string | null | undefined): boolean {
  * The SQL half of the same rule, as a composable clause.
  *
  * Params, by the indices the caller passes: targets text[], regions text[],
- * sponsorship-needed text[], refusal regex text. An empty target array filters
- * nothing — we don't know enough to hide anything.
+ * sponsorship-needed text[], refusal regex text, relocateAnywhere boolean,
+ * authorized text[]. An empty target array filters nothing — we don't know
+ * enough to hide anything.
+ *
+ * The refusal clause's second OR arm is needsSponsorshipFor()'s "anywhere"
+ * case, expressed in SQL: with no sponsorNeeded LIST to check membership in,
+ * it hides on refusal whenever the place simply ISN'T one of the (typically
+ * short) authorized countries.
  */
-export function eligibilitySql(p: { targets: number; regions: number; sponsorNeeded: number; rx: number }): string {
+export function eligibilitySql(p: { targets: number; regions: number; sponsorNeeded: number; rx: number; anywhere: number; authorized: number }): string {
   return `(
       cardinality($${p.targets}::text[]) = 0
       OR j."remoteScope" = 'GLOBAL'
@@ -124,15 +156,22 @@ export function eligibilitySql(p: { targets: number; regions: number; sponsorNee
       OR (j.country IS NULL AND j."remoteScope" IS NULL)
     )
     AND NOT (
-      COALESCE(j.country, j."remoteScope") = ANY($${p.sponsorNeeded}::text[])
+      (
+        COALESCE(j.country, j."remoteScope") = ANY($${p.sponsorNeeded}::text[])
+        OR (
+          $${p.anywhere}::boolean
+          AND COALESCE(j.country, j."remoteScope") IS NOT NULL
+          AND NOT (COALESCE(j.country, j."remoteScope") = ANY($${p.authorized}::text[]))
+        )
+      )
       AND j."descriptionRaw" ~* $${p.rx}
     )`;
 }
 
 /** The parameter values for eligibilitySql, in the same order. */
-export function eligibilityParams(ctx: WorkContext): [string[], string[], string[], string] {
+export function eligibilityParams(ctx: WorkContext): [string[], string[], string[], string, boolean, string[]] {
   const targets = targetCountries(ctx);
-  return [targets, regionsCovering(targets), sponsorshipCountries(ctx), NO_SPONSORSHIP_RX];
+  return [targets, regionsCovering(targets), sponsorshipCountries(ctx), NO_SPONSORSHIP_RX, ctx.relocateAnywhere, ctx.authorized];
 }
 
 /**
@@ -146,12 +185,15 @@ export function eligibilityParams(ctx: WorkContext): [string[], string[], string
  */
 export function eligibleIn(job: GeoJob, ctx: WorkContext): boolean {
   const targets = targetCountries(ctx);
-  if (!targets.length) return true; // we know nothing — filter nothing
-
+  // Checked BEFORE the "targets is empty" fast return below: targets is also
+  // empty under relocateAnywhere, and that case must still honor an explicit
+  // refusal — it's the one case "we don't know enough to filter" doesn't
+  // actually apply to.
   const place = job.country ?? job.remoteScope;
-  if (place && sponsorshipCountries(ctx).includes(place) && refusesSponsorship(job.descriptionRaw)) {
+  if (place && needsSponsorshipFor(place, ctx) && refusesSponsorship(job.descriptionRaw)) {
     return false; // they said no, in writing
   }
+  if (!targets.length) return true; // we know nothing, or they'd relocate anywhere — nothing else to filter on
 
   if (job.remoteScope === "GLOBAL") return true;
   if (job.country && targets.includes(job.country)) return true;
@@ -184,7 +226,7 @@ export interface GeoNote {
  */
 export function geoNote(job: GeoJob, ctx: WorkContext): GeoNote | null {
   const place = job.country ?? (job.remoteScope !== "GLOBAL" ? job.remoteScope : null);
-  if (place && sponsorshipCountries(ctx).includes(place)) {
+  if (place && needsSponsorshipFor(place, ctx)) {
     return {
       kind: "sponsorship",
       label: "Sponsorship needed",

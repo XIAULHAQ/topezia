@@ -113,6 +113,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       workAuthorization: true,
       authorizedCountries: true,
       relocateCountries: true,
+      relocateAnywhere: true,
       headlineRoleId: true,
       matchVersion: true,
       skills: { select: { proficiency: true, tier: true, skill: { select: { name: true } } } },
@@ -148,8 +149,8 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
   // the JS filter below are generated from that one module, so they cannot
   // drift apart the way the old hand-synced pair could.
   const ctx = workContext(profile);
-  const [elTargets, elRegions, elSponsor, elRx] = eligibilityParams(ctx);
-  const eligSql = eligibilitySql({ targets: 2, regions: 3, sponsorNeeded: 4, rx: 5 });
+  const [elTargets, elRegions, elSponsor, elRx, elAnywhere, elAuthorized] = eligibilityParams(ctx);
+  const eligSql = eligibilitySql({ targets: 2, regions: 3, sponsorNeeded: 4, rx: 5, anywhere: 6, authorized: 7 });
 
   // Literals from the typed options, never user input — safe to inline. The
   // routes whitelist the query-param values before they reach MatchOptions.
@@ -175,7 +176,7 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
        AND ${eligSql}
      ORDER BY j.embedding <=> p.embedding
      LIMIT 100`,
-    profileId, elTargets, elRegions, elSponsor, elRx
+    profileId, elTargets, elRegions, elSponsor, elRx, elAnywhere, elAuthorized
   );
 
   // Guarantee the user's field is represented. The general retrieval ranks by
@@ -192,10 +193,10 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
        CROSS JOIN "Profile" p
        WHERE p.id = $1 AND p.embedding IS NOT NULL AND j.status = 'LIVE' AND j.embedding IS NOT NULL
          ${kindSql}
-         AND v.slug = $6 AND ${eligSql}
+         AND v.slug = $8 AND ${eligSql}
        ORDER BY j.embedding <=> p.embedding
        LIMIT 40`,
-      profileId, elTargets, elRegions, elSponsor, elRx, fieldVerticalSlug
+      profileId, elTargets, elRegions, elSponsor, elRx, elAnywhere, elAuthorized, fieldVerticalSlug
     );
     const seen = new Set(candidates.map((c) => c.id));
     for (const c of fieldCandidates) if (!seen.has(c.id)) candidates.push(c);
