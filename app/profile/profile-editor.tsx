@@ -41,11 +41,13 @@ interface Profile {
   workHistory: { title?: string; company?: string; years?: string }[];
   education: { degree?: string; institution?: string; year?: string }[];
   certifications: string[];
+  authorizedCountries: string[];
+  relocateCountries: string[];
+  relocateAnywhere: boolean;
 }
 
 
 const SENIORITIES = ["INTERN", "JUNIOR", "MID", "SENIOR", "LEAD", "EXEC", "NOT_APPLICABLE"];
-const PROFICIENCIES = ["FAMILIAR", "PROFICIENT", "ADVANCED", "EXPERT"];
 const WORK_TYPES = ["FULL_TIME", "PART_TIME", "CONTRACT", "HOURLY", "TEMPORARY"];
 const REMOTE = [
   { label: "In office", values: ["ONSITE"] },
@@ -65,17 +67,12 @@ function Badge({ kind }: { kind: "told" | "inferred" | "guess" | "added" }) {
   return <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: map.bg, color: map.fg, whiteSpace: "nowrap" }}>{map.t}</span>;
 }
 
-const skillBadge = (s: Skill): "told" | "guess" | "added" =>
-  s.source === "USER_ADDED" ? "added" : s.confidence < 0.8 ? "guess" : "told";
-
 export default function ProfileEditor() {
   const router = useRouter();
   const [p, setP] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [newSkill, setNewSkill] = useState("");
-  const [newCert, setNewCert] = useState("");
   const [reup, setReup] = useState<"idle" | "working">("idle");
   const [reupErr, setReupErr] = useState<string | null>(null);
   const [reupLong, setReupLong] = useState(false); // >7s — likely a scanned PDF
@@ -198,6 +195,9 @@ export default function ProfileEditor() {
           workHistory: p.workHistory.filter((w) => w.title || w.company),
           education: p.education.filter((e) => e.degree || e.institution),
           certifications: p.certifications,
+          authorizedCountries: p.authorizedCountries,
+          relocateCountries: p.relocateAnywhere ? [] : p.relocateCountries,
+          relocateAnywhere: p.relocateAnywhere,
         }),
       });
       if (!res.ok) throw new Error("save");
@@ -208,24 +208,6 @@ export default function ProfileEditor() {
     } finally {
       setSaving(false);
     }
-  }
-
-  /** Read an image the user picked, downscale it client-side, store as data URI. */
-  function uploadPhoto(file: File) {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const max = 480;
-      const scale = Math.min(1, max / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(img.width * scale));
-      canvas.height = Math.max(1, Math.round(img.height * scale));
-      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
-      set("photoUrl", canvas.toDataURL("image/jpeg", 0.85));
-      URL.revokeObjectURL(url);
-    };
-    img.onerror = () => { setError("Couldn't read that image — try a JPG or PNG."); URL.revokeObjectURL(url); };
-    img.src = url;
   }
 
   /**
@@ -273,26 +255,6 @@ export default function ProfileEditor() {
   if (!p) return <div style={S.wrap}><p style={{ color: MUTED }}>Loading your profile…</p></div>;
 
   const firstName = p.fullName?.trim().split(/\s+/)[0] || "there";
-
-  const upSkill = (name: string, patch: Partial<Skill>) => set("skills", p.skills.map((x) => (x.name === name ? { ...x, ...patch } : x)));
-  const skillRow = (s: Skill) => (
-    <div key={s.name} style={S.skillRow}>
-      <div style={{ flex: 1, fontSize: 14 }}>{s.name}</div>
-      <select style={S.skillSel} value={s.proficiency ?? ""} onChange={(e) => upSkill(s.name, { proficiency: e.target.value || null })}>
-        <option value="">level?</option>
-        {PROFICIENCIES.map((pr) => <option key={pr} value={pr}>{label(pr)}</option>)}
-      </select>
-      <button
-        style={S.tierBtn}
-        title={s.tier === "SECONDARY" ? "Move to core — this IS my line of work" : "Move to 'also knows' — I can do this, but it's not my main line"}
-        onClick={() => upSkill(s.name, { tier: s.tier === "SECONDARY" ? "CORE" : "SECONDARY" })}
-      >
-        {s.tier === "SECONDARY" ? "→ core" : "→ also"}
-      </button>
-      <Badge kind={skillBadge(s)} />
-      <button aria-label={`Remove ${s.name}`} style={S.x} onClick={() => set("skills", p.skills.filter((x) => x.name !== s.name))}>×</button>
-    </div>
-  );
 
   return (
     <div style={S.wrap}>
@@ -368,147 +330,42 @@ export default function ProfileEditor() {
         </section>
 
         <section style={S.card}>
-          <div style={S.cardLabel}>Profile photo</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            {p.photoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={p.photoUrl} alt="Profile" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", objectPosition: "center top", border: "1px solid #ececf2" }} />
-            ) : (
-              <div style={{ width: 72, height: 72, borderRadius: "50%", background: "#eef0ff", color: INDIGO, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 24 }}>
-                {initials(p.fullName)}
-              </div>
-            )}
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.5 }}>
-                {p.photoUrl ? "From your CV or your last upload. Replace it any time." : "No photo yet — upload one, or it'll be pulled from your next CV upload."}
-              </div>
-              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                <label style={{ ...S.addRow, marginTop: 0, cursor: "pointer", display: "inline-block" }}>
-                  <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadPhoto(f); e.target.value = ""; }} />
-                  {p.photoUrl ? "Replace photo" : "Upload photo"}
-                </label>
-                {p.photoUrl && (
-                  <button style={{ ...S.addRow, background: "#fff", border: "1px solid #d4d4d8", color: INK, marginTop: 0 }} onClick={() => set("photoUrl", null)}>Remove</button>
-                )}
-              </div>
-              <div style={{ ...S.hint, marginTop: 8 }}>Hit Save below to apply.</div>
-            </div>
+          <div style={S.cardLabel}>Where you can work</div>
+          <div style={{ ...S.hint, marginTop: 0 }}>
+            This is what actually scopes your job feed — it&apos;s the only thing on this page that filters which jobs you see.
           </div>
-        </section>
-
-        <section style={S.card}>
-          <div style={S.cardLabel}>Your field and role</div>
-          {!p.headline && (
-            <div style={S.inferNote}>
-              Pick your role so we scope your feed and roadmap to the right field — otherwise we have to guess, and skills like &quot;business development&quot; can pull you toward the wrong one.
-            </div>
+          <CountryPicker
+            label="I can work here without sponsorship"
+            hint="Citizenship, permanent residency, or a visa that already lets you work."
+            selected={p.authorizedCountries}
+            onChange={(v) => { set("authorizedCountries", v); set("relocateCountries", p.relocateCountries.filter((c) => !v.includes(c))); }}
+          />
+          <div style={{ height: 16 }} />
+          <button
+            type="button"
+            onClick={() => { set("relocateAnywhere", !p.relocateAnywhere); if (!p.relocateAnywhere) set("relocateCountries", []); }}
+            style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", border: `1px solid ${p.relocateAnywhere ? INDIGO : "#d4d4d8"}`, background: p.relocateAnywhere ? "#eef0ff" : "#fff", borderRadius: 10, padding: "10px 12px", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}
+          >
+            <span style={{ flex: "none", width: 34, height: 20, borderRadius: 999, background: p.relocateAnywhere ? INDIGO : "#CBD5E1", position: "relative", transition: "background .15s" }}>
+              <span style={{ position: "absolute", top: 2, left: p.relocateAnywhere ? 16 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
+            </span>
+            <span style={{ flex: 1 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>I&apos;d relocate anywhere for the right job</div>
+              <div style={{ fontSize: 12, color: MUTED, marginTop: 2, lineHeight: 1.4 }}>Skip picking countries one at a time — needs sponsorship everywhere you aren&apos;t already authorized.</div>
+            </span>
+          </button>
+          {!p.relocateAnywhere && (
+            <>
+              <div style={{ height: 16 }} />
+              <CountryPicker
+                label="I'd move here for the right job"
+                hint="You'd need sponsorship. We'll show these jobs and hide the ones that say outright they don't sponsor."
+                selected={p.relocateCountries}
+                exclude={p.authorizedCountries}
+                onChange={(v) => set("relocateCountries", v)}
+              />
+            </>
           )}
-          <div style={S.row}>
-            <select style={{ ...S.input, cursor: "pointer" }} value={p.headline ?? ""} onChange={(e) => set("headline", e.target.value || null)}>
-              <option value="">Choose your role…</option>
-              {roleGroups.map((g) => (
-                <optgroup key={g.field} label={g.field}>
-                  {g.roles.map((r) => <option key={r} value={r}>{r}</option>)}
-                </optgroup>
-              ))}
-              {p.headline && !roleGroups.some((g) => g.roles.includes(p.headline!)) && (
-                <option value={p.headline}>{p.headline} (from your resume)</option>
-              )}
-            </select>
-            <select style={S.select} value={p.seniority ?? "NOT_APPLICABLE"} onChange={(e) => set("seniority", e.target.value)}>
-              {SENIORITIES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
-            </select>
-          </div>
-          <div style={S.provRow}><Badge kind="inferred" /> seniority · you choose the role, so it&apos;s never a guess</div>
-
-          <div style={S.grid}>
-            <div>
-              <div style={S.qLabel}>Years of experience</div>
-              <input style={S.input} type="number" value={p.yearsExperience ?? ""} onChange={(e) => set("yearsExperience", e.target.value ? Number(e.target.value) : null)} />
-            </div>
-            <div>
-              <div style={S.qLabel}>Where you are <Badge kind="told" /></div>
-              <input style={S.input} value={p.currentLocation ?? ""} onChange={(e) => set("currentLocation", e.target.value)} />
-              {p.country && <div style={S.hint}>Feed scoped to {p.country}. Change your location to change it.</div>}
-            </div>
-          </div>
-
-          <div style={S.qLabel}>Industries <Badge kind="inferred" /></div>
-          <input style={S.wide} value={industriesText} placeholder="healthcare, b2b saas" onChange={(e) => { setIndustriesText(e.target.value); setSaved(false); }} />
-        </section>
-
-        <section style={S.card}>
-          <div style={S.cardLabel}>Core skills — your line of work</div>
-          <div style={{ ...S.hint, marginTop: 0, marginBottom: 12 }}>
-            What your roles were actually hired to do. Your matches, stats and roadmap lead with these.
-          </div>
-          <div style={S.skills}>
-            {p.skills.filter((s) => s.tier !== "SECONDARY").map((s) => skillRow(s))}
-            {p.skills.every((s) => s.tier === "SECONDARY") && <div style={S.hint}>No core skills yet — move some up from below, or add one.</div>}
-          </div>
-
-          <div style={{ ...S.cardLabel, marginTop: 22 }}>Also knows — secondary skills</div>
-          <div style={{ ...S.hint, marginTop: 0, marginBottom: 12 }}>
-            Real capabilities that aren&apos;t your main line (&quot;I also build websites&quot;). They still count in your favor — they just don&apos;t define your feed.
-          </div>
-          <div style={S.skills}>
-            {p.skills.filter((s) => s.tier === "SECONDARY").map((s) => skillRow(s))}
-            {p.skills.every((s) => s.tier !== "SECONDARY") && <div style={S.hint}>Nothing here — use &quot;→ also&quot; on a core skill to move it down.</div>}
-          </div>
-
-          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-            <input style={S.input} placeholder="Add a skill (added as core — move it after if it's an 'also')…" value={newSkill} onChange={(e) => setNewSkill(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && newSkill.trim()) {
-                  set("skills", [...p.skills, { name: newSkill.trim(), proficiency: null, confidence: 1, source: "USER_ADDED", tier: "CORE" }]);
-                  setNewSkill("");
-                }
-              }} />
-          </div>
-        </section>
-
-        <section style={S.card}>
-          <div style={S.cardLabel}>Experience <Badge kind="told" /></div>
-          {p.workHistory.length === 0 && <div style={S.hint}>Nothing yet — add your roles so your profile and matches reflect them.</div>}
-          {p.workHistory.map((w, i) => (
-            <div key={i} style={S.histRow}>
-              <input style={S.wide} placeholder="Job title" value={w.title ?? ""} onChange={(e) => set("workHistory", p.workHistory.map((x, j) => j === i ? { ...x, title: e.target.value } : x))} />
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <input style={S.input} placeholder="Company" value={w.company ?? ""} onChange={(e) => set("workHistory", p.workHistory.map((x, j) => j === i ? { ...x, company: e.target.value } : x))} />
-                <input style={S.input} placeholder="e.g. 2021–Present" value={w.years ?? ""} onChange={(e) => set("workHistory", p.workHistory.map((x, j) => j === i ? { ...x, years: e.target.value } : x))} />
-                <button aria-label="Remove" style={S.x} onClick={() => set("workHistory", p.workHistory.filter((_, j) => j !== i))}>×</button>
-              </div>
-            </div>
-          ))}
-          <button style={S.addRow} onClick={() => set("workHistory", [...p.workHistory, { title: "", company: "", years: "" }])}>+ Add experience</button>
-        </section>
-
-        <section style={S.card}>
-          <div style={S.cardLabel}>Education <Badge kind="told" /></div>
-          {p.education.length === 0 && <div style={S.hint}>Add your degrees and schools.</div>}
-          {p.education.map((ed, i) => (
-            <div key={i} style={S.histRow}>
-              <input style={S.wide} placeholder="Degree" value={ed.degree ?? ""} onChange={(e) => set("education", p.education.map((x, j) => j === i ? { ...x, degree: e.target.value } : x))} />
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <input style={S.input} placeholder="Institution" value={ed.institution ?? ""} onChange={(e) => set("education", p.education.map((x, j) => j === i ? { ...x, institution: e.target.value } : x))} />
-                <input style={S.input} placeholder="Year" value={ed.year ?? ""} onChange={(e) => set("education", p.education.map((x, j) => j === i ? { ...x, year: e.target.value } : x))} />
-                <button aria-label="Remove" style={S.x} onClick={() => set("education", p.education.filter((_, j) => j !== i))}>×</button>
-              </div>
-            </div>
-          ))}
-          <button style={S.addRow} onClick={() => set("education", [...p.education, { degree: "", institution: "", year: "" }])}>+ Add education</button>
-        </section>
-
-        <section style={S.card}>
-          <div style={S.cardLabel}>Certifications & licenses <Badge kind="told" /></div>
-          <div style={S.chips}>
-            {p.certifications.map((c, i) => (
-              <span key={c + i} style={S.certChip}>{c}<button aria-label={`Remove ${c}`} style={S.chipX} onClick={() => set("certifications", p.certifications.filter((_, j) => j !== i))}>×</button></span>
-            ))}
-          </div>
-          <input style={{ ...S.wide, marginTop: 10 }} placeholder="Add a certification, then Enter" value={newCert}
-            onChange={(e) => setNewCert(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && newCert.trim()) { set("certifications", [...p.certifications, newCert.trim()]); setNewCert(""); } }} />
         </section>
 
         <section style={S.card}>
@@ -523,6 +380,7 @@ export default function ProfileEditor() {
           </div>
           <div style={S.qLabel}>Where you'd consider working</div>
           <input style={S.wide} value={locationsText} placeholder="Austin, Denver, anywhere in California" onChange={(e) => { setLocationsText(e.target.value); setSaved(false); }} />
+          <div style={S.hint}>Shown on your public profile as a stated preference — it doesn&apos;t filter your feed. &quot;Where you can work&quot; above is what does that.</div>
 
           <div style={S.grid}>
             <div>
@@ -636,28 +494,13 @@ const S: Record<string, CSSProperties> = {
   modalKicker: { fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, color: "#8B5CF6", marginBottom: 8 },
   modalTitle: { fontFamily: "var(--font-sora), sans-serif", fontSize: 22, fontWeight: 800, margin: "0 0 8px", color: INK },
   modalSub: { fontSize: 14, color: MUTED, lineHeight: 1.55, margin: "0 0 20px" },
-  inferNote: { fontSize: 12, color: "#8a5a00", background: "#fdf0d5", borderRadius: 8, padding: "8px 10px", marginBottom: 12, lineHeight: 1.45 } as const,
-  statGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 },
-  stat: { background: "#f7f7fb", borderRadius: 10, padding: 14 },
-  statNum: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 26, color: INDIGO },
-  statLabel: { fontSize: 12, color: MUTED, lineHeight: 1.4, marginTop: 4 },
   cardLabel: { fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: MUTED, marginBottom: 12 },
-  row: { display: "flex", gap: 10 },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, margin: "14px 0 0" },
   input: { flex: 1, minWidth: 0, padding: "10px 12px", borderRadius: 8, border: "1px solid #d4d4d8", fontSize: 15, fontFamily: "inherit", background: "#fff" },
   wide: { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #d4d4d8", fontSize: 15, fontFamily: "inherit", background: "#fff", boxSizing: "border-box" },
-  select: { padding: "10px 12px", borderRadius: 8, border: "1px solid #d4d4d8", fontSize: 15, background: "#fff", fontFamily: "inherit" },
-  provRow: { fontSize: 12, color: MUTED, marginTop: 8, display: "flex", alignItems: "center", gap: 6 },
   qLabel: { fontSize: 13, fontWeight: 600, color: INK, margin: "16px 0 6px", display: "flex", alignItems: "center", gap: 6 },
   hint: { fontSize: 12, color: MUTED, marginTop: 6, lineHeight: 1.45 },
-  skills: { display: "flex", flexDirection: "column", gap: 8 },
-  skillRow: { display: "flex", alignItems: "center", gap: 10 },
-  skillSel: { padding: "6px 8px", borderRadius: 8, border: "1px solid #d4d4d8", fontSize: 13, background: "#fff", fontFamily: "inherit" },
-  tierBtn: { padding: "6px 10px", borderRadius: 8, border: "1px solid #DDD6FE", background: "#F5F3FF", color: "#7C3AED", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
-  x: { border: "none", background: "none", color: MUTED, fontSize: 20, cursor: "pointer", lineHeight: 1, padding: "0 4px" },
   chips: { display: "flex", flexWrap: "wrap", gap: 8 },
-  histRow: { padding: "12px 0", borderTop: "1px solid #f2f2f5" },
-  addRow: { marginTop: 12, background: "#eef0ff", color: INDIGO, border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   reupBtn: { display: "inline-flex", alignItems: "center", gap: 8, background: INDIGO, color: "#fff", borderRadius: 10, padding: "11px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
   reupBtnBusy: { display: "inline-flex", alignItems: "center", gap: 8, background: "#c7c7d1", color: "#fff", borderRadius: 10, padding: "11px 20px", fontSize: 14, fontWeight: 700, cursor: "default", whiteSpace: "nowrap" },
   certChip: { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", background: "#f0eaff", color: "#5a3ccf", borderRadius: 999, fontSize: 13, fontWeight: 600 },
