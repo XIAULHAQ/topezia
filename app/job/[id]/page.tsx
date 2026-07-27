@@ -30,6 +30,7 @@ import SiteNav from "@/app/_components/SiteNav";
 import ApplyGate from "./ApplyGate";
 import ApplyBox from "./ApplyBox";
 import MatchCard from "./MatchCard";
+import RelocationCard from "./RelocationCard";
 import { SiteFooter } from "@/app/_components/SiteChrome";
 import { curSym } from "@/lib/currency";
 
@@ -229,6 +230,9 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
 
             {/* Per-viewer AI match — client-fetched, cache-first */}
             <MatchCard jobId={job.id} />
+
+            {/* Only renders when this match actually crosses a border for the viewer */}
+            <RelocationCard jobId={job.id} />
 
             <section style={S.card}>
               <h2 style={S.h2}>About the {isProject ? "project" : "role"}</h2>
