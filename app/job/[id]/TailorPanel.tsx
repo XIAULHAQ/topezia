@@ -15,7 +15,7 @@ import { Icon } from "@/app/_components/ui";
 import type { ResumeContent } from "@/lib/resume/doc";
 import { diffList, diffWords, type DiffItem } from "@/lib/resume/diff";
 import { PRINT_CSS, pageRule, usePrintMarking } from "@/lib/resume/print-sheet";
-import { BLEEDS, ResumeSheet, sheetData } from "../../resume/templates";
+import { BLEEDS, TEMPLATES, ResumeSheet, sheetData, type TemplateId } from "../../resume/templates";
 
 const INDIGO = "#4f46e5";
 const INK = "#0F172A";
@@ -85,10 +85,18 @@ export default function TailorPanel({
     bullets: diffList(role.bullets, tailored.experience[i]?.bullets ?? role.bullets, (b) => b),
   }));
 
+  // Which design the DOWNLOAD uses. Defaults to ATS-safe rather than the
+  // person's Resume Builder template: this flow exists to produce a file
+  // they upload into a company's application portal, and plain-text ATS
+  // formatting is what survives those parsers — the designed templates stay
+  // one click away for when the resume goes to a human instead.
+  const [printTemplate, setPrintTemplate] = useState<TemplateId>("ats");
+  const ownTemplateName = TEMPLATES.find((t) => t.id === tailored.template)?.name ?? "My design";
+
   // Print the TAILORED content — off-screen, exact two-level nesting under
   // #resume-print (see lib/resume/print-sheet.ts's contract). Not visible on
   // screen: this panel shows a textual diff, not a rendered sheet preview.
-  const bleed = BLEEDS[tailored.template];
+  const bleed = BLEEDS[printTemplate];
   usePrintMarking(bleed);
   const sheet = sheetData(tailored, photo, publicUrl, qr);
 
@@ -150,6 +158,22 @@ export default function TailorPanel({
           </Section>
         </div>
 
+        {/* Download design: ATS-safe leads because this file's destination is
+            usually a company's upload portal, where plain-text formatting is
+            what the parser actually reads. The person's own Resume Builder
+            design stays one click away. */}
+        <div style={S.designRow}>
+          <span style={S.designLabel}>Download as</span>
+          <button type="button" onClick={() => setPrintTemplate("ats")} style={printTemplate === "ats" ? S.designOn : S.designOff}>
+            ATS-safe — for job-site uploads
+          </button>
+          {tailored.template !== "ats" && (
+            <button type="button" onClick={() => setPrintTemplate(tailored.template)} style={printTemplate === tailored.template ? S.designOn : S.designOff}>
+              {ownTemplateName} — your design
+            </button>
+          )}
+        </div>
+
         <div style={S.foot}>
           <button type="button" style={S.ghostBtn} onClick={onRegenerate} disabled={regenerating}>
             <Icon name="spark" size={14} />{regenerating ? "Regenerating…" : "Regenerate"}
@@ -179,7 +203,7 @@ export default function TailorPanel({
       {/* Off-screen print mount — see lib/resume/print-sheet.ts's nesting contract. */}
       <div id="resume-print" style={{ position: "fixed", left: -99999, top: 0 }}>
         <div style={{ width: 794 }}>
-          <ResumeSheet id={tailored.template} d={sheet} />
+          <ResumeSheet id={printTemplate} d={sheet} />
         </div>
       </div>
     </>
@@ -274,7 +298,11 @@ const S: Record<string, CSSProperties> = {
   bulletList: { margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.6, color: INK },
   empty: { fontSize: 12.5, color: MUTED, margin: 0 },
   roleTitle: { fontSize: 13, fontWeight: 700, color: INK, marginBottom: 8 },
-  foot: { display: "flex", alignItems: "center", gap: 10, padding: "16px 24px", borderTop: `1px solid ${LINE}`, flex: "none", flexWrap: "wrap" },
+  designRow: { display: "flex", alignItems: "center", gap: 8, padding: "12px 24px 0", borderTop: `1px solid ${LINE}`, flex: "none", flexWrap: "wrap" },
+  designLabel: { fontSize: 11.5, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: 0.4 },
+  designOn: { border: `1.5px solid ${INDIGO}`, background: "#EEF2FF", color: INDIGO, borderRadius: 999, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  designOff: { border: `1px solid ${LINE}`, background: "#fff", color: "#334155", borderRadius: 999, padding: "6px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
+  foot: { display: "flex", alignItems: "center", gap: 10, padding: "16px 24px", flex: "none", flexWrap: "wrap" },
   ghostBtn: { display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${LINE}`, background: "#fff", color: "#334155", borderRadius: 10, padding: "10px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
   downloadBtn: { display: "inline-flex", alignItems: "center", gap: 8, border: "none", background: "#F1F5F9", color: INK, borderRadius: 10, padding: "11px 18px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   applyBtn: { display: "inline-flex", alignItems: "center", gap: 8, border: "none", background: INDIGO, color: "#fff", borderRadius: 10, padding: "11px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textDecoration: "none" },
