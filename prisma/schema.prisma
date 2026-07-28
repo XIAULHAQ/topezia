@@ -822,6 +822,40 @@ model PortfolioLike {
   @@index([portfolioId, createdAt])
 }
 
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+}
+
+// A first-party blog post ("Topezia Team" byline, no per-user authorship —
+// /hq's admin gate is a single shared password, not per-account). Free-text
+// admin-chosen tags, not a taxonomy — same reasoning as Portfolio.skills.
+model Post {
+  id              String     @id @default(uuid())
+  slug            String     @unique
+  title           String
+  excerpt         String?
+  contentHtml     String
+  coverImage      String?
+  coverImageAlt   String?
+
+  // SEO fields — all optional, all with fallbacks at render time
+  // (metaTitle -> title, metaDescription -> excerpt).
+  focusKeyword    String?
+  metaTitle       String?
+  metaDescription String?
+
+  tags            String[]
+  status          PostStatus @default(DRAFT)
+  publishedAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  // GIN index on `tags` is added by hand in the migration SQL — not expressed
+  // here, same as this schema already does for non-btree index types.
+  @@index([status, publishedAt])
+}
+
 // A recommendation or review someone ELSE wrote about a member.
 //
 // The distinction from Profile.recommendations (a JSON blob the member types

@@ -37,6 +37,7 @@ const NAV_LINKS = [
   // /coach is auth-gated: anonymous visitors get bounced to /login, which
   // carries the "join by uploading your resume" path to /onboard.
   { label: "AI Career Coach", href: "/coach" },
+  { label: "Blog", href: "/blog" },
   { label: "For employers", href: "/waitlist" },
 ];
 
@@ -170,7 +171,7 @@ export function SiteHeader() {
 const FOOTER_COLS = [
   { head: "Product", links: [{ label: "Find jobs", href: "/jobs" }, { label: "Freelance Projects", href: "/projects" }, { label: "Portfolios", href: "/portfolio" }, { label: "AI Career Score", href: "/onboard" }, { label: "Skill assessments", href: "/onboard" }, { label: "Resume builder", href: "/onboard" }] },
   { head: "Employers", links: [{ label: "Post a role", href: "/waitlist" }, { label: "Search talent", href: "/waitlist" }, { label: "Pricing", href: "/waitlist" }] },
-  { head: "Company", links: [{ label: "About", href: "/about" }, { label: "Contact", href: "/waitlist" }] },
+  { head: "Company", links: [{ label: "About", href: "/about" }, { label: "Blog", href: "/blog" }, { label: "Contact", href: "/waitlist" }] },
   { head: "Legal", links: [{ label: "Privacy Policy", href: "/privacy" }, { label: "Terms of Service", href: "/terms" }, { label: "Cookie Policy", href: "/cookies" }] },
 ];
 

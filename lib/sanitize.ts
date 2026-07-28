@@ -94,3 +94,50 @@ export function sanitizeJobHtml(dirty: string): string {
     allowedStyles: {},
   });
 }
+
+function isInternalHref(href: string): boolean {
+  if (href.startsWith("/") || href.startsWith("#")) return true;
+  const site = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com").replace(/\/$/, "");
+  return href.startsWith(site);
+}
+
+/**
+ * Sanitize blog post body HTML (admin-authored via the Tiptap editor in
+ * /hq/posts), before storing and before rendering with
+ * dangerouslySetInnerHTML. Wider allowlist than sanitizeJobHtml — posts need
+ * images and h2/h3/h4 for real structure.
+ *
+ * Internal links (relative, or same-origin as NEXT_PUBLIC_SITE_URL) are left
+ * plain: nofollow/target=_blank on our own /blog and /jobs links would be
+ * self-defeating for both the reader and the SEO panel's internal-link
+ * check. Only external links get target=_blank + noopener/noreferrer — no
+ * nofollow, since this is first-party editorial content the site chose to
+ * link to, not user-generated text.
+ */
+export function sanitizeBlogHtml(dirty: string): string {
+  return sanitizeHtml(dirty, {
+    allowedTags: [
+      "p", "br", "strong", "b", "em", "i", "u", "s",
+      "ul", "ol", "li",
+      "h2", "h3", "h4",
+      "blockquote", "a", "code", "pre", "hr", "span", "div",
+      "img", "figure", "figcaption",
+    ],
+    allowedAttributes: {
+      a: ["href", "title"],
+      img: ["src", "alt", "width", "height"],
+    },
+    // Only real web links/images; no javascript:/data: URIs.
+    allowedSchemes: ["http", "https", "mailto"],
+    allowedSchemesByTag: { img: ["http", "https"] },
+    transformTags: {
+      a: (tagName, attribs) => {
+        const href = attribs.href ?? "";
+        if (isInternalHref(href)) return { tagName, attribs };
+        return { tagName, attribs: { ...attribs, rel: "noopener noreferrer", target: "_blank" } };
+      },
+    },
+    // Strip style/class so foreign CSS can't fight our layout.
+    allowedStyles: {},
+  });
+}

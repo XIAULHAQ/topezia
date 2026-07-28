@@ -22,6 +22,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${base}/jobs`, lastModified: now, changeFrequency: "daily", priority: 0.9 },
     { url: `${base}/about`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
     { url: `${base}/portfolio`, lastModified: now, changeFrequency: "daily", priority: 0.7 },
+    { url: `${base}/blog`, lastModified: now, changeFrequency: "daily", priority: 0.8 },
     { url: `${base}/waitlist`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
   ];
 
@@ -42,6 +43,35 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "monthly" as const,
       priority: 0.6,
     }));
+  } catch {
+    /* leave empty */
+  }
+
+  // Published blog posts, plus a page per tag that actually has a post — same
+  // degrade-to-empty-on-DB-hiccup pattern as everything else here.
+  let blogPages: MetadataRoute.Sitemap = [];
+  try {
+    const rows = await prisma.post.findMany({
+      where: { status: "PUBLISHED" },
+      orderBy: { publishedAt: "desc" },
+      take: 5000,
+      select: { slug: true, updatedAt: true, tags: true },
+    });
+    blogPages = rows.map((r) => ({
+      url: `${base}/blog/${r.slug}`,
+      lastModified: r.updatedAt,
+      changeFrequency: "monthly" as const,
+      priority: 0.6,
+    }));
+    const tags = Array.from(new Set(rows.flatMap((r) => r.tags)));
+    blogPages.push(
+      ...tags.map((t) => ({
+        url: `${base}/blog/tag/${encodeURIComponent(t)}`,
+        lastModified: now,
+        changeFrequency: "weekly" as const,
+        priority: 0.5,
+      }))
+    );
   } catch {
     /* leave empty */
   }
@@ -97,5 +127,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     /* leave empty */
   }
 
-  return [...staticRoutes, ...portfolioPages, ...jobPages, ...nativePages];
+  return [...staticRoutes, ...portfolioPages, ...blogPages, ...jobPages, ...nativePages];
 }
