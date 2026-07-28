@@ -14,7 +14,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { Icon } from "@/app/_components/ui";
 import type { ResumeContent } from "@/lib/resume/doc";
 import { diffList, diffWords, type DiffItem } from "@/lib/resume/diff";
-import { usePrintMarking } from "@/lib/resume/print-sheet";
+import { PRINT_CSS, pageRule, usePrintMarking } from "@/lib/resume/print-sheet";
 import { BLEEDS, ResumeSheet, sheetData } from "../../resume/templates";
 
 const INDIGO = "#4f46e5";
@@ -94,6 +94,12 @@ export default function TailorPanel({
 
   return (
     <>
+      {/* The shared print stylesheet is injected HERE, not assumed: the job
+          page has no print CSS of its own (Resume Builder injects these tags
+          itself), and without them window.print() just prints the job page
+          while the off-screen sheet stays off-screen. */}
+      <style dangerouslySetInnerHTML={{ __html: PRINT_CSS }} />
+      <style dangerouslySetInnerHTML={{ __html: pageRule(bleed) }} />
       {/* Belt-and-suspenders on top of the shared print CSS's ancestor-chain
           hiding: this panel sits much deeper in the DOM (job page -> rail ->
           card -> button -> panel) than the Resume Builder page that mechanism
