@@ -94,8 +94,15 @@ export default function TailorPanel({
 
   return (
     <>
-      <div style={{ ...S.backdrop, opacity: visible ? 1 : 0 }} onClick={close} />
-      <div style={{ ...S.panel, transform: visible ? "translateX(0)" : "translateX(100%)" }} role="dialog" aria-modal="true" aria-label="Tailored resume">
+      {/* Belt-and-suspenders on top of the shared print CSS's ancestor-chain
+          hiding: this panel sits much deeper in the DOM (job page -> rail ->
+          card -> button -> panel) than the Resume Builder page that mechanism
+          was built for, and the panel's own visible diff content must never
+          be what ends up on paper. An explicit class + rule doesn't depend on
+          every intermediate level of THIS page's nesting being marked correctly. */}
+      <style>{"@media print { .rb-tailor-chrome { display: none !important; } }"}</style>
+      <div className="rb-tailor-chrome" style={{ ...S.backdrop, opacity: visible ? 1 : 0 }} onClick={close} />
+      <div className="rb-tailor-chrome" style={{ ...S.panel, transform: visible ? "translateX(0)" : "translateX(100%)" }} role="dialog" aria-modal="true" aria-label="Tailored resume">
         <div style={S.head}>
           <div style={{ minWidth: 0 }}>
             <h2 style={S.title}>Tailored for {job.company}</h2>
