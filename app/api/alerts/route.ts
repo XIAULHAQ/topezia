@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
         roleId: target.roleId,
         verticalId: target.verticalId,
         locationState: target.locationState,
+        country: target.country,
         remoteOnly: target.remoteOnly,
         confirmToken,
         unsubToken: randomUUID(),

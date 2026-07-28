@@ -6,6 +6,7 @@
  * /profile/edit remains only for resume replacement and job preferences.
  */
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
@@ -21,7 +22,9 @@ export default async function ProfilePage() {
   if (!profile) redirect("/onboard");
   return (
     <AppShell>
-      <ProfileView />
+      <Suspense fallback={null}>
+        <ProfileView />
+      </Suspense>
     </AppShell>
   );
 }

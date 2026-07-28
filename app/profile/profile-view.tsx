@@ -11,12 +11,16 @@
  * this person.
  */
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import { C, GRAD, Icon, Card, initials } from "@/app/_components/ui";
 import { COUNTRY_NAMES } from "@/lib/countries";
 import ShareMenu from "@/app/_components/ShareMenu";
 import EditInPlace, { EditPencil, type SectionKey, type ProfilePatch } from "./edit-in-place";
 import EndorsementsPanel from "./endorsements-panel";
 import PublicationsPanel from "./publications-panel";
+import { buildChecklist } from "@/lib/profile/checklist";
+
+const SECTION_KEYS: SectionKey[] = ["intro", "skills", "experience", "education", "certs", "languages", "eligibility", "links"];
 
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
 
@@ -75,9 +79,22 @@ export default function ProfileView() {
   // Edit-in-place: which section's modal is open, if any. The old flow sent
   // every edit to /profile/edit; now each section edits where it is shown.
   const [editing, setEditing] = useState<SectionKey | null>(null);
+  const [focusField, setFocusField] = useState<string | null>(null);
   const [roleGroups, setRoleGroups] = useState<{ field: string; roles: string[] }[]>([]);
+  const searchParams = useSearchParams();
 
   useEffect(() => { setOrigin(window.location.origin); }, []);
+
+  // Deep link from elsewhere (the /feed missing-info nudge) — open the right
+  // section's modal directly, optionally focused on one field within it.
+  useEffect(() => {
+    const wantSection = searchParams.get("edit");
+    if (wantSection && (SECTION_KEYS as string[]).includes(wantSection)) {
+      setEditing(wantSection as SectionKey);
+      setFocusField(searchParams.get("focus"));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     fetch("/api/portfolio")
@@ -192,18 +209,8 @@ export default function ProfileView() {
 
   // Real, computed completion — counts what's actually filled in. Each item
   // knows where to fix itself: a section modal, or a page for the ones that
-  // live elsewhere (portfolio).
-  const checklist: { label: string; done: boolean; section?: SectionKey; href?: string }[] = [
-    { label: "Role & field", done: !!p.headline, section: "intro" },
-    { label: "Photo", done: !!p.photoUrl, section: "intro" },
-    { label: "Location", done: !!p.currentLocation, section: "intro" },
-    { label: "Skills", done: p.skills.length > 0, section: "skills" },
-    { label: "Experience", done: p.workHistory.length > 0, section: "experience" },
-    { label: "Education", done: p.education.length > 0, section: "education" },
-    { label: "Languages", done: (p.languages ?? []).length > 0, section: "languages" },
-    { label: "Links", done: !!(p.linkedinUrl || p.githubUrl || p.websiteUrl), section: "links" },
-    { label: "Published work", done: (work ?? []).some((w) => w.status === "PUBLISHED"), href: "/portfolio/new" },
-  ];
+  // live elsewhere (portfolio). Shared with the /feed missing-info nudge.
+  const checklist = buildChecklist(p, { hasPublishedWork: (work ?? []).some((w) => w.status === "PUBLISHED") });
   const completion = Math.round((checklist.filter((c) => c.done).length / checklist.length) * 100);
 
   const showAbout = tab === "Overview";
@@ -699,7 +706,8 @@ export default function ProfileView() {
           section={editing}
           profile={p}
           roleGroups={roleGroups}
-          onClose={() => setEditing(null)}
+          focusField={focusField}
+          onClose={() => { setEditing(null); setFocusField(null); }}
           onSaved={applyPatch}
         />
       )}

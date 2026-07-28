@@ -8,11 +8,13 @@
  * preferences, email alerts, strong-match count) with clearly-labelled
  * "Coming soon" panels for features we don't back with data yet.
  */
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import AppShell from "@/app/_components/AppShell";
 import AlertCapture from "@/app/jobs/_components/AlertCapture";
+import AlertToggle from "./AlertToggle";
+import ProfileNudge from "./ProfileNudge";
 import { C, GRAD, FONT, Icon, MatchRing, Card, SoonTag } from "@/app/_components/ui";
 import { curSym } from "@/lib/currency";
 import { fetchProfileShared, readProfileCache } from "@/lib/fetch-profile";
@@ -20,6 +22,7 @@ import { readCache, writeCache, cachedFetchJson } from "@/lib/client-cache";
 import { ensureFreshSession } from "@/lib/ensure-session";
 import { buildTips, pickTip, type TipChange, type TipScore } from "@/lib/coach/tips";
 import { jobPath } from "@/lib/seo/job-slug";
+import type { ChecklistProfile } from "@/lib/profile/checklist";
 
 type Match = {
   jobId: string; title: string; company: string; verticalSlug: string; cardLayout: string;
@@ -102,11 +105,12 @@ export default function FeedPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [matches, setMatches] = useState<Match[]>([]);
-  const [stats, setStats] = useState<{ strong: number; totalLive: number } | null>(null);
   const [filter, setFilter] = useState<Filter>("All matches");
   const [error, setError] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [alert, setAlert] = useState<{ slug: string; place?: string; label: string } | null>(null);
+  const [authed, setAuthed] = useState(false);
+  const [checklistProfile, setChecklistProfile] = useState<ChecklistProfile | null>(null);
   const [insights, setInsights] = useState<FeedInsights | null>(null);
   const [insightChanges, setInsightChanges] = useState<TipChange[] | null>(null);
   const [careerScore, setCareerScore] = useState<TipScore | null>(null);
@@ -160,8 +164,17 @@ export default function FeedPage() {
       })();
       (async () => {
         const applyPrefs = (d: { profile?: Record<string, unknown> | null } | null) => {
-          const p = d?.profile as Prefs | null | undefined;
-          if (p) setPrefs({ fullName: p.fullName, headline: p.headline, remoteTypes: p.remoteTypes ?? [], locations: p.locations ?? [], salaryFloor: p.salaryFloor, salaryTarget: p.salaryTarget, salaryPeriod: p.salaryPeriod });
+          const p = d?.profile as (Prefs & ChecklistProfile) | null | undefined;
+          if (p) {
+            setPrefs({ fullName: p.fullName, headline: p.headline, remoteTypes: p.remoteTypes ?? [], locations: p.locations ?? [], salaryFloor: p.salaryFloor, salaryTarget: p.salaryTarget, salaryPeriod: p.salaryPeriod });
+            // Same payload also feeds the sidebar's missing-info nudge — no
+            // extra request, just a wider pick of the fields already there.
+            setChecklistProfile({
+              headline: p.headline, photoUrl: p.photoUrl, currentLocation: p.currentLocation,
+              skills: p.skills ?? [], workHistory: p.workHistory ?? [], education: p.education ?? [],
+              languages: p.languages ?? [], linkedinUrl: p.linkedinUrl, githubUrl: p.githubUrl, websiteUrl: p.websiteUrl,
+            });
+          }
         };
         applyPrefs(readProfileCache()); // instant on repeat visits
         try {
@@ -177,12 +190,12 @@ export default function FeedPage() {
     // Paint the last session's matches instantly — no spinner on a repeat
     // visit. pending is stripped so a stale "scoring…" shimmer can't show;
     // the fresh response replaces everything in place a moment later.
-    const cachedFeed = readCache<{ matches: Match[]; stats: { strong: number; totalLive: number } | null; alert: { slug: string; place?: string; label: string } | null }>("/api/matches");
+    const cachedFeed = readCache<{ matches: Match[]; alert: { slug: string; place?: string; label: string } | null; authed?: boolean }>("/api/matches");
     const hadCache = Boolean(cachedFeed?.matches?.length);
     if (cachedFeed && hadCache) {
       setMatches(cachedFeed.matches.map((m) => ({ ...m, pending: false })));
-      setStats(cachedFeed.stats ?? null);
       setAlert(cachedFeed.alert ?? null);
+      setAuthed(cachedFeed.authed ?? false);
       setLoading(false);
     }
     (async () => {
@@ -197,10 +210,10 @@ export default function FeedPage() {
         const data = await res.json();
         if (cancelled) return;
         setMatches(data.matches || []);
-        setStats(data.stats || null);
         setAlert(data.alert ?? null);
+        setAuthed(!!data.authed);
         setLoading(false);
-        writeCache("/api/matches", { matches: data.matches || [], stats: data.stats || null, alert: data.alert ?? null });
+        writeCache("/api/matches", { matches: data.matches || [], alert: data.alert ?? null, authed: !!data.authed });
 
         if (data.pending) {
           setEnriching(true);
@@ -208,8 +221,8 @@ export default function FeedPage() {
             const r2 = await fetch("/api/matches/rerank", { method: "POST" });
             if (r2.ok) {
               const d2 = await r2.json();
-              if (!cancelled) { setMatches(d2.matches || []); setStats(d2.stats || null); }
-              writeCache("/api/matches", { matches: d2.matches || [], stats: d2.stats || null, alert: data.alert ?? null });
+              if (!cancelled) { setMatches(d2.matches || []); }
+              writeCache("/api/matches", { matches: d2.matches || [], alert: data.alert ?? null, authed: !!data.authed });
             } else if (!cancelled) {
               setMatches((prev) => prev.map((m) => ({ ...m, pending: false })));
             }
@@ -232,7 +245,6 @@ export default function FeedPage() {
     return () => { cancelled = true; };
   }, [router]);
 
-  const statsReady = stats !== null && !enriching && !matches.some((m) => m.pending);
   const shown = matches.filter((m) => {
     if (filter === "Remote") return m.remoteType.startsWith("REMOTE");
     if (filter === "Hourly") return m.salaryPeriod === "HOUR" || m.employmentType === "HOURLY";
@@ -326,8 +338,12 @@ export default function FeedPage() {
               const sal = fmtSalary(m);
               const isNew = freshHours(m.lastVerifiedAt) < 24;
               const isTop = m.jobId === topId && !m.pending;
+              // The alert card sits between listings — after the 3rd match,
+              // or after the last one if there aren't three.
+              const showAlertHere = alert && i === Math.min(2, shown.length - 1);
               return (
-                <article key={m.jobId} style={S.card}>
+                <Fragment key={m.jobId}>
+                <article style={S.card}>
                   {isTop && <div style={S.topRibbon}>TOP MATCH</div>}
                   <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap", paddingTop: isTop ? 10 : 0 }}>
                     <div style={{ ...S.logo, background: GRAD }}>{(m.company || "?")[0].toUpperCase()}</div>
@@ -379,6 +395,12 @@ export default function FeedPage() {
                     </div>
                   )}
                 </article>
+                {showAlertHere && (
+                  authed
+                    ? <AlertToggle slug={alert!.slug} place={alert!.place} label={alert!.label} />
+                    : <AlertCapture slug={alert!.slug} place={alert!.place} label={alert!.label} />
+                )}
+                </Fragment>
               );
             })}
           </div>
@@ -399,27 +421,10 @@ export default function FeedPage() {
             </div>
           </Card>
 
-          {/* REAL: email alert */}
-          {alert ? (
-            <AlertCapture slug={alert.slug} place={alert.place} label={alert.label} />
-          ) : (
-            <Card>
-              <h2 style={S.railH}>Get matches by email</h2>
-              <p style={S.railP}>Set your job title on your profile and we&apos;ll email new matching jobs as they land.</p>
-              <a href="/profile" style={S.railEdit}>Set your role →</a>
-            </Card>
-          )}
-
-          {/* REAL: honest strong-match count */}
-          <Card>
-            <h2 style={S.railH}>Right now</h2>
-            <p style={{ fontSize: 16, margin: "6px 0 2px" }}>
-              {statsReady
-                ? <><b style={{ color: C.c1, fontWeight: 800 }}>{stats!.strong}</b> strong matches</>
-                : <><b style={{ color: "#c7c7d1" }}>—</b> <span style={{ color: C.mut }}>counting…</span></>}
-            </p>
-            <p style={S.railP}>matched against {stats?.totalLive ?? 0} verified jobs open to you</p>
-          </Card>
+          {/* Rotating "finish your profile" nudge — the alert card moved into
+              the jobs list itself (between listings), so this slot now
+              surfaces one missing profile item at a time instead. */}
+          <ProfileNudge profile={checklistProfile} />
 
           {/* Dark AI coach tip — a rotating pool of counted facts (snapshot
               diffs, Career Score moves, pairings, gaps, ladder, certs,

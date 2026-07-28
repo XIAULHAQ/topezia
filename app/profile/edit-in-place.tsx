@@ -72,12 +72,16 @@ export default function EditInPlace({
   section,
   profile,
   roleGroups,
+  focusField,
   onClose,
   onSaved,
 }: {
   section: SectionKey;
   profile: EditableProfile;
   roleGroups: { field: string; roles: string[] }[];
+  /** Deep-linked from the /feed missing-info nudge — matches a data-field
+   *  attribute below; focuses and scrolls to it once the modal is open. */
+  focusField?: string | null;
   onClose: () => void;
   /** Called with the saved fields so the page updates without a refetch. */
   onSaved: (patch: ProfilePatch) => void;
@@ -124,6 +128,15 @@ export default function EditInPlace({
     document.body.style.overflow = "hidden";
     return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
   }, [onClose]);
+
+  useEffect(() => {
+    // focusField rides in on a URL query param — only ever a known slug
+    // (see lib/profile/checklist.ts), never trusted as-is in a selector.
+    if (!focusField || !/^[a-z0-9-]+$/.test(focusField)) return;
+    const el = document.querySelector<HTMLElement>(`[data-field="${focusField}"]`);
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    el?.focus();
+  }, [focusField]);
 
   const set = <K extends keyof ProfilePatch>(k: K, v: ProfilePatch[K]) => setDraft((d) => ({ ...d, [k]: v }));
 
@@ -225,7 +238,7 @@ export default function EditInPlace({
             </div>
           )}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <label style={S.ghostBtn}>
+            <label style={S.ghostBtn} data-field="photo" tabIndex={-1}>
               <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) pickPhoto(f); e.target.value = ""; }} />
               {draft.photoUrl ? "Replace photo" : "Upload photo"}
             </label>
@@ -234,7 +247,7 @@ export default function EditInPlace({
         </div>
 
         <div style={S.qLabel}>Role</div>
-        <select style={S.wide} value={draft.headline ?? ""} onChange={(e) => set("headline", e.target.value || null)}>
+        <select data-field="role" style={S.wide} value={draft.headline ?? ""} onChange={(e) => set("headline", e.target.value || null)}>
           <option value="">Choose your role…</option>
           {roleGroups.map((g) => (
             <optgroup key={g.field} label={g.field}>
@@ -260,7 +273,7 @@ export default function EditInPlace({
         </div>
 
         <div style={S.qLabel}>Where you are</div>
-        <input style={S.wide} value={draft.currentLocation ?? ""} placeholder="City, Country" onChange={(e) => set("currentLocation", e.target.value)} />
+        <input data-field="location" style={S.wide} value={draft.currentLocation ?? ""} placeholder="City, Country" onChange={(e) => set("currentLocation", e.target.value)} />
         <div style={S.hint}>Your feed is scoped to the country this resolves to.</div>
 
         <div style={S.qLabel}>Industries</div>
@@ -283,6 +296,7 @@ export default function EditInPlace({
           {skills.every((s) => s.tier !== "SECONDARY") && <div style={S.hint}>Nothing here — use &quot;→ also&quot; to move a skill down.</div>}
         </div>
         <input
+          data-field="skills-add"
           style={{ ...S.wide, marginTop: 14 }}
           placeholder="Add a skill, then Enter (added as core)"
           value={newSkill}
@@ -336,7 +350,7 @@ export default function EditInPlace({
             </div>
           );
         })}
-        <button type="button" style={S.addBtn} onClick={() => set("workHistory", [...rows, { title: "", company: "", years: "", bullets: [] }])}>+ Add experience</button>
+        <button type="button" data-field="experience-add" style={S.addBtn} onClick={() => set("workHistory", [...rows, { title: "", company: "", years: "", bullets: [] }])}>+ Add experience</button>
       </>
     );
   }
@@ -356,7 +370,7 @@ export default function EditInPlace({
             </div>
           </div>
         ))}
-        <button type="button" style={S.addBtn} onClick={() => set("education", [...rows, { degree: "", institution: "", year: "" }])}>+ Add education</button>
+        <button type="button" data-field="education-add" style={S.addBtn} onClick={() => set("education", [...rows, { degree: "", institution: "", year: "" }])}>+ Add education</button>
       </>
     );
   }
@@ -456,7 +470,7 @@ export default function EditInPlace({
             <button type="button" aria-label="Remove" style={S.x} onClick={() => set("languages", rows.filter((_, j) => j !== i))}>×</button>
           </div>
         ))}
-        <button type="button" style={{ ...S.ghostBtn, marginTop: 12 }} onClick={() => set("languages", [...rows, { name: "", level: "" }])}>+ Add language</button>
+        <button type="button" data-field="languages-add" style={{ ...S.ghostBtn, marginTop: 12 }} onClick={() => set("languages", [...rows, { name: "", level: "" }])}>+ Add language</button>
       </>
     );
   }
@@ -466,7 +480,7 @@ export default function EditInPlace({
       <>
         <div style={S.hint}>Shown on your profile and your public page. Leave a field empty to hide that link.</div>
         <div style={S.qLabel}>LinkedIn</div>
-        <input style={S.wide} placeholder="linkedin.com/in/your-name" value={draft.linkedinUrl ?? ""} onChange={(e) => set("linkedinUrl", e.target.value)} />
+        <input data-field="links-linkedin" style={S.wide} placeholder="linkedin.com/in/your-name" value={draft.linkedinUrl ?? ""} onChange={(e) => set("linkedinUrl", e.target.value)} />
         <div style={S.qLabel}>GitHub</div>
         <input style={S.wide} placeholder="github.com/your-handle" value={draft.githubUrl ?? ""} onChange={(e) => set("githubUrl", e.target.value)} />
         <div style={S.qLabel}>Website / portfolio</div>
