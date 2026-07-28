@@ -15,7 +15,9 @@ import { prisma } from "@/lib/prisma";
 import { SiteHeader, SiteFooter } from "@/app/_components/SiteChrome";
 import { blogImageUrl } from "@/lib/blog/storage";
 import { readingTime } from "@/lib/blog/reading-time";
+import { processHeadings } from "@/lib/blog/toc";
 import { safeJsonLd } from "@/lib/seo/json-ld";
+import TableOfContents from "./table-of-contents";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +65,7 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
   const cover = blogImageUrl(p.coverImage);
   const shareUrl = `${SITE}/blog/${p.slug}`;
   const mins = readingTime(p.contentHtml);
+  const { toc, html: contentHtml } = processHeadings(p.contentHtml);
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -86,6 +89,7 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
   return (
     <div style={{ minHeight: "100vh", background: "#fff", fontFamily: FONT, color: C.ink }}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
       <SiteHeader />
 
       <main style={S.wrap}>
@@ -114,7 +118,10 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
           <img src={cover} alt={p.coverImageAlt ?? ""} style={S.cover} decoding="async" />
         )}
 
-        <div style={S.content} dangerouslySetInnerHTML={{ __html: p.contentHtml }} />
+        <div className="blog-layout" style={S.layout}>
+          <div className="blog-content" style={S.content} dangerouslySetInnerHTML={{ __html: contentHtml }} />
+          <TableOfContents items={toc} />
+        </div>
       </main>
 
       <SiteFooter />
@@ -122,15 +129,26 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
   );
 }
 
+const CSS = `
+@media (max-width:900px){
+  .blog-layout{grid-template-columns:1fr!important}
+  .blog-toc{display:none!important}
+}
+.blog-content h2,.blog-content h3{scroll-margin-top:96px}
+`;
+
 const S: Record<string, CSSProperties> = {
-  wrap: { maxWidth: 760, margin: "0 auto", padding: "30px 24px 80px" },
+  // Wider than the old single-column 760px so the TOC sidebar has room
+  // without squeezing the reading column much below its old width.
+  wrap: { maxWidth: 1040, margin: "0 auto", padding: "30px 24px 80px" },
   backRow: { marginBottom: 20 },
   backLink: { color: C.mut, fontSize: 13.5, fontWeight: 600, textDecoration: "none" },
-  head: { marginBottom: 24 },
+  head: { marginBottom: 24, maxWidth: 760 },
   tagRow: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 },
   tag: { background: "#EEF2FF", color: C.c1, border: "1px solid #C7D2FE", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 600, textDecoration: "none" },
   h1: { margin: 0, fontSize: "clamp(26px, 5vw, 38px)", fontWeight: 800, letterSpacing: "-0.9px", lineHeight: 1.2 },
   meta: { display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: C.mut, marginTop: 14 },
   cover: { width: "100%", height: "auto", borderRadius: 16, display: "block", marginBottom: 30 },
-  content: { fontSize: 16, lineHeight: 1.85, color: C.slate },
+  layout: { display: "grid", gridTemplateColumns: "minmax(0,1fr) 220px", gap: 44, alignItems: "start" },
+  content: { fontSize: 16, lineHeight: 1.85, color: C.slate, minWidth: 0, maxWidth: 760 },
 };
