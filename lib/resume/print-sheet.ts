@@ -21,7 +21,7 @@
  * still active; display:none makes it 0 and pagination silently no-ops) and
  * NOT visibility:hidden (stays invisible even once print CSS applies).
  */
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { SHEET_W, SHEET_H } from "@/app/resume/templates";
 
 /** Class marking the print sheet's ancestors — see PRINT_CSS and the mark/unmark below. */
@@ -176,6 +176,48 @@ export const PRINT_CSS = `
  * the screen layout is never left altered. One line for any caller that
  * renders a #resume-print sheet and wants Download PDF / Ctrl+P to work.
  */
+/**
+ * Scale a #resume-print sheet down to fit an on-screen column, reserving the
+ * right height so the page never jumps when content or template changes.
+ * Extracted from app/resume/resume-client.tsx's original live preview so any
+ * other on-screen sheet render (e.g. the tailor panel's Preview modal) gets
+ * the same, previously-debugged measuring approach rather than a fresh copy.
+ *
+ * `ready` gates the effect: on first mount the content this measures hasn't
+ * loaded yet and the refs are null, so a caller passes whatever boolean means
+ * "the sheet actually exists now" to give the effect a second chance to attach
+ * its ResizeObserver once it does.
+ */
+export function useScaledSheet(ready: boolean) {
+  const previewBox = useRef<HTMLDivElement | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const [scale, setScale] = useState(0);
+  const [sheetH, setSheetH] = useState(SHEET_H);
+
+  useLayoutEffect(() => {
+    const box = previewBox.current, sh = sheetRef.current;
+    if (!box || !sh) return;
+    // offsetHeight, NOT getBoundingClientRect: the sheet sits inside the
+    // transformed node, so the rect is already scaled. Dividing a scaled rect
+    // by the scale we are simultaneously setting is a feedback loop — it
+    // oscillated hard enough to peg the tab in the original version of this
+    // code. offsetHeight is layout height and ignores transforms, so the
+    // measurement never depends on its own output.
+    const measure = () => {
+      const w = box.clientWidth;
+      if (w > 0) setScale(Math.min(1, w / SHEET_W));
+      if (sh.offsetHeight > 0) setSheetH(sh.offsetHeight);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(box);
+    ro.observe(sh);
+    return () => ro.disconnect();
+  }, [ready]);
+
+  return { previewBox, sheetRef, scale, sheetH };
+}
+
 export function usePrintMarking(bleed: boolean | null) {
   useEffect(() => {
     const mark = () => {

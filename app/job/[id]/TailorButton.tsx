@@ -4,7 +4,11 @@
  * "Tailor my resume for this job" — sits next to the apply block on every
  * job page (native or external; tailoring is independent of how the
  * application itself happens). Opens TailorPanel.tsx as a slide-in drawer
- * over the job page, no navigation away.
+ * over the job page, no navigation away. Also listens for a
+ * `topezia:tailor-open` window event, mirroring ApplyBox.tsx's
+ * `topezia:apply-open` — MatchCard.tsx's own "Tailor my resume" CTA lives in
+ * a different part of the page and has no direct handle on this component,
+ * so it dispatches the event instead of duplicating this button's state.
  *
  * On mount (signed-in), checks whether a tailored version already exists for
  * this job (GET /api/resume?jobId=) — starts in a `checking` state that
@@ -29,11 +33,12 @@ type Status = "checking" | "none" | "ready";
 type Assets = { content: ResumeContent; photo: string | null; publicUrl: string | null; qr: string | null };
 
 export default function TailorButton({
-  jobId, companyName, jobTitle, applyHref, applyLabel, isNative,
+  jobId, companyName, jobTitle, jobSkills, applyHref, applyLabel, isNative,
 }: {
   jobId: string;
   companyName: string;
   jobTitle: string;
+  jobSkills: string[];
   applyHref: string;
   applyLabel: string;
   isNative: boolean;
@@ -105,6 +110,23 @@ export default function TailorButton({
     }
   }
 
+  // MatchCard's "Tailor my resume" CTA has no direct reference to this
+  // component's state — it just dispatches this event, same shape as
+  // ApplyBox's topezia:apply-open. Not-signed-in sends the person to the
+  // same login link the gated button below offers, rather than silently
+  // calling generate()/openExisting() against a component that (for a
+  // signed-out visitor) never even renders the panel's mount point.
+  useEffect(() => {
+    const onOpen = () => {
+      if (status === "checking" || busy) return;
+      if (!signedIn) { window.location.href = `/login?next=/job/${jobId}`; return; }
+      if (status === "ready") openExisting(); else generate();
+    };
+    window.addEventListener("topezia:tailor-open", onOpen);
+    return () => window.removeEventListener("topezia:tailor-open", onOpen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, busy, main, signedIn, jobId]);
+
   if (!signedIn && status !== "checking") {
     return (
       <div style={S.box}>
@@ -145,7 +167,8 @@ export default function TailorButton({
         <TailorPanel
           main={main}
           tailored={tailored.content}
-          job={{ title: jobTitle, company: companyName }}
+          job={{ id: jobId, title: jobTitle, company: companyName }}
+          jobSkills={jobSkills}
           applyHref={applyHref}
           applyLabel={applyLabel}
           isNative={isNative}
@@ -154,6 +177,7 @@ export default function TailorButton({
           qr={tailored.qr}
           regenerating={busy}
           onRegenerate={generate}
+          onSaved={(content) => setTailored((cur) => (cur ? { ...cur, content } : cur))}
           onClose={() => setOpen(false)}
         />
       )}

@@ -7,11 +7,20 @@
  * the member's own match client-side: the SAME cached score their feed shows,
  * or one on-demand rerank on a cache miss. Nothing is invented — the mock's
  * per-dimension bars ("Experience 96%") had no data behind them and are
- * deliberately not rendered; the ring, the why-line and the matched/gap
- * skills all come straight from the scorer.
+ * deliberately not rendered, and neither is a specific "before -> after"
+ * tailored-score promise (there's no mechanism to score a specific resume
+ * draft ahead of actually tailoring it) — the ring, the why-line and the
+ * matched/gap skills all come straight from the scorer, and that's it.
+ *
+ * The "Tailor my resume" CTA dispatches a `topezia:tailor-open` window event
+ * rather than owning any tailor state itself — TailorButton.tsx (elsewhere
+ * on the page) is the single source of truth for that flow and listens for
+ * it, the same decoupled pattern ApplyBox.tsx already uses for its own
+ * `topezia:apply-open` event.
  */
 import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
+import { Icon } from "@/app/_components/ui";
 
 const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
@@ -86,6 +95,13 @@ export default function MatchCard({ jobId }: { jobId: string }) {
             {m.whyLine || (m.provisional ? "Provisional score from profile similarity — the full breakdown comes when our scorer catches up." : "Scored against your profile — the same score your feed shows.")}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event("topezia:tailor-open"))}
+          style={S.tailorCta}
+        >
+          <Icon name="spark" size={14} color="#fff" />Tailor my resume
+        </button>
       </div>
 
       {(m.matchedSkills.length > 0 || m.gapSkills.length > 0) && (
@@ -117,4 +133,5 @@ const S: Record<string, CSSProperties> = {
   sub: { margin: "6px 0 0", fontSize: 12.5, color: "#334155", lineHeight: 1.6 },
   chip: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600 },
   cta: { background: "linear-gradient(135deg,#8B5CF6,#3B82F6)", color: "#fff", borderRadius: 10, padding: "11px 20px", fontSize: 13, fontWeight: 700, textDecoration: "none", flex: "none" },
+  tailorCta: { flex: "none", display: "inline-flex", alignItems: "center", gap: 8, background: "linear-gradient(135deg,#8B5CF6,#3B82F6)", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
 };

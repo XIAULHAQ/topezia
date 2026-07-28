@@ -55,6 +55,44 @@ export function diffList<T>(oldItems: T[], newItems: T[], key: (t: T) => string)
   return { old, new: newList };
 }
 
+export interface SkillBadge { name: string; status: "same" | "added" | "promoted" }
+
+/**
+ * Classifies the TAILORED skill list against the original for the "same
+ * skills, reordered" framing: tailoring's main effect on skills is moving
+ * the posting-relevant ones toward the top, not adding or dropping real
+ * ones. A same-content skill that moved from outside the top `topN` into it
+ * is "promoted" (MOVED UP badge); a skill with no match in the original is
+ * "added" (genuinely new, not just reordered); everything else is
+ * unchanged. Case/whitespace-insensitive, matching the diffList skills key
+ * used elsewhere in the panel — the model sometimes just recapitalizes a
+ * skill without meaning it as a real change.
+ *
+ * Skills present in the original but absent from the tailored list (rare —
+ * the tailor prompt is told never to drop a real skill) are NOT reflected
+ * here; use removedSkills() to detect and surface that honestly.
+ */
+export function skillMoves(oldSkills: string[], newSkills: string[], topN = 6): SkillBadge[] {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const oldIndex = new Map<string, number>();
+  oldSkills.forEach((s, i) => { if (!oldIndex.has(norm(s))) oldIndex.set(norm(s), i); });
+  return newSkills.map((s, newIdx) => {
+    const oldIdx = oldIndex.get(norm(s));
+    if (oldIdx === undefined) return { name: s, status: "added" as const };
+    if (oldIdx >= topN && newIdx < topN) return { name: s, status: "promoted" as const };
+    return { name: s, status: "same" as const };
+  });
+}
+
+/** Skills that were in the original list and have no match (case/whitespace-
+ *  insensitive) anywhere in the tailored list — the rare case that must
+ *  still be surfaced honestly rather than silently dropped. */
+export function removedSkills(oldSkills: string[], newSkills: string[]): string[] {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const newSet = new Set(newSkills.map(norm));
+  return oldSkills.filter((s) => !newSet.has(norm(s)));
+}
+
 /** LCS word diff — used for prose (the summary), where word order matters. */
 export function diffWords(oldText: string, newText: string): { old: DiffItem<string>[]; new: DiffItem<string>[] } {
   const split = (s: string) => s.split(/(\s+)/).filter((t) => t.length > 0);

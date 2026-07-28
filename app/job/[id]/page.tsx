@@ -30,6 +30,7 @@ import SiteNav from "@/app/_components/SiteNav";
 import ApplyGate from "./ApplyGate";
 import ApplyBox from "./ApplyBox";
 import TailorButton from "./TailorButton";
+import ApplicationReadiness from "./ApplicationReadiness";
 import MatchCard from "./MatchCard";
 import RelocationCard from "./RelocationCard";
 import { SiteFooter } from "@/app/_components/SiteChrome";
@@ -281,6 +282,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".8px", color: MUTED, textTransform: "uppercase", marginBottom: 4 }}>
                 {isProject ? "Send a proposal" : "Your application"}
               </div>
+              {!dead && <ApplicationReadiness jobId={job.id} />}
               {applyBlock ?? <p style={{ fontSize: 12.5, color: MUTED, margin: "10px 0 0" }}>This posting has closed.</p>}
               {!dead && (
                 <div style={{ marginTop: 12 }}>
@@ -288,6 +290,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
                     jobId={job.id}
                     companyName={job.companyName}
                     jobTitle={job.titleNormalized ?? job.titleRaw}
+                    jobSkills={job.skills.map((s) => s.skill.name)}
                     applyHref={applyHref}
                     applyLabel={applyLabel}
                     isNative={isNative}
