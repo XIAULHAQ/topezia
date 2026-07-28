@@ -268,7 +268,11 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
               </section>
             )}
 
-            {applyBlock}
+            {/* Stable target for the tailor panel's "Apply on Topezia" —
+                see ApplyBox.tsx's topezia:apply-open listener. Only this
+                instance gets the id; ApplyBox also renders in the rail
+                below, and an id must not repeat in the DOM. */}
+            <div id="job-apply-box">{applyBlock}</div>
           </div>
 
           {/* ── Rail ── */}
@@ -280,7 +284,14 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
               {applyBlock ?? <p style={{ fontSize: 12.5, color: MUTED, margin: "10px 0 0" }}>This posting has closed.</p>}
               {!dead && (
                 <div style={{ marginTop: 12 }}>
-                  <TailorButton jobId={job.id} />
+                  <TailorButton
+                    jobId={job.id}
+                    companyName={job.companyName}
+                    jobTitle={job.titleNormalized ?? job.titleRaw}
+                    applyHref={applyHref}
+                    applyLabel={applyLabel}
+                    isNative={isNative}
+                  />
                 </div>
               )}
             </section>

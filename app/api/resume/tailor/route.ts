@@ -15,7 +15,13 @@
  * Grounding discipline is identical to /api/resume/assist: the model sees
  * only the person's current main resume + their original resumeText + this
  * job's own title/description/skills, and is told never to invent employers,
- * dates, metrics or tools that appear in none of those.
+ * dates, metrics or tools that appear in none of those — trusted at the
+ * prompt level, same as assist, with no code-level string-matching against
+ * the original bullets (an earlier version of this route tried that and it
+ * silently discarded legitimate wording changes the prompt explicitly
+ * invites — "lightly tighten"). The real compensating control is the
+ * tailor-resume slide-in panel (app/job/[id]/TailorPanel.tsx), which shows
+ * every change side-by-side before the person downloads or applies.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -109,10 +115,7 @@ export async function POST(req: NextRequest) {
       ? main.experience.map((role, i) => {
           const t = (out.experience as unknown[])[i] as { bullets?: unknown } | undefined;
           const bullets = t && Array.isArray(t.bullets) ? t.bullets.filter((b): b is string => typeof b === "string" && !!b.trim()) : role.bullets;
-          // Only accept a reordering/subset of bullets that actually exist —
-          // never a bullet the model introduced with no match in the source.
-          const known = new Set(role.bullets.map((b) => b.trim()));
-          return { ...role, bullets: bullets.every((b) => known.has(b.trim())) ? bullets : role.bullets };
+          return { ...role, bullets };
         })
       : main.experience;
     const summary = typeof out.summary === "string" && out.summary.trim() ? out.summary.trim() : main.summary;

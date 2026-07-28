@@ -29,6 +29,16 @@ export default function ApplyBox({ jobId, kind, companyName }: { jobId: string; 
     createClient().auth.getSession().then(({ data }) => setSignedIn(!!data.session)).catch(() => {});
   }, []);
 
+  // The tailor-resume panel's "Apply on Topezia" button dispatches this
+  // rather than duplicating this form — one source of truth for the native
+  // apply flow. ApplyBox starts collapsed, so opening it is what actually
+  // reveals the compose form rather than just scrolling to a closed button.
+  useEffect(() => {
+    const open = () => setOpen(true);
+    window.addEventListener("topezia:apply-open", open);
+    return () => window.removeEventListener("topezia:apply-open", open);
+  }, []);
+
   async function submit() {
     setState("sending");
     setError(null);
