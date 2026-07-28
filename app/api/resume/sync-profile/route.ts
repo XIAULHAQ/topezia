@@ -39,6 +39,13 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
+  // This endpoint syncs skills/education/certifications/languages/headline
+  // onto the profile — never appropriate for a job-tailored draft (it would
+  // overwrite the person's real core skills and possibly their headline/role
+  // with a single job's tailored subset). Main-resume-only, by construction.
+  if ((body as { jobId?: unknown }).jobId) {
+    return NextResponse.json({ error: "Can't sync a tailored resume to the profile." }, { status: 400 });
+  }
   const c = sanitizeContent((body as { content?: unknown }).content);
 
   const edit: ProfileFieldEdit = {

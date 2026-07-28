@@ -7,33 +7,31 @@
  *
  * PUT upserts the whole document. Whole-doc on purpose — the resume is edited
  * as one thing and is small; per-field patching would buy nothing but bugs.
+ *
+ * Both accept an optional `jobId` (query param on GET, body field on PUT) to
+ * address a job-tailored version instead of the main resume — see
+ * TailoredResumeDoc in the schema and POST /api/resume/tailor, which creates
+ * these. The tailored path deliberately diverges from the main-resume path in
+ * two ways: it never re-derives `experience` from the live profile (the whole
+ * point of a tailored doc is that it differs from the canonical one), and PUT
+ * never syncs `experience` back onto Profile.workHistory (a job-specific,
+ * trimmed bullet list must never overwrite the person's real work history).
  */
 import { NextRequest, NextResponse } from "next/server";
 import QRCode from "qrcode";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
-import { sanitizeContent, seedFromProfile, asJson, type ResumeContent } from "@/lib/resume/doc";
+import { sanitizeContent, asJson } from "@/lib/resume/doc";
 import { peekAssistStatus } from "@/lib/resume/assist-quota";
-import { loadProjects, loadQuotes } from "@/lib/resume/load";
+import { loadQuotes, loadResumeProfile, loadMainResumeContent } from "@/lib/resume/load";
 import { updateProfileFields } from "@/lib/matching/profile";
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com").replace(/\/$/, "");
 
-const PROFILE_SELECT = {
-  id: true, tier: true, fullName: true, headlineRoleId: true, currentLocation: true,
-  workHistory: true, education: true, certifications: true, languages: true,
-  photoUrl: true, publicSlug: true,
-  skills: { select: { tier: true, skill: { select: { name: true } } } },
-} as const;
-
-async function loadProfile(userId: string) {
-  return prisma.profile.findUnique({ where: { userId }, select: PROFILE_SELECT });
-}
-
-export async function GET() {
+export async function GET(req: NextRequest) {
   const { userId } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "No profile." }, { status: 401 });
-  const profile = await loadProfile(userId);
+  const profile = await loadResumeProfile(userId);
   if (!profile) return NextResponse.json({ error: "No profile." }, { status: 404 });
 
   const assist = await peekAssistStatus(profile.id, profile.tier);
@@ -50,44 +48,27 @@ export async function GET() {
     ? await QRCode.toDataURL(publicUrl, { margin: 0, width: 160, color: { dark: "#0F172A", light: "#FFFFFF" } }).catch(() => null)
     : null;
 
-  const doc = await prisma.resumeDoc.findUnique({ where: { profileId: profile.id }, select: { content: true, updatedAt: true } });
-  if (doc) {
-    const content = sanitizeContent(doc.content);
-    // Docs saved before projects/languages/recommendations existed have no
-    // such keys. Fill those sections from the profile ON READ — but only when
-    // the key is genuinely absent. A saved `projects: []` means the person
-    // deleted them from their resume, and refilling would override that.
-    const raw = (doc.content ?? {}) as Record<string, unknown>;
-    const fill: Partial<ResumeContent> = {};
-    if (!("projects" in raw)) fill.projects = await loadProjects(profile.id);
-    if (!("languages" in raw)) fill.languages = sanitizeContent({ languages: profile.languages }).languages;
-    // Recommendations are never the doc's to keep: always the live set of
-    // received endorsements, so nothing self-typed can survive in old rows.
-    fill.recommendations = sanitizeContent({ recommendations: await loadQuotes(profile.id) }).recommendations;
-    // Same for experience: it's profile-owned now (title/company/years/
-    // bullets), so this loads whatever /profile or the last resume upload
-    // last wrote — not whatever happened to be in this doc's last save.
-    fill.experience = sanitizeContent({ experience: profile.workHistory }).experience;
-    return NextResponse.json({ content: { ...content, ...fill }, saved: true, updatedAt: doc.updatedAt, assist, photo, publicUrl, qr });
+  const jobId = req.nextUrl.searchParams.get("jobId");
+  if (jobId) {
+    const [tailored, job] = await Promise.all([
+      prisma.tailoredResumeDoc.findUnique({ where: { profileId_jobId: { profileId: profile.id, jobId } }, select: { content: true, updatedAt: true } }),
+      prisma.job.findUnique({ where: { id: jobId }, select: { titleNormalized: true, titleRaw: true, companyName: true } }),
+    ]);
+    if (!tailored) return NextResponse.json({ error: "No tailored resume yet for this job." }, { status: 404 });
+    const content = sanitizeContent(tailored.content);
+    // Unlike the main resume, experience is NOT re-derived from the live
+    // profile here — the whole point of a tailored doc is that it diverges
+    // from the canonical one. Recommendations still come live: never
+    // resume-owned, on the main OR a tailored doc, per the rule above.
+    content.recommendations = sanitizeContent({ recommendations: await loadQuotes(profile.id) }).recommendations;
+    return NextResponse.json({
+      content, saved: true, updatedAt: tailored.updatedAt, assist, photo, publicUrl, qr,
+      job: job ? { title: job.titleNormalized ?? job.titleRaw, company: job.companyName } : null,
+    });
   }
 
-  const headlineName = profile.headlineRoleId
-    ? (await prisma.role.findUnique({ where: { id: profile.headlineRoleId }, select: { name: true } }))?.name ?? null
-    : null;
-
-  const content = seedFromProfile({
-    fullName: profile.fullName,
-    headlineName,
-    currentLocation: profile.currentLocation,
-    workHistory: profile.workHistory,
-    education: profile.education,
-    certifications: profile.certifications,
-    skills: profile.skills.map((s) => ({ name: s.skill.name, tier: s.tier })),
-    languages: profile.languages,
-    recommendations: await loadQuotes(profile.id),
-    projects: await loadProjects(profile.id),
-  });
-  return NextResponse.json({ content, saved: false, updatedAt: null, assist, photo, publicUrl, qr });
+  const { content, saved, updatedAt } = await loadMainResumeContent(profile);
+  return NextResponse.json({ content, saved, updatedAt, assist, photo, publicUrl, qr, job: null });
 }
 
 export async function PUT(req: NextRequest) {
@@ -103,6 +84,8 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  const jobId = typeof (body as { jobId?: unknown }).jobId === "string" ? (body as { jobId: string }).jobId : null;
+
   // sanitizeContent is the entire validation story: unknown fields drop,
   // strings cap, lists cap — nothing user-supplied reaches the row unchecked.
   const content = sanitizeContent((body as { content?: unknown }).content);
@@ -110,6 +93,24 @@ export async function PUT(req: NextRequest) {
   // they come from endorsements other people wrote, re-derived on every save
   // so a hand-crafted PUT can't put words in someone else's mouth.
   content.recommendations = sanitizeContent({ recommendations: await loadQuotes(profile.id) }).recommendations;
+
+  if (jobId) {
+    try {
+      const saved = await prisma.tailoredResumeDoc.upsert({
+        where: { profileId_jobId: { profileId: profile.id, jobId } },
+        create: { profileId: profile.id, jobId, content: asJson(content) },
+        update: { content: asJson(content) },
+        select: { updatedAt: true },
+      });
+      // Deliberately NO updateProfileFields call here — a job-tailored,
+      // trimmed/reordered experience list must never overwrite the person's
+      // real Profile.workHistory. That sync only happens on the main resume.
+      return NextResponse.json({ ok: true, updatedAt: saved.updatedAt });
+    } catch (err) {
+      console.error("tailored resume save failed:", err);
+      return NextResponse.json({ error: "Couldn't save — try again." }, { status: 502 });
+    }
+  }
 
   try {
     const saved = await prisma.resumeDoc.upsert({

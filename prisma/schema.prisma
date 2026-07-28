@@ -218,6 +218,7 @@ model Job {
 
   clicks             JobClick[]
   matchScores        MatchScore[]
+  tailoredResumes    TailoredResumeDoc[]
 
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -405,6 +406,7 @@ model Profile {
   saves            JobSave[]
   dismissals       JobDismissal[]
   matchScores      MatchScore[]
+  tailoredResumes  TailoredResumeDoc[]
 
   // Public-profile section visibility: keys the member chose to HIDE from
   // /p/{slug} ("experience", "skills", …). Empty = everything shows.
@@ -482,11 +484,12 @@ model ProfileSkill {
 }
 
 /// The Resume Builder document — one per profile (versions come later).
-/// The profile stores FACTS (roles, skills, dates); this stores the WRITTEN
-/// resume built on them: a summary and per-role achievement bullets, which
-/// exist nowhere else. Content is one JSON doc — the shape is enforced in
-/// lib/resume/doc.ts, not the schema, so iterating on sections never needs
-/// a migration.
+/// The profile stores FACTS (roles, skills, dates, and each role's bullets —
+/// see Profile.workHistory); this stores what's additionally WRITTEN on top:
+/// a professional summary, plus layout/template choices. Content is one JSON
+/// doc — the shape is enforced in lib/resume/doc.ts, not the schema, so
+/// iterating on sections never needs a migration. This is always the one
+/// MAIN resume; see TailoredResumeDoc for per-job versions.
 model ResumeDoc {
   id        String   @id @default(uuid())
   profileId String   @unique
@@ -494,6 +497,27 @@ model ResumeDoc {
   content   Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// A resume version AI-tailored to one specific job posting — skills
+/// reordered/selected, bullets re-emphasized, summary adjusted for that
+/// posting. Deliberately a separate table from ResumeDoc rather than a
+/// nullable jobId there: Postgres treats NULL as distinct in a unique index,
+/// so "one main resume per profile" wouldn't actually be enforced without a
+/// hand-written partial index Prisma can't express. jobId is never null here,
+/// so @@unique([profileId, jobId]) works exactly as intended — same shape as
+/// MatchScore above. Same content shape as ResumeDoc (lib/resume/doc.ts).
+model TailoredResumeDoc {
+  id        String   @id @default(uuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  content   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([profileId, jobId])
 }
 
 /// One row = one "AI resume update": a 24h window of unlimited assist calls,

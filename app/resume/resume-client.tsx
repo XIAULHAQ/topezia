@@ -19,6 +19,8 @@
  *  - AI drafting is per-section and OPT-IN; saving is explicit, not auto.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { C, GRAD, Icon, BrandMark, MatchRing, SoonTag } from "@/app/_components/ui";
 import { LIMITS, type ResumeContent, type ResumeExperience } from "@/lib/resume/doc";
 import { scoreResume } from "@/lib/resume/score";
@@ -41,6 +43,11 @@ interface MarketStats {
 }
 
 export default function ResumeClient() {
+  // Present when viewing a version tailored for one job (see TailoredResumeDoc
+  // and POST /api/resume/tailor) rather than the main resume — read once on
+  // mount, same as the rest of this page's client-only data.
+  const jobId = useSearchParams().get("job");
+  const [job, setJob] = useState<{ title: string; company: string } | null>(null);
   const [doc, setDoc] = useState<ResumeContent | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [publicUrl, setPublicUrl] = useState<string | null>(null);
@@ -65,7 +72,7 @@ export default function ResumeClient() {
   const ready = doc !== null;
 
   useEffect(() => {
-    fetch("/api/resume")
+    fetch(jobId ? `/api/resume?jobId=${encodeURIComponent(jobId)}` : "/api/resume")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((d) => {
         setDoc(d.content);
@@ -74,15 +81,20 @@ export default function ResumeClient() {
         setQr(d.qr ?? null);
         if (d.saved) setSavedAt(d.updatedAt);
         if (d.assist) setQuota(d.assist);
+        setJob(d.job ?? null);
       })
-      .catch(() => setError("Couldn't load your resume."));
+      .catch(() => setError(jobId ? "Couldn't load that tailored resume." : "Couldn't load your resume."));
     // Market stats load separately and lazily — the heavy insight queries must
     // never delay the editor. A failure just means no card.
     fetch("/api/resume/market")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d && Array.isArray(d.topDemand)) setMarket(d); })
       .catch(() => {});
-  }, []);
+    // jobId in deps: switching between a tailored version and the main resume
+    // (the banner's "back to main resume" link) reuses this same mounted
+    // component — App Router doesn't remount on a search-param-only
+    // navigation — so the fetch must re-run when it changes.
+  }, [jobId]);
 
   const up = useCallback((patch: Partial<ResumeContent>) => {
     setDoc((d) => (d ? { ...d, ...patch } : d));
@@ -175,7 +187,7 @@ export default function ResumeClient() {
       const res = await fetch("/api/resume", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: doc }),
+        body: JSON.stringify(jobId ? { jobId, content: doc } : { content: doc }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || "Couldn't save.");
@@ -295,11 +307,23 @@ export default function ResumeClient() {
               {/* A fresh seed has never been saved — don't claim it has. */}
               {busy === "save" ? "Saving…" : dirty ? "Save draft" : savedAt ? "Saved ✓" : "Save draft"}
             </button>
-            <button type="button" style={S.heroSyncBtn} onClick={saveAndSync} disabled={busy !== null} title="Saves this resume, then updates your Topezia profile to match it">
-              <Icon name="check" size={15} />{busy === "sync" ? "Updating profile…" : "Save & update profile"}
-            </button>
+            {/* Pushes skills/education/certifications/languages/headline onto
+                the profile — never appropriate for a job-tailored draft,
+                which deliberately narrows those to fit one posting. */}
+            {!jobId && (
+              <button type="button" style={S.heroSyncBtn} onClick={saveAndSync} disabled={busy !== null} title="Saves this resume, then updates your Topezia profile to match it">
+                <Icon name="check" size={15} />{busy === "sync" ? "Updating profile…" : "Save & update profile"}
+              </button>
+            )}
           </div>
         </div>
+        {jobId && (
+          <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 16, fontSize: 12.5, color: "#C7CEE4" }}>
+            <Icon name="spark" size={13} />
+            {job ? <span>Tailored for <strong style={{ color: "#fff" }}>{job.company}</strong> — {job.title}</span> : <span>Viewing a tailored version</span>}
+            <Link href="/resume" style={{ color: "#A5B4FC", fontWeight: 600, textDecoration: "none" }}>← Back to my main resume</Link>
+          </div>
+        )}
         <div style={{ position: "relative", display: "flex", flexWrap: "wrap", borderTop: "1px solid rgba(255,255,255,.09)", marginTop: 24 }}>
           {stats.map((st, i) => (
             <div key={st.label} style={{ flex: 1, minWidth: 150, padding: "16px 14px 2px 0", borderRight: i < stats.length - 1 ? "1px solid rgba(255,255,255,.06)" : "none", paddingLeft: i > 0 ? 16 : 0 }}>

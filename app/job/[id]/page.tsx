@@ -29,6 +29,7 @@ import { safeJsonLd } from "@/lib/seo/json-ld";
 import SiteNav from "@/app/_components/SiteNav";
 import ApplyGate from "./ApplyGate";
 import ApplyBox from "./ApplyBox";
+import TailorButton from "./TailorButton";
 import MatchCard from "./MatchCard";
 import RelocationCard from "./RelocationCard";
 import { SiteFooter } from "@/app/_components/SiteChrome";
@@ -278,9 +279,9 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
               </div>
               {applyBlock ?? <p style={{ fontSize: 12.5, color: MUTED, margin: "10px 0 0" }}>This posting has closed.</p>}
               {!dead && (
-                <Link href="/resume" style={{ display: "block", marginTop: 4, border: `1px solid ${LINE}`, borderRadius: 11, padding: 12, textAlign: "center", fontSize: 12.5, fontWeight: 600, color: "#334155", textDecoration: "none" }}>
-                  Tailor your resume with AI
-                </Link>
+                <div style={{ marginTop: 12 }}>
+                  <TailorButton jobId={job.id} />
+                </div>
               )}
             </section>
 
