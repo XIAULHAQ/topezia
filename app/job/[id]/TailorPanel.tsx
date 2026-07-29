@@ -235,7 +235,8 @@ export default function TailorPanel({
       <div className="rb-tailor-chrome" style={{ ...S.backdrop, opacity: visible ? 1 : 0 }} onClick={close} />
       <div className="rb-tailor-chrome" style={{ ...S.panel, transform: visible ? "translateX(0)" : "translateX(100%)" }} role="dialog" aria-modal="true" aria-label="Tailored resume">
         <div style={S.head}>
-          <div style={{ minWidth: 0 }}>
+          <div style={S.headIcon}><Icon name="spark" size={17} color="#fff" /></div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <h2 style={S.title}>Tailored for {job.company}</h2>
             <div style={S.sub}>{job.title}</div>
           </div>
@@ -506,11 +507,12 @@ const S: Record<string, CSSProperties> = {
     position: "fixed", top: 0, right: 0, bottom: 0, width: "min(1080px, 100vw)",
     background: "#fff", zIndex: 301, display: "flex", flexDirection: "column",
     boxShadow: "-24px 0 60px rgba(15,23,42,.25)", transition: "transform .22s ease",
-    fontFamily: FONT,
+    fontFamily: FONT, borderRadius: "20px 0 0 20px", overflow: "hidden",
   },
-  head: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "18px 22px", borderBottom: `1px solid ${LINE}`, flex: "none" },
-  title: { margin: 0, fontSize: 17, fontWeight: 800, color: INK },
-  sub: { fontSize: 12.5, color: MUTED, marginTop: 3 },
+  head: { display: "flex", alignItems: "center", gap: 14, padding: "18px 24px", borderBottom: `1px solid ${LINE}`, flex: "none" },
+  headIcon: { width: 38, height: 38, flex: "none", borderRadius: 11, background: "linear-gradient(135deg,#8B5CF6,#3B82F6)", color: "#fff", display: "grid", placeItems: "center" },
+  title: { margin: 0, fontSize: 15.5, fontWeight: 700, letterSpacing: "-0.2px", color: INK },
+  sub: { fontSize: 11.5, color: MUTED, marginTop: 2 },
   closeBtn: { border: `1px solid ${LINE}`, background: "#fff", color: "#334155", width: 32, height: 32, borderRadius: 9, display: "grid", placeItems: "center", cursor: "pointer", flex: "none" },
   body: { overflowY: "auto", padding: "20px 24px 26px", minWidth: 0 },
   navBtnOn: { display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", borderRadius: 9, border: "none", background: "#fff", color: INK, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
