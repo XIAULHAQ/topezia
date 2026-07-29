@@ -23,21 +23,33 @@ Prisma's local migration history with the live database (see the
 
 ## 1. Current state — verified, not assumed
 
-Everything below was confirmed via direct database queries or live deploy checks, not just "should work":
+**Reconciled 2026-07-30 against the repo at commit `52dbe29`** (243 commits,
+migrations through `041_company_logo`). The table below had gone badly stale —
+it was last accurate on 2026-07-16 and claimed Slices 3–4 were unbuilt. What
+follows is **code-verified only**: every "Evidence" cell names a file, migration,
+or committed record that was read during this pass. Rows whose truth lives in the
+live database are marked ⚪ and were *not* queried — do not treat them as
+confirmed.
 
-| Layer | Status | Evidence |
+| Layer | Status | Evidence (repo-verified unless marked ⚪) |
 |---|---|---|
-| Schema (14 models, 12 enums) | ✅ Live in Supabase | Confirmed via row-count queries; verify migration history per §2 |
-| pgvector + pg_trgm extensions | ✅ Enabled | Migration ran successfully |
-| Taxonomy seed | ✅ Live: 8 verticals, 17 roles, 37 aliases, 27 skills | Verified via `SELECT COUNT(*)` on each table |
-| App deployment | ✅ Live on Vercel, auto-deploys on push to `main` | Deployment `c7fc1ad` and later show "Ready" |
-| Domain | ✅ `topezia.com` connected, DNS valid | Vercel domains page shows "Valid Configuration" |
-| Founding-employer waitlist | ✅ Functional end-to-end | `/waitlist` form + `/admin/waitlist` dashboard both live |
-| Ingestion pipeline | ⚠️ **Code exists, never run against real data** | Greenhouse/Lever/Ashby crawlers written, untested live |
-| `Source` table | ⚠️ Empty | No companies queued for crawling yet |
-| Feed UI, matching engine | ❌ Not built | Slice 3, not started |
-| Parse-confirmation screen | ❌ Not built | Slice 3, not started |
-| SEO pages, email alerts | ❌ Not built | Slice 4, not started |
+| Schema | ✅ **31 models, 27 enums** (was 14/12) | `grep -c '^model\|^enum' prisma/schema.prisma` |
+| Prisma migration debt | ✅ **Resolved — §2 and §3 item 1 of this doc are obsolete; skip them** | 42 tracked folders + `migration_lock.toml`; the US-East DB was rebuilt fresh from migrations, not hand-run SQL (CAVEATS → Infrastructure) |
+| pgvector + pg_trgm | ✅ Enabled; embedding cols still raw-migration-managed | `000_init_vector_support`, `001_pg_trgm`, `002_embedding_dim`; `schema.prisma:203,410` keep them commented |
+| Taxonomy seed | ✅ **11 verticals, 50 roles, 131 aliases, 27 seed skills** (was 8/17/37/27) | `prisma/seed.ts`; ingestion coins further unreviewed skills (`019_skill_tier`) |
+| Ingestion pipeline | ✅ **Run repeatedly against real data** — not "never run" | 128 entries in `scripts/seed-sources.ts`; 6 cron workflows in `.github/workflows/`; commits `9846309` (first full crawl), `8f9bb3b` (US expansion) |
+| `Source` table | ⚪ Populated by `seed-sources.ts`; live row count not queried | `scripts/seed-sources.ts` exists and is committed |
+| Feed UI | ✅ Built | `app/feed/`, `app/jobs/`, `app/search/` |
+| Matching engine | ✅ Built | `lib/matching/{match,insights,parse-resume,eligibility}.ts`, `app/api/match/`, `004_match_cache` |
+| Parse-confirmation screen | ✅ Built | `app/onboard/page.tsx`, `app/api/parse/` |
+| SEO pages | ✅ Built (spec §7) — but see gaps row | `app/jobs/[slug]/[place]/`, `app/sitemap.ts`, `app/robots.ts`, `lib/seo/` (9 modules), `008_seo_page_intro` |
+| Email alerts | ✅ Built, incl. double opt-in + RFC 8058 unsubscribe | `lib/alerts/`, `scripts/send-alerts.ts`, migrations `006`/`007`, `alerts-cron.yml` |
+| Slice 4 gaps vs. the SEO addendum | ❌ `page_stats` aggregates, thin-content `noindex` gate, on-demand revalidation | No `page_stats` anywhere in repo; hubs use time-based `revalidate = 3600`; thin pages currently **404** where `docs/topezia-slice4-seo-spec.md` §1.2 requires `noindex,follow` |
+| Shipped well beyond Phase 1 | ✅ Employer dashboard, billing/Stripe, portfolio, blog, career coach, endorsements, publications, freelance projects, resume tooling | migrations `018`–`041`; `app/employer/`, `app/pricing/`, `app/portfolio/`, `app/blog/`, `app/coach/` |
+| Founding-employer waitlist | ✅ Functional; **admin moved to `/hq`**, `/admin/waitlist` no longer exists | `app/waitlist/`, `app/api/waitlist/`, `app/hq/hq-dashboard.tsx:61` (waitlist tab) |
+| App deployment | ⚪ Assumed still live on Vercel, auto-deploy on `main` | Carried over from 2026-07-16; not re-verified in this pass |
+| Domain | ⚪ `topezia.com` connected; canonical host is `www.topezia.com` | Carried over; CAVEATS → Slice 4 confirms the `www` canonical as of 2026-07-18 |
+| Live row counts (jobs, publishable pages) | ⚪ **Not verified — needs `DATABASE_URL`** | Last committed figures (39 live jobs, 3–4 publishable SEO pages) are from CAVEATS as of **2026-07-18** and are stale by construction |
 
 ---
 
