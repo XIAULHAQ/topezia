@@ -1019,7 +1019,11 @@ model Company {
   about       String?
   website     String?
   location    String?
-  logoUrl     String?
+  /// Storage PATH inside the `logos` bucket ("{companyId}/{uuid}.png"), never a
+  /// full URL — same contract as Portfolio.coverPath. lib/company/storage.ts
+  /// turns it into a URL, so moving bucket or CDN is one function, not a data
+  /// migration. Was `logoUrl` until migration 041; it was never written.
+  logoPath    String?
 
   jobs        Job[]
 

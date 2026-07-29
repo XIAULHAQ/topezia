@@ -198,7 +198,7 @@ export function companyChecklist(company: Company | null, hasPosting: boolean, h
     { label: "About your company", done: (company?.about?.trim().length ?? 0) >= 40, action: "company" },
     { label: "Website", done: !!company?.website?.trim(), action: "company" },
     { label: "Location", done: !!company?.location?.trim(), action: "company" },
-    { label: "Company logo", done: !!company?.logoUrl, action: "logo" },
+    { label: "Company logo", done: !!company?.logoPath, action: "logo" },
     { label: "First posting created", done: hasPosting, action: "post" },
     { label: "A posting is live", done: hasLivePosting, action: "post" },
   ];

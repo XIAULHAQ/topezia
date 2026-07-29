@@ -17,6 +17,7 @@ import SiteNav from "@/app/_components/SiteNav";
 import { SiteFooter } from "@/app/_components/SiteChrome";
 import { curSym } from "@/lib/currency";
 import { jobPath } from "@/lib/seo/job-slug";
+import { companyLogoUrl } from "@/lib/company/storage";
 
 export const revalidate = 900;
 
@@ -31,7 +32,7 @@ async function getCompany(slug: string) {
   return prisma.company.findUnique({
     where: { slug },
     select: {
-      name: true, slug: true, tagline: true, about: true, website: true, location: true, createdAt: true,
+      name: true, slug: true, tagline: true, about: true, website: true, location: true, logoPath: true, createdAt: true,
       jobs: {
         where: { status: "LIVE" },
         orderBy: { createdAt: "desc" },
@@ -87,8 +88,17 @@ export default async function CompanyPage({ params }: { params: { slug: string }
             <div style={{ display: "flex", gap: 22, alignItems: "flex-end", marginTop: -44, flexWrap: "wrap" }}>
               <div style={{ flex: "none", padding: 4, borderRadius: 22, background: GRAD }}>
                 <div style={{ width: 104, height: 104, borderRadius: 18, background: INK, display: "grid", placeItems: "center", position: "relative", overflow: "hidden" }}>
-                  <div style={{ position: "absolute", inset: 6, borderRadius: 13, background: "linear-gradient(140deg,#7C3AED,#2563EB)" }} />
-                  <span style={{ position: "relative", fontSize: 32, fontWeight: 800, letterSpacing: "-1px" }}>{c.name.slice(0, 2).toUpperCase()}</span>
+                  {companyLogoUrl(c.logoPath) ? (
+                    // Real logo: contained on white so a transparent PNG or a
+                    // mark with its own background both read correctly.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={companyLogoUrl(c.logoPath)!} alt="" style={{ position: "relative", width: "100%", height: "100%", objectFit: "contain", background: "#fff", borderRadius: 18 }} />
+                  ) : (
+                    <>
+                      <div style={{ position: "absolute", inset: 6, borderRadius: 13, background: "linear-gradient(140deg,#7C3AED,#2563EB)" }} />
+                      <span style={{ position: "relative", fontSize: 32, fontWeight: 800, letterSpacing: "-1px" }}>{c.name.slice(0, 2).toUpperCase()}</span>
+                    </>
+                  )}
                 </div>
               </div>
               <div style={{ flex: 1, minWidth: 260, paddingBottom: 4 }}>

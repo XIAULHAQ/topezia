@@ -16,6 +16,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { employerStats, companyChecklist, strengthPct, ownedPostingsWhere, AWAITING_REVIEW_DAYS } from "@/lib/employer/stats";
+import { companyLogoUrl } from "@/lib/company/storage";
 
 export async function GET() {
   const { userId, authed } = await currentIdentity();
@@ -101,7 +102,9 @@ export async function GET() {
 
   return NextResponse.json({
     authed,
-    company,
+    // logoPath is a storage path; the client only ever needs the URL, and
+    // deriving it here keeps the bucket layout out of the browser.
+    company: company ? { ...company, logoUrl: companyLogoUrl(company.logoPath) } : null,
     postings,
     stats,
     checklist,

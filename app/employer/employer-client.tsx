@@ -29,7 +29,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { C, GRAD, FONT, Icon, Card } from "@/app/_components/ui";
 
-type Company = { id: string; name: string; slug: string; tagline: string | null; about: string | null; website: string | null; location: string | null; logoUrl: string | null };
+type Company = { id: string; name: string; slug: string; tagline: string | null; about: string | null; website: string | null; location: string | null; logoPath: string | null; logoUrl: string | null };
 type Posting = {
   id: string; kind: string; titleRaw: string; status: string; createdAt: string;
   locationState: string | null; country: string | null; remoteType: string;
@@ -93,6 +93,7 @@ export default function EmployerClient() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sourced, setSourced] = useState<{ candidates: Sourced[]; poolSize: number; jobTitle: string } | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
 
   async function load() {
     const d = await fetch("/api/employer/dashboard").then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -171,6 +172,39 @@ export default function EmployerClient() {
     }
   }
 
+  /** Sends the raw file — the server sniffs its real bytes to decide the type.
+   *  Deliberately not downscaled client-side the way profile photos are: a logo
+   *  is a small mark already, and re-encoding it through a canvas would soften
+   *  crisp edges and drop PNG transparency. */
+  async function uploadLogo(file: File) {
+    setLogoBusy(true); setError(null);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("/api/company/logo", { method: "POST", body });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : "Couldn't upload that logo — try again.");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
+  async function removeLogo() {
+    setLogoBusy(true); setError(null);
+    try {
+      const res = await fetch("/api/company/logo", { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : "Couldn't remove that logo.");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
   const openEdit = () => {
     setForm({
       name: company?.name ?? "", tagline: company?.tagline ?? "", about: company?.about ?? "",
@@ -223,13 +257,39 @@ export default function EmployerClient() {
       <section style={S.hero}>
         <div style={S.heroGlow} />
         <div style={{ position: "relative", display: "flex", gap: 22, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <div style={S.logoRing}>
-            <div style={S.logoTile}>
-              {company?.logoUrl
-                // eslint-disable-next-line @next/next/no-img-element
-                ? <img src={company.logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 11 }} />
-                : <span style={{ position: "relative", fontSize: 24, fontWeight: 800, letterSpacing: "-1px" }}>{initials(company?.name ?? "You")}</span>}
-            </div>
+          <div style={{ flex: "none", textAlign: "center" }}>
+            <label
+              style={{ ...S.logoRing, cursor: company ? "pointer" : "default", opacity: logoBusy ? 0.5 : 1, display: "inline-block" }}
+              title={company ? "Upload a logo (JPG, PNG, WebP or AVIF, up to 2MB)" : "Create your company page first"}
+            >
+              <div style={S.logoTile}>
+                {company?.logoUrl
+                  // eslint-disable-next-line @next/next/no-img-element
+                  ? <img src={company.logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: 11, background: "#fff" }} />
+                  : <span style={{ position: "relative", fontSize: 24, fontWeight: 800, letterSpacing: "-1px" }}>{initials(company?.name ?? "You")}</span>}
+              </div>
+              {company && (
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/avif"
+                  disabled={logoBusy}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = ""; // let the same file be re-picked after an error
+                    if (f) uploadLogo(f);
+                  }}
+                  style={{ display: "none" }}
+                />
+              )}
+            </label>
+            {company && (
+              <div style={{ marginTop: 8, fontSize: 10.5, color: "#8B96B5", display: "flex", gap: 8, justifyContent: "center" }}>
+                <span>{logoBusy ? "Uploading…" : company.logoUrl ? "Replace" : "Add logo"}</span>
+                {company.logoUrl && !logoBusy && (
+                  <button type="button" onClick={removeLogo} style={S.logoRemove}>Remove</button>
+                )}
+              </div>
+            )}
           </div>
           <div style={{ flex: 1, minWidth: 260 }}>
             <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: "-0.7px" }}>
@@ -481,6 +541,22 @@ export default function EmployerClient() {
                     <span style={{ flex: 1, textDecoration: ch.done ? "line-through" : "none" }}>{ch.label}</span>
                     {!ch.done && ch.action === "company" && <button type="button" onClick={openEdit} style={S.miniLink}>Add</button>}
                     {!ch.done && ch.action === "post" && <Link href="/employer/new" style={S.miniLink}>Post</Link>}
+                    {!ch.done && ch.action === "logo" && (
+                      <label style={{ ...S.miniLink, cursor: "pointer" }}>
+                        {logoBusy ? "…" : "Upload"}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/avif"
+                          disabled={logoBusy}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            e.target.value = "";
+                            if (f) uploadLogo(f);
+                          }}
+                          style={{ display: "none" }}
+                        />
+                      </label>
+                    )}
                   </div>
                 ))}
               </div>
@@ -604,6 +680,7 @@ const S: Record<string, CSSProperties> = {
   heroCta: { background: GRAD, borderRadius: 11, padding: "11px 18px", fontSize: 13, fontWeight: 600, color: "#fff", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 7, boxShadow: "0 6px 18px rgba(99,102,241,.35)" },
   logoRing: { flex: "none", padding: 3, borderRadius: 18, background: GRAD },
   logoTile: { width: 72, height: 72, borderRadius: 15, background: C.navy, display: "grid", placeItems: "center", position: "relative", overflow: "hidden" },
+  logoRemove: { background: "none", border: "none", color: "#8B96B5", fontSize: 10.5, cursor: "pointer", fontFamily: "inherit", padding: 0, textDecoration: "underline" },
   meterTrack: { width: 150, height: 6, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", display: "inline-block" },
   meterFill: { display: "block", height: "100%", background: GRAD },
 
