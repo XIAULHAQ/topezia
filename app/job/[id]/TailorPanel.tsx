@@ -21,6 +21,7 @@
  * so what the person sees is exactly what they'd get.
  */
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "@/app/_components/ui";
 import type { ResumeContent } from "@/lib/resume/doc";
 import { diffList, diffWords, skillMoves, removedSkills, type DiffItem } from "@/lib/resume/diff";
@@ -196,7 +197,12 @@ export default function TailorPanel({
     }
   }
 
-  return (
+  // Portaled to document.body: TailorButton (this panel's mount point) sits
+  // inside the rail's `position: sticky` card (app/job/[id]/page.tsx), which
+  // creates its own stacking context ranked below the site header's z-index
+  // — no z-index on this panel, however high, can escape that trap while it
+  // stays a descendant. Rendering at body level sidesteps it entirely.
+  return createPortal(
     <>
       {/* The shared print stylesheet is injected HERE, not assumed: the job
           page has no print CSS of its own (Resume Builder injects these tags
@@ -434,7 +440,8 @@ export default function TailorPanel({
           <ResumeSheet id={printTemplate} d={sheet} />
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }
 
