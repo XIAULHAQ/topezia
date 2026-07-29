@@ -210,6 +210,8 @@ Workflows: Read and write permission.
 
 - `topezia-phase1-spec.md` — the master spec, source of truth for product
   decisions. Update it when reality contradicts it.
+- `docs/topezia-slice4-seo-spec.md` — Slice 4 SEO work must follow this
+  addendum; it supersedes the lighter SEO notes in the base spec.
 - `README.md` — file-by-file map of what exists and what each piece does.
 - This document — operational handoff notes, not product spec. Delete or
   archive once Slice 2–4 are underway and this context is no longer novel.
