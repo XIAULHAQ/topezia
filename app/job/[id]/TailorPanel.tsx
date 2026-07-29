@@ -33,6 +33,12 @@ const INDIGO = "#4f46e5";
 const INK = "#0F172A";
 const MUTED = "#64748B";
 const LINE = "#E2E8F0";
+// The panel used to inherit the job page's Sora font by nesting inside
+// <main style={{fontFamily:...}}>. Now that it's portaled to document.body
+// (see the createPortal call below), it's no longer a descendant of that
+// element, so it needs its own explicit font-family instead of falling back
+// to the browser default.
+const FONT = "var(--font-sora), var(--font-jakarta), sans-serif";
 const RED_BG = "#FEF2F2", RED_FG = "#991B1B", RED_LINE = "#FECACA";
 const GREEN_BG = "#F0FDF4", GREEN_FG = "#166534", GREEN_LINE = "#BBF7D0";
 
@@ -500,6 +506,7 @@ const S: Record<string, CSSProperties> = {
     position: "fixed", top: 0, right: 0, bottom: 0, width: "min(1080px, 100vw)",
     background: "#fff", zIndex: 301, display: "flex", flexDirection: "column",
     boxShadow: "-24px 0 60px rgba(15,23,42,.25)", transition: "transform .22s ease",
+    fontFamily: FONT,
   },
   head: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "18px 22px", borderBottom: `1px solid ${LINE}`, flex: "none" },
   title: { margin: 0, fontSize: 17, fontWeight: 800, color: INK },
@@ -543,5 +550,5 @@ const S: Record<string, CSSProperties> = {
   dlOptOff: { display: "block", width: "100%", textAlign: "left", border: "none", background: "transparent", borderRadius: 9, padding: "9px 10px", cursor: "pointer", fontFamily: "inherit", color: INK },
   applyBtn: { display: "inline-flex", alignItems: "center", gap: 8, border: "none", background: INDIGO, color: "#fff", borderRadius: 10, padding: "10px 18px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textDecoration: "none", whiteSpace: "nowrap" },
   previewBackdrop: { position: "fixed", inset: 0, zIndex: 320, background: "rgba(15,23,42,.6)", display: "grid", placeItems: "center", padding: 20 },
-  previewModal: { width: "min(880px, 96vw)", maxHeight: "92vh", background: "#fff", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 30px 80px rgba(15,23,42,.4)" },
+  previewModal: { width: "min(880px, 96vw)", maxHeight: "92vh", background: "#fff", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 30px 80px rgba(15,23,42,.4)", fontFamily: FONT },
 };
