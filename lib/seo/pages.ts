@@ -9,7 +9,7 @@
  * evaluated per request and reflected in the sitemap.
  */
 import { prisma } from "@/lib/prisma";
-import type { EmploymentType, JobKind, RemoteType, SalaryPeriod } from "@prisma/client";
+import type { EmploymentType, JobKind, Prisma, RemoteType, SalaryPeriod } from "@prisma/client";
 import { hubBySlug, hubMatchIds, HUBS, type SkillHub } from "./hubs";
 import { getCachedIntro } from "./intro";
 import { COUNTRY_NAMES, countryName } from "@/lib/countries";
@@ -70,6 +70,16 @@ export interface SeoPage {
   keyword: string;
   topic: string;
   variant: string;
+  /**
+   * Hero-bar numbers for the redesigned listing page. Real counts only — same
+   * discipline as getBrowseHub: grouped aggregate queries against the page's
+   * own `where`, never estimated. For hub pages (no single `where`, since
+   * matches come from an id list) these are derived from the loaded
+   * jobs+projects arrays instead, which is fine at hub volumes (the only hub
+   * today clears the publish floor at a few dozen listings, well under what
+   * gets fetched).
+   */
+  stats: { companies: number; remoteSharePct: number; postedLast7d: number };
 }
 
 const JOB_SELECT = {
@@ -77,6 +87,55 @@ const JOB_SELECT = {
   employmentType: true, salaryMin: true, salaryMax: true, salaryPeriod: true, salaryCurrency: true, kind: true,
   lastVerifiedAt: true, postedAt: true, source: true, sourceUrl: true, descriptionRaw: true,
 } as const;
+
+const WEEK_MS = 7 * 24 * 3600 * 1000;
+
+// The grouped-by-company display is the whole point of the redesign — a flat
+// "ORDER BY lastVerifiedAt DESC LIMIT N" defeats it the moment one employer
+// re-verifies a big batch of reqs at once (tech-software's top 150 by
+// recency came back as 3 companies in testing). So the pool is built company
+// by company instead: the busiest TOP_COMPANIES employers, PER_COMPANY_TAKE
+// most-recent roles each.
+const TOP_COMPANIES = 25;
+const PER_COMPANY_TAKE = 6;
+
+/** Hero-bar aggregates AND the display pool for a query-backed page, built
+ * from ONE company breakdown so both describe the exact same denominator. */
+async function buildListing(where: Prisma.JobWhereInput, total: number): Promise<{ jobs: SeoJob[]; stats: SeoPage["stats"] }> {
+  if (total === 0) return { jobs: [], stats: { companies: 0, remoteSharePct: 0, postedLast7d: 0 } };
+  const weekAgo = new Date(Date.now() - WEEK_MS);
+  const [companyGroups, remoteCount, postedLast7d] = await Promise.all([
+    prisma.job.groupBy({ by: ["companyName"], where, _count: { id: true }, orderBy: { _count: { id: "desc" } } }),
+    prisma.job.count({ where: { ...where, remoteType: { in: REMOTE_TYPES } } }),
+    prisma.job.count({ where: { ...where, postedAt: { gt: weekAgo } } }),
+  ]);
+  const perCompany = await Promise.all(
+    companyGroups.slice(0, TOP_COMPANIES).map((c) =>
+      prisma.job.findMany({
+        where: { ...where, companyName: c.companyName },
+        select: JOB_SELECT,
+        orderBy: { lastVerifiedAt: "desc" },
+        take: PER_COMPANY_TAKE,
+      })
+    )
+  );
+  return {
+    jobs: perCompany.flat(),
+    stats: { companies: companyGroups.length, remoteSharePct: Math.round((remoteCount / total) * 100), postedLast7d },
+  };
+}
+
+/** Hub pages have no single `where` (matches come from an id list already
+ * resolved into rows), so derive the same three numbers from what was
+ * actually fetched rather than re-querying. */
+function heroExtrasFromLoaded(rows: SeoJob[]): SeoPage["stats"] {
+  if (rows.length === 0) return { companies: 0, remoteSharePct: 0, postedLast7d: 0 };
+  const weekAgo = Date.now() - WEEK_MS;
+  const companies = new Set(rows.map((j) => j.companyName)).size;
+  const remoteCount = rows.filter((j) => j.remoteType.startsWith("REMOTE")).length;
+  const postedLast7d = rows.filter((j) => (j.postedAt ? j.postedAt.getTime() > weekAgo : false)).length;
+  return { companies, remoteSharePct: Math.round((remoteCount / rows.length) * 100), postedLast7d };
+}
 
 const STATE_NAMES: Record<string, string> = {
   AL:"Alabama",AK:"Alaska",AZ:"Arizona",AR:"Arkansas",CA:"California",CO:"Colorado",CT:"Connecticut",
@@ -146,6 +205,7 @@ async function buildHubPage(hub: SkillHub): Promise<SeoPage | null> {
     keyword: `${hub.name} jobs`,
     topic: hub.name,
     variant: `${hub.name} roles`,
+    stats: heroExtrasFromLoaded([...jobs, ...projects]),
   };
 }
 
@@ -203,12 +263,12 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
         canonicalPath: countryHref(vertical.slug, iso),
         slug: vertical.slug,
         country: iso,
-        jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
         total,
         siblings: await siblingsForVertical(vertical.id, vertical.slug),
         keyword: `${vertical.name} jobs`,
         topic: vertical.name,
         variant: `${vertical.name} roles`,
+        ...(await buildListing(where, total)),
       };
     }
     if (!role) return null;
@@ -226,12 +286,12 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
         canonicalPath: countryHref(role.slug, iso),
         slug: role.slug,
         country: iso,
-        jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
         total,
         siblings: await siblingsForRole(role.id, role.slug, undefined, iso),
         keyword: `${role.name} jobs`,
         topic: role.name,
         variant: `${role.name} roles`,
+        ...(await buildListing(where, total)),
       };
     }
     const where = { status: "LIVE" as const, kind: "JOB" as const, roleId: role.id, locationState: st };
@@ -244,12 +304,12 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       canonicalPath: `/jobs/${role.slug}/${st.toLowerCase()}`,
       slug: role.slug,
       state: st.toLowerCase(),
-      jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
       total,
       siblings: await siblingsForRole(role.id, role.slug, st),
       keyword: `${role.name} jobs`,
       topic: role.name,
       variant: `${role.name} roles`,
+      ...(await buildListing(where, total)),
     };
   }
 
@@ -267,12 +327,12 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       intro: `${total} remote ${role.name.toLowerCase()} ${total === 1 ? "role" : "roles"} you can do from anywhere in the US — pulled straight from company career pages, not reposted by a middleman. Topezia tells you which ones actually fit your experience, and which don't.`,
       canonicalPath: `/jobs/remote-${role.slug}`,
       slug: `remote-${role.slug}`,
-      jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
       total,
       siblings: await siblingsForRole(role.id, role.slug),
       keyword: `Remote ${role.name} jobs`,
       topic: role.name,
       variant: `remote ${role.name} roles`,
+      ...(await buildListing(where, total)),
     };
   }
 
@@ -288,12 +348,12 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       intro: `${total} verified ${role.name.toLowerCase()} ${total === 1 ? "opening" : "openings"}, aggregated straight from company career pages and re-checked so you don't click a dead listing. Upload your resume once and see an honest match score — and the skill gaps — for every one.`,
       canonicalPath: `/jobs/${role.slug}`,
       slug: role.slug,
-      jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
       total,
       siblings: await siblingsForRole(role.id, role.slug),
       keyword: `${role.name} jobs`,
       topic: role.name,
       variant: `${role.name} roles`,
+      ...(await buildListing(where, total)),
     };
   }
 
@@ -324,12 +384,12 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       canonicalPath: `/jobs/${clean}`,
       slug: clean,
       country: placeCountry ?? undefined, // lets the route pick the designed country layout
-      jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
       total,
       siblings: [],
       keyword: `Jobs in ${name}`,
       topic: name,
       variant: `roles in ${name}`,
+      ...(await buildListing(where, total)),
     };
   }
 
@@ -345,12 +405,12 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       intro: `${total} verified ${vertical.name.toLowerCase()} ${total === 1 ? "opening" : "openings"} from across the web, in one honest feed. No application trapping — Topezia sends you straight to the original posting, and tells you why each job does or doesn't fit.`,
       canonicalPath: `/jobs/${vertical.slug}`,
       slug: vertical.slug,
-      jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
       total,
       siblings: await siblingsForVertical(vertical.id, vertical.slug),
       keyword: `${vertical.name} jobs`,
       topic: vertical.name,
       variant: `${vertical.name} roles`,
+      ...(await buildListing(where, total)),
     };
   }
 

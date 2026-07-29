@@ -1,11 +1,13 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import type { SeoPage, SeoJob } from "@/lib/seo/pages";
-import { countrySlugFor, countryName } from "@/lib/seo/pages";
+import type { SeoPage, SeoJob, HubLink, BrowseHub } from "@/lib/seo/pages";
+import { countrySlugFor, countryName, getBrowseHub } from "@/lib/seo/pages";
 import { decodeHtmlEntities } from "@/lib/sanitize";
 import { safeJsonLd } from "@/lib/seo/json-ld";
+import { placeLabel, salaryText, freshness, label } from "@/lib/seo/job-display";
 import { buildSeoCopy, buildFaqs, buildBreadcrumbs, collectionPageLd, breadcrumbLd, faqPageLd } from "@/lib/seo/content-block";
 import AlertCapture from "./AlertCapture";
+import JobsInteractive from "./JobsInteractive";
 import SiteNav from "@/app/_components/SiteNav";
 import { SiteFooter } from "@/app/_components/SiteChrome";
 
@@ -13,59 +15,9 @@ const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
 const MUTED = "#6b7280";
 
-const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
-
-const REGION_LABEL: Record<string, string> = {
-  GLOBAL: "Anywhere", EMEA: "EMEA", APAC: "APAC", LATAM: "LatAm", ANZ: "ANZ",
-  EUROPE: "Europe", NORTH_AMERICA: "North America",
-};
-
-/**
- * Where the job is, in words a reader recognises.
- *
- * label(remoteType) rendered REMOTE_INTL as "Remote Intl" — raw enum, and on a
- * UK page it called a UK-remote job "international". Say the actual scope.
- */
-function placeLabel(j: SeoJob): string {
-  if (!j.remoteType.startsWith("REMOTE")) {
-    return j.locationState || REGION_LABEL[j.remoteScope ?? ""] || j.country || label(j.remoteType);
-  }
-  const scope = j.remoteScope;
-  if (!scope) return "Remote";
-  if (scope === "US") return "Remote (US)";
-  return `Remote (${REGION_LABEL[scope] ?? scope})`;
-}
-
 /** Plain text for structured data — decode BEFORE stripping tags. */
 const plainText = (html: string) =>
   decodeHtmlEntities(html).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-
-const CUR_SYM: Record<string, string> = { USD: "$", EUR: "\u20ac", GBP: "\u00a3", INR: "\u20b9", PKR: "Rs", AUD: "A$", CAD: "C$", AED: "AED ", SAR: "SAR " };
-
-/**
- * Pay, in the currency it was actually posted in.
- *
- * Projects carry a fixed budget for the whole engagement rather than a salary,
- * and it is never FX-converted — showing a client's PKR budget as dollars
- * would invent a number nobody agreed to.
- */
-function salaryText(j: SeoJob): string | null {
-  if (j.salaryMin == null || j.salaryMax == null) return null;
-  const sym = CUR_SYM[j.salaryCurrency] ?? `${j.salaryCurrency} `;
-  const unit =
-    j.salaryPeriod === "HOUR" ? "/hr"
-    : j.salaryPeriod === "PROJECT" ? " budget"
-    : j.salaryPeriod === "YEAR" ? "/yr" : "";
-  const fmt = (n: number) => (n >= 1000 ? `${sym}${Math.round(n / 1000)}k` : `${sym}${n}`);
-  return `${fmt(j.salaryMin)}\u2013${fmt(j.salaryMax)}${unit}`;
-}
-
-function freshness(d: Date): string {
-  const h = Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 3.6e6));
-  if (h < 1) return "verified just now";
-  if (h < 48) return `verified ${h}h ago`;
-  return `verified ${Math.round(h / 24)}d ago`;
-}
 
 /** JobPosting structured data — we emit the same schema we crawl (§7). */
 function itemListLd(page: SeoPage) {
@@ -120,7 +72,10 @@ function SectionHead({ title, sub }: { title: string; sub: string }) {
   );
 }
 
-/** One card shape for both kinds — the only difference is the verb. */
+/** Flat card — used only for hub freelance-project sections, which stay a
+ * simple list rather than the company-grouped/filterable jobs treatment
+ * (there's no salary-comparability or company-diversity concern the same way
+ * for a handful of client briefs). */
 function ListingCard({ j }: { j: SeoJob }) {
   const pay = salaryText(j);
   const isProject = j.kind === "PROJECT";
@@ -141,47 +96,145 @@ function ListingCard({ j }: { j: SeoJob }) {
   );
 }
 
-export default function SeoPageView({ page }: { page: SeoPage }) {
+/** No fabricated per-job scores — bars are unlabelled and captioned as
+ * illustrative, since an anonymous visitor has no resume on file yet to
+ * actually score against. */
+function MatchGate({ topic }: { topic: string }) {
+  const widths = [82, 61, 45];
+  return (
+    <section style={S.matchGate}>
+      <div style={S.matchGateBlob} />
+      <div style={S.matchGateTitle}>See which of these actually fit you</div>
+      <p style={S.matchGateSub}>
+        Upload a resume once and every {topic} listing here gets scored against what you&apos;ve actually done — gaps included, no signup wall.
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+        {widths.map((w, i) => (
+          <div key={i} style={S.matchGateTrack}>
+            <div style={{ ...S.matchGateFill, width: `${w}%` }} />
+          </div>
+        ))}
+      </div>
+      <div style={S.matchGateCaption}>Illustrative only — your real score depends on your resume.</div>
+      <Link href="/onboard" style={S.matchGateBtn}>Upload résumé</Link>
+    </section>
+  );
+}
+
+/** Sitewide taxonomy — reuses getBrowseHub (same data backing /jobs) rather
+ * than inventing a page-specific breakdown, so every link here is guaranteed
+ * to resolve (same floor-checked discipline as the directory itself). */
+function TaxonomyGrid({ hub, exceptHref }: { hub: BrowseHub; exceptHref: string }) {
+  const notSelf = (l: HubLink) => l.href !== exceptHref;
+  const columns: { title: string; items: HubLink[] }[] = [
+    { title: "By field", items: hub.verticals.filter(notSelf).slice(0, 8) },
+    { title: "By role", items: hub.roles.filter(notSelf).slice(0, 8) },
+    { title: "By US state", items: hub.states.filter(notSelf).slice(0, 8) },
+    { title: "By country", items: hub.countries.filter(notSelf).slice(0, 8) },
+  ].filter((c) => c.items.length > 0);
+
+  if (columns.length === 0) return null;
+
+  return (
+    <section style={S.taxSection}>
+      <div style={S.taxWrap}>
+        <h2 style={S.taxH2}>Browse jobs by category</h2>
+        <p style={S.taxSub}>Counts from live, re-verified postings — updated a few times a day.</p>
+        <div id="tz-tax-grid">
+          <style dangerouslySetInnerHTML={{ __html: "#tz-tax-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}" }} />
+          {columns.map((col) => (
+            <div key={col.title} style={S.taxCard}>
+              <div style={S.taxGroupTitle}>{col.title}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                {col.items.map((it) => (
+                  <Link key={it.href} href={it.href} style={S.taxLink}>
+                    <span style={{ flex: 1, minWidth: 0 }}>{it.label}</span>
+                    <span style={{ flex: "none", fontSize: 11, color: MUTED }}>{it.count.toLocaleString()}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default async function SeoPageView({ page }: { page: SeoPage }) {
   const isHub = page.kind === "hub";
   const projects = page.projects ?? [];
   const faqs = buildFaqs(page);
   const seoCopy = buildSeoCopy(page);
   const crumbs = buildBreadcrumbs(page);
+  const hub = await getBrowseHub();
+
+  const heroStats: { v: string; k: string }[] = [
+    { v: page.total.toLocaleString(), k: `Live verified ${page.total === 1 ? "role" : "roles"}` },
+    { v: page.stats.companies.toLocaleString(), k: page.stats.companies === 1 ? "Company hiring" : "Companies hiring" },
+    // Remote-role pages are 100% remote by definition — showing that back as
+    // a "stat" would just be restating the page's own filter.
+    ...(page.kind === "remote-role" ? [] : [{ v: `${page.stats.remoteSharePct}%`, k: "Remote-eligible" }]),
+    { v: page.stats.postedLast7d.toLocaleString(), k: "Posted in the last 7 days" },
+  ];
+
+  const alertLabel = page.country ? `jobs open to ${countryName(page.country)}` : page.heading;
+  const alertPlace = page.state ?? (page.country ? countrySlugFor(page.country) : undefined);
+  const alertSlot = (
+    <div id="alerts">
+      <AlertCapture slug={page.slug} place={alertPlace} label={alertLabel} />
+    </div>
+  );
+  const matchGate = <MatchGate topic={page.topic} />;
+
   return (
     <main style={S.page}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(structuredData(page, faqs)) }} />
 
       <SiteNav />
 
-      <div style={S.wrap}>
-        <nav aria-label="Breadcrumb" style={S.crumbNav}>
-          {crumbs.map((c, i) => (
-            <span key={c.item} style={S.crumbItem}>
-              {i > 0 && <span style={S.crumbSep}>/</span>}
-              {i === crumbs.length - 1 ? (
-                <span style={S.crumbCurrent}>{c.name}</span>
-              ) : (
-                <Link href={c.item} style={S.crumbLink}>{c.name}</Link>
-              )}
-            </span>
-          ))}
-        </nav>
-        <h1 style={S.h1}>{page.heading}</h1>
-        <p style={S.intro}>{page.intro}</p>
-
-        {/* Email-alert capture above the fold (§7), plus the resume path. */}
-        {/* The country heading carries an "& open to applicants there" clause
-            that reads badly inside "Get new {label} by email" — use the plain
-            place name for the alert label instead. */}
-        <AlertCapture slug={page.slug} place={page.state ?? (page.country ? countrySlugFor(page.country) : undefined)} label={page.country ? `jobs open to ${countryName(page.country)}` : page.heading} />
-        <div style={S.cta}>
-          <div>
-            <div style={S.ctaTitle}>Which of these actually fit you?</div>
-            <div style={S.ctaSub}>Upload your resume once — get an honest score and the skill gaps for every job below.</div>
+      {/* ── Dark hero: breadcrumb, H1, intro, CTAs, real stat bar ── */}
+      <section style={S.hero}>
+        <div style={S.heroBlob} />
+        <div style={S.heroInner}>
+          <nav aria-label="Breadcrumb" style={S.crumbNav}>
+            {crumbs.map((c, i) => (
+              <span key={c.item} style={S.crumbItem}>
+                {i > 0 && <span style={S.crumbSep}>/</span>}
+                {i === crumbs.length - 1 ? (
+                  <span style={S.crumbCurrent}>{c.name}</span>
+                ) : (
+                  <Link href={c.item} style={S.crumbLink}>{c.name}</Link>
+                )}
+              </span>
+            ))}
+          </nav>
+          <div style={S.heroTop}>
+            <div style={{ flex: "1 1 480px", minWidth: 300 }}>
+              <h1 style={S.h1}>{page.heading}</h1>
+              <p style={S.heroIntro}>{page.intro}</p>
+              <div style={{ display: "flex", gap: 9, flexWrap: "wrap", marginTop: 22 }}>
+                <Link href="/onboard" style={S.heroCtaPrimary}>Upload résumé — score every role</Link>
+                <a href="#alerts" style={S.heroCtaSecondary}>Email me new roles</a>
+              </div>
+            </div>
+            <div style={{ flex: "1 1 300px", minWidth: 280, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 16, padding: "20px 22px" }}>
+              <div id="tz-hero-stats">
+                <style dangerouslySetInnerHTML={{ __html: "#tz-hero-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}" }} />
+                {heroStats.map((s) => (
+                  <div key={s.k}>
+                    <div style={S.statV}>{s.v}</div>
+                    <div style={S.statK}>{s.k}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-          <Link href="/onboard" style={S.ctaBtn}>Show my matches →</Link>
         </div>
+      </section>
 
+      {/* ── Main grid: filter/sort/group + sidebar (or hub's two lists) ── */}
+      <div style={S.wrap2}>
         {isHub ? (
           <>
             {/* Two lists, not one. A salaried job and a freelance brief are
@@ -191,8 +244,9 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
               title={`${page.jobs.length} ${page.jobs.length === 1 ? "job" : "jobs"}`}
               sub="Salaried roles, straight from company career pages."
             />
-            {page.jobs.map((j) => <ListingCard key={j.id} j={j} />)}
-            {page.jobs.length === 0 && (
+            {page.jobs.length > 0 ? (
+              <JobsInteractive jobs={page.jobs} poolLabel={page.topic} matchGate={matchGate} alertSlot={alertSlot} />
+            ) : (
               <p style={S.empty}>No salaried openings matching this right now — the freelance briefs below are where this work is being posted today.</p>
             )}
 
@@ -204,10 +258,7 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
             {projects.length === 0 && <p style={S.empty}>No open briefs right now. New ones land daily.</p>}
           </>
         ) : (
-          <>
-            <div style={S.count}>{page.total} verified {page.total === 1 ? "job" : "jobs"}</div>
-            {page.jobs.map((j) => <ListingCard key={j.id} j={j} />)}
-          </>
+          <JobsInteractive jobs={page.jobs} poolLabel={page.topic} matchGate={matchGate} alertSlot={alertSlot} />
         )}
 
         {page.siblings.length > 0 && (
@@ -221,6 +272,8 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
           </nav>
         )}
       </div>
+
+      <TaxonomyGrid hub={hub} exceptHref={page.canonicalPath} />
 
       {/* SEO content block: two-column copy + FAQ, stacks under 900px (SEO_CSS). */}
       <section style={S.seoSection}>
@@ -236,7 +289,7 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
               )
             )}
             <p style={S.seoP}>
-              <Link href="/jobs" style={S.seoInlineLink}>Browse every job category</Link> on Topezia, or see how this page fits into the wider taxonomy from the related searches above.
+              <Link href="/jobs" style={S.seoInlineLink}>Browse every job category</Link> on Topezia, or see how this page fits into the wider taxonomy above.
             </p>
           </div>
           <div>
@@ -263,36 +316,51 @@ const SEO_CSS = `
 
 const S: Record<string, CSSProperties> = {
   page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "var(--font-jakarta), sans-serif", color: INK },
-  nav: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", background: "#fff", borderBottom: "1px solid #ececf2" },
-  brand: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 22, color: INDIGO, textDecoration: "none" },
-  navLink: { color: MUTED, textDecoration: "none", fontSize: 14, fontWeight: 600 },
-  wrap: { maxWidth: 780, margin: "0 auto", padding: "40px 20px 80px" },
-  h1: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 34, margin: "0 0 12px" },
-  intro: { color: MUTED, fontSize: 17, lineHeight: 1.6, margin: "0 0 24px" },
-  cta: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, background: "#eef0ff", border: `1px solid #d9dcff`, borderRadius: 16, padding: 20, marginBottom: 28, flexWrap: "wrap" },
-  ctaTitle: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 700, fontSize: 17, marginBottom: 4 },
-  ctaSub: { color: MUTED, fontSize: 14, lineHeight: 1.45 },
-  ctaBtn: { padding: "12px 22px", background: INDIGO, color: "#fff", borderRadius: 12, fontWeight: 700, fontSize: 15, textDecoration: "none", whiteSpace: "nowrap" },
-  count: { color: MUTED, fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 12 },
+  hero: { background: "#0F172A", color: "#fff", position: "relative", overflow: "hidden" },
+  heroBlob: { position: "absolute", top: -190, right: -80, width: 560, height: 560, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.34), transparent 68%)", pointerEvents: "none" },
+  heroInner: { maxWidth: 1180, margin: "0 auto", padding: "22px 24px 34px", position: "relative" },
+  heroTop: { display: "flex", gap: 44, alignItems: "flex-start", flexWrap: "wrap", marginTop: 12 },
+  h1: { margin: 0, fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 36, letterSpacing: "-1.2px", lineHeight: 1.12 },
+  heroIntro: { margin: "14px 0 0", fontSize: 14.5, lineHeight: 1.7, color: "#B9C0D4", maxWidth: 560 },
+  heroCtaPrimary: { display: "inline-flex", alignItems: "center", gap: 8, background: `linear-gradient(135deg, ${INDIGO}, #3B82F6)`, borderRadius: 11, padding: "12px 22px", fontSize: 13.5, fontWeight: 700, color: "#fff", textDecoration: "none", boxShadow: "0 8px 22px rgba(99,102,241,.34)", whiteSpace: "nowrap" },
+  heroCtaSecondary: { display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid rgba(255,255,255,.2)", background: "rgba(255,255,255,.06)", borderRadius: 11, padding: "12px 20px", fontSize: 13.5, fontWeight: 600, color: "#E2E8F0", textDecoration: "none", whiteSpace: "nowrap" },
+  statV: { fontSize: 22, fontWeight: 800, letterSpacing: "-0.7px", color: "#fff" },
+  statK: { fontSize: 10.5, color: "#8B96B5", marginTop: 4, lineHeight: 1.4 },
+  crumbNav: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, fontSize: 11.5, color: "#8B96B5", marginBottom: 4 },
+  crumbItem: { display: "inline-flex", alignItems: "center", gap: 8 },
+  crumbSep: { color: "#586180" },
+  crumbLink: { color: "#8B96B5", textDecoration: "none", fontWeight: 500 },
+  crumbCurrent: { color: "#E2E8F0", fontWeight: 600 },
+  wrap2: { maxWidth: 1180, margin: "0 auto", padding: "26px 24px 20px" },
+  sectionHead: { marginTop: 30, marginBottom: 12 },
+  sectionTitle: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 20 },
+  sectionSub: { color: MUTED, fontSize: 14, marginTop: 3, lineHeight: 1.5 },
   card: { background: "#fff", border: "1px solid #ececf2", borderRadius: 14, padding: 18, marginBottom: 10 },
   cardTop: { display: "flex", alignItems: "flex-start", gap: 12 },
   jobTitle: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 700, fontSize: 17 },
   jobMeta: { color: MUTED, fontSize: 14, marginTop: 3 },
   viewBtn: { padding: "8px 16px", background: INDIGO, color: "#fff", borderRadius: 10, fontWeight: 700, textDecoration: "none", fontSize: 14, whiteSpace: "nowrap" },
   fresh: { color: "#059669", fontSize: 12, fontWeight: 600, marginTop: 10 },
-  sectionHead: { marginTop: 30, marginBottom: 12 },
-  sectionTitle: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 20 },
-  sectionSub: { color: MUTED, fontSize: 14, marginTop: 3, lineHeight: 1.5 },
   empty: { color: MUTED, fontSize: 14, lineHeight: 1.6, background: "#fff", border: "1px dashed #dcdce6", borderRadius: 14, padding: 18, margin: 0 },
   siblings: { marginTop: 36, paddingTop: 24, borderTop: "1px solid #e6e6ef" },
   sibHead: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 700, fontSize: 15, marginBottom: 12 },
   sibList: { display: "flex", flexWrap: "wrap", gap: 8 },
   sibLink: { padding: "7px 13px", background: "#fff", border: "1px solid #e2e2ea", borderRadius: 999, color: INDIGO, fontSize: 14, fontWeight: 600, textDecoration: "none" },
-  crumbNav: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, fontSize: 12.5, color: MUTED, marginBottom: 18 },
-  crumbItem: { display: "inline-flex", alignItems: "center", gap: 6 },
-  crumbSep: { color: "#c7c7d1" },
-  crumbLink: { color: MUTED, textDecoration: "none", fontWeight: 600 },
-  crumbCurrent: { color: INK, fontWeight: 600 },
+  matchGate: { background: "#0F172A", borderRadius: 16, padding: "20px 22px", color: "#fff", position: "relative", overflow: "hidden" },
+  matchGateBlob: { position: "absolute", top: -60, right: -50, width: 190, height: 190, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,.4), transparent 70%)" },
+  matchGateTitle: { position: "relative", fontSize: 14, fontWeight: 700 },
+  matchGateSub: { position: "relative", margin: "7px 0 14px", fontSize: 11.5, lineHeight: 1.6, color: "#B9C0D4" },
+  matchGateTrack: { position: "relative", height: 8, borderRadius: 999, background: "rgba(255,255,255,.1)", overflow: "hidden" },
+  matchGateFill: { height: "100%", borderRadius: 999, background: `linear-gradient(90deg, ${INDIGO}, #3B82F6)` },
+  matchGateCaption: { position: "relative", fontSize: 10.5, color: "#8B96B5", marginBottom: 14 },
+  matchGateBtn: { position: "relative", display: "block", background: `linear-gradient(135deg, ${INDIGO}, #3B82F6)`, borderRadius: 10, padding: 11, textAlign: "center", fontSize: 12.5, fontWeight: 700, color: "#fff", textDecoration: "none" },
+  taxSection: { borderTop: "1px solid #ececf2", background: "#f7f7fb" },
+  taxWrap: { maxWidth: 1180, margin: "0 auto", padding: "40px 24px 48px" },
+  taxH2: { margin: "0 0 6px", fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 20, letterSpacing: "-0.5px" },
+  taxSub: { margin: "0 0 22px", fontSize: 12.5, color: MUTED },
+  taxCard: { background: "#fff", border: "1px solid #ececf2", borderRadius: 14, padding: "16px 18px" },
+  taxGroupTitle: { fontSize: 11, fontWeight: 700, letterSpacing: ".8px", color: MUTED, textTransform: "uppercase", marginBottom: 12 },
+  taxLink: { display: "flex", alignItems: "baseline", gap: 8, fontSize: 12.5, color: "#334155", textDecoration: "none" },
   seoSection: { borderTop: "1px solid #ececf2", background: "#fff", padding: "48px 20px 64px" },
   seoH2: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 24, letterSpacing: "-0.5px", margin: "0 0 16px" },
   seoH3: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 700, fontSize: 16, margin: "20px 0 8px" },
