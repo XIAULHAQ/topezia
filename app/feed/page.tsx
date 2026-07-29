@@ -37,6 +37,9 @@ type Match = {
 const FILTERS = ["All matches", "Remote", "Hourly", "Saved"] as const;
 type Filter = (typeof FILTERS)[number];
 
+const SORTS = ["Best match", "Newest", "Highest salary"] as const;
+type SortId = (typeof SORTS)[number];
+
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
 
 const REGION_LABEL: Record<string, string> = {
@@ -106,6 +109,7 @@ export default function FeedPage() {
   const [loading, setLoading] = useState(true);
   const [matches, setMatches] = useState<Match[]>([]);
   const [filter, setFilter] = useState<Filter>("All matches");
+  const [sort, setSort] = useState<SortId>("Best match");
   const [error, setError] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [alert, setAlert] = useState<{ slug: string; place?: string; label: string } | null>(null);
@@ -252,6 +256,14 @@ export default function FeedPage() {
     return true;
   });
   const topId = matches.filter((m) => !m.pending).sort((a, b) => b.score - a.score)[0]?.jobId;
+  // Sorted for display only — topId (TOP MATCH ribbon) and "All matches ·
+  // {count}" both stay computed against the unsorted set, so switching sort
+  // order never moves the ribbon or changes the counts.
+  const sortedShown = [...shown].sort((a, b) => {
+    if (sort === "Newest") return new Date(b.lastVerifiedAt).getTime() - new Date(a.lastVerifiedAt).getTime();
+    if (sort === "Highest salary") return (b.salaryMax ?? b.salaryMin ?? -1) - (a.salaryMax ?? a.salaryMin ?? -1);
+    return b.score - a.score;
+  });
   const name = (prefs?.fullName ?? "").split(/\s+/)[0] || "there";
 
   if (error) {
@@ -321,7 +333,11 @@ export default function FeedPage() {
             ))}
             <div style={{ flex: 1 }} />
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.mut, fontWeight: 500 }}>
-              <Icon name="sliders" size={14} />Sort: Best match <SoonTag />
+              <Icon name="sliders" size={14} />
+              Sort:
+              <select value={sort} onChange={(e) => setSort(e.target.value as SortId)} style={S.sortSelect}>
+                {SORTS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
             </div>
           </div>
 
@@ -334,7 +350,7 @@ export default function FeedPage() {
           )}
 
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {shown.map((m, i) => {
+            {sortedShown.map((m, i) => {
               const sal = fmtSalary(m);
               const isNew = freshHours(m.lastVerifiedAt) < 24;
               const isTop = m.jobId === topId && !m.pending;
@@ -489,6 +505,7 @@ const S: Record<string, CSSProperties> = {
   heroLink: { display: "inline-flex", alignItems: "center", gap: 7, marginTop: 14, fontSize: 13, fontWeight: 700, color: "#A5B4FC", textDecoration: "none" },
   pillOn: { padding: "8px 17px", borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: "pointer", background: GRAD, color: "#fff", border: "1px solid transparent", boxShadow: "0 5px 14px rgba(99,102,241,.3)", fontFamily: FONT },
   pillOff: { padding: "8px 17px", borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: "pointer", background: "#fff", color: C.slate, border: `1px solid ${C.line}`, fontFamily: FONT },
+  sortSelect: { border: "none", background: "transparent", fontSize: 12, fontWeight: 700, color: C.ink, cursor: "pointer", fontFamily: FONT, padding: 0 },
   enriching: { display: "flex", alignItems: "center", gap: 8, background: "#EEF2FF", color: C.c1, padding: "10px 14px", borderRadius: 10, fontSize: 13, fontWeight: 600, marginBottom: 14 },
   enrichDot: { width: 10, height: 10, borderRadius: "50%", background: C.c1, animation: "pulse 1s ease-in-out infinite", display: "inline-block" },
   empty: { background: "#fff", border: `1px dashed ${C.line}`, borderRadius: 16, padding: 32, textAlign: "center", color: C.mut, marginBottom: 14 },

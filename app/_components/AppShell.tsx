@@ -85,6 +85,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [name, setName] = useState<string | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [tier, setTier] = useState<string | null>(null);
+  const [searchQ, setSearchQ] = useState("");
 
   useEffect(() => {
     // Self-contained identity: the top-bar avatar needs the signed-in name/photo,
@@ -267,9 +268,23 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <Icon name="panel" />
           </div>
           {!isMobile && (
-            <div style={{ flex: 1, maxWidth: 480, display: "flex", alignItems: "center", gap: 10, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: "10px 14px", color: C.mut, fontSize: 13 }} title="Search — coming soon">
-              <Icon name="search" size={15} />Search jobs, companies…
-            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const query = searchQ.trim();
+                if (query) router.push(`/search?q=${encodeURIComponent(query)}`);
+              }}
+              style={{ flex: 1, maxWidth: 480, display: "flex", alignItems: "center", gap: 10, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: "10px 14px" }}
+            >
+              <Icon name="search" size={15} color={C.mut} />
+              <input
+                value={searchQ}
+                onChange={(e) => setSearchQ(e.target.value)}
+                placeholder="Search jobs, companies…"
+                aria-label="Search jobs, companies"
+                style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", color: C.ink, fontSize: 13, fontFamily: "inherit" }}
+              />
+            </form>
           )}
           <div style={{ flex: 1 }} />
 
