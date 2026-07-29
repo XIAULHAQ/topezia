@@ -180,6 +180,16 @@ successfully pushed (the PAT used lacked `workflow` scope). Add them via
 GitHub's web UI (Add file → Upload files) or push with a token that has
 Workflows: Read and write permission.
 
+**Google Search Console — founder action, not something Claude Code can do**
+(required by `docs/topezia-slice4-seo-spec.md` §4). Two steps, and they
+unblock at different times:
+- **Verify the `topezia.com` domain** — do this now; it doesn't depend on any
+  Slice 4 code. DNS TXT record via the Vercel-managed nameservers, or the
+  HTML-file method.
+- **Submit the sitemap index** (`https://topezia.com/sitemap.xml`) — only
+  after Slice 4 item 4 (sitemaps + on-demand revalidation) actually ships.
+  Submitting a 404 sitemap logs a fetch error against the property.
+
 ---
 
 ## 5. Things that will bite you if you don't know about them
