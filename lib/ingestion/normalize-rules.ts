@@ -192,6 +192,33 @@ function locationParts(s: string): string[] {
 }
 
 /**
+ * Is this whole string the NAME of a country ("Japan", "United Kingdom")?
+ *
+ * Exported for the JobPosting structured data, which has to tell a city from a
+ * country in "Tokyo, Japan" — publishing "Japan" as addressLocality would be
+ * wrong data in a machine-readable feed Google trusts. Reuses the table above
+ * rather than a second copy that could drift from it.
+ */
+export function isCountryName(s: string | null | undefined): boolean {
+  if (!s) return false;
+  return COUNTRY_NAME_TO_ISO[s.trim().toLowerCase()] !== undefined;
+}
+
+/**
+ * Is this string a US state, by code ("CA") or full name ("California")?
+ *
+ * Deliberately does NOT consult the metro table, unlike extractLocationState:
+ * that one resolves "San Francisco" to CA, which is right for deciding a
+ * job's state and wrong for deciding whether a string is a city. The
+ * structured-data locality parser needs the narrow question.
+ */
+export function isUsStateName(s: string | null | undefined): boolean {
+  if (!s) return false;
+  const t = s.trim();
+  return US_STATE_ABBR.includes(t.toUpperCase()) || STATE_NAME_TO_ABBR[t.toLowerCase()] !== undefined;
+}
+
+/**
  * Last-resort scan for a dictionary key appearing as a whole word anywhere in
  * a string — for messy free-text like "utah united states" (no comma) that the
  * component-based matching above can't split. Longest key first so "west

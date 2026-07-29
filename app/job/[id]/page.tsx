@@ -26,6 +26,7 @@ import { renderJobDescription, jobDescriptionText } from "@/lib/sanitize";
 import { MIN_JOBS_FOR_PAGE } from "@/lib/seo/pages";
 import { jobPath, extractJobId } from "@/lib/seo/job-slug";
 import { safeJsonLd } from "@/lib/seo/json-ld";
+import { jobPostingLd } from "@/lib/seo/job-posting-ld";
 import SiteNav from "@/app/_components/SiteNav";
 import ApplyGate from "./ApplyGate";
 import ApplyBox from "./ApplyBox";
@@ -55,7 +56,7 @@ async function getJob(param: string) {
     where: { id },
     select: {
       id: true, kind: true, titleRaw: true, titleNormalized: true, companyName: true, descriptionRaw: true,
-      locationRaw: true, locationState: true, country: true, remoteType: true, employmentType: true, seniority: true,
+      locationRaw: true, locationState: true, country: true, remoteType: true, remoteScope: true, employmentType: true, seniority: true,
       salaryMin: true, salaryMax: true, salaryCurrency: true, salaryPeriod: true, postedAt: true, lastVerifiedAt: true,
       status: true, source: true, sourceUrl: true, roleId: true, verticalId: true,
       vertical: { select: { name: true, slug: true } },
@@ -155,26 +156,30 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
 
   // Google's JobPosting policy covers employment, not freelance bid work —
   // emitting it for projects would risk the whole site's rich-result standing.
-  const jsonLd = isProject ? null : {
-    "@context": "https://schema.org",
-    "@type": "JobPosting",
-    title: job.titleRaw,
-    description: clean,
-    datePosted: (job.postedAt ?? job.lastVerifiedAt).toISOString(),
-    employmentType: job.employmentType,
-    hiringOrganization: { "@type": "Organization", name: job.companyName },
-    jobLocation: {
-      "@type": "Place",
-      address: {
-        "@type": "PostalAddress",
-        ...(job.remoteType.startsWith("REMOTE") ? {} : { addressRegion: job.locationState ?? undefined }),
-        ...(job.country ? { addressCountry: job.country } : {}),
-      },
-    },
-    ...(job.remoteType.startsWith("REMOTE") ? { jobLocationType: "TELECOMMUTE" } : {}),
-    directApply: isNative,
-    url: job.sourceUrl,
-  };
+  // See lib/seo/job-posting-ld.ts for which fields we emit and, more
+  // importantly, which Search Console asks for that we deliberately omit
+  // because we don't hold the data.
+  const jsonLd = isProject
+    ? null
+    : jobPostingLd({
+        titleRaw: job.titleRaw,
+        descriptionClean: clean,
+        postedAt: job.postedAt,
+        lastVerifiedAt: job.lastVerifiedAt,
+        employmentType: job.employmentType,
+        companyName: job.companyName,
+        locationRaw: job.locationRaw,
+        locationState: job.locationState,
+        country: job.country,
+        remoteType: job.remoteType,
+        remoteScope: job.remoteScope,
+        salaryMin: job.salaryMin,
+        salaryMax: job.salaryMax,
+        salaryCurrency: job.salaryCurrency,
+        salaryPeriod: job.salaryPeriod,
+        sourceUrl: job.sourceUrl,
+        isNative,
+      });
 
   const applyBlock = dead ? null : isNative
     ? <ApplyBox jobId={job.id} kind={job.kind} companyName={job.companyName} />
