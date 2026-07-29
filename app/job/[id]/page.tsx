@@ -32,6 +32,7 @@ import ApplyBox from "./ApplyBox";
 import TailorButton from "./TailorButton";
 import ApplicationReadiness from "./ApplicationReadiness";
 import MatchCard from "./MatchCard";
+import ViewPing from "./ViewPing";
 import RelocationCard from "./RelocationCard";
 import { SiteFooter } from "@/app/_components/SiteChrome";
 import { curSym } from "@/lib/currency";
@@ -182,6 +183,9 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
   return (
     <main style={S.page}>
       {jsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />}
+      {/* Counts one view for the employer's dashboard. Only on live postings:
+          a dead listing's numbers shouldn't keep moving. */}
+      {!dead && <ViewPing jobId={job.id} />}
       <SiteNav />
 
       <div style={S.wrap}>

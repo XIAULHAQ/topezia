@@ -68,13 +68,16 @@ export default function PostingForm() {
     }
   }
 
-  async function publish() {
+  /** `draft` saves without the publish bar and without spending an LLM call —
+   *  see lib/employer/publish.ts for why enrichment waits until publish. */
+  async function submit(draft: boolean) {
     setState("sending"); setError(null);
     try {
       const res = await fetch("/api/postings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          draft,
           kind, title: f.title, role: f.role, description: f.description, skills,
           employmentType: f.employmentType, remoteType: f.remoteType, location: f.location,
           salaryMin: f.salaryMin ? Number(f.salaryMin) : null,
@@ -87,10 +90,13 @@ export default function PostingForm() {
       if (!res.ok) throw new Error(d.error);
       router.push("/employer");
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : "Couldn't publish — try again.");
+      setError(e instanceof Error && e.message ? e.message : draft ? "Couldn't save that draft — try again." : "Couldn't publish — try again.");
       setState("idle");
     }
   }
+
+  const publish = () => submit(false);
+  const saveDraft = () => submit(true);
 
   return (
     <div style={{ maxWidth: 680, fontFamily: FONT }}>
@@ -218,11 +224,23 @@ export default function PostingForm() {
       </div>
 
       {error && <div style={{ color: "#b42318", fontSize: 13, marginTop: 12 }}>{error}</div>}
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 16 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 16, flexWrap: "wrap" }}>
         <button type="button" onClick={publish} disabled={state === "sending" || !ready} style={{ ...S.cta, opacity: state === "sending" || !ready ? 0.55 : 1 }}>
           {state === "sending" ? "Publishing…" : ready ? "Publish — it goes live now" : "Meet the requirements above to publish"}
         </button>
-        {ready && <span style={{ fontSize: 12, color: C.mut }}>Free while we grow. You can close it any time.</span>}
+        {/* A draft only needs a title: the whole point is somewhere to put
+            unfinished work. The publish bar is re-checked when it goes live. */}
+        <button
+          type="button"
+          onClick={saveDraft}
+          disabled={state === "sending" || !f.title.trim()}
+          style={{ ...S.ghost, opacity: state === "sending" || !f.title.trim() ? 0.55 : 1 }}
+        >
+          Save as draft
+        </button>
+        <span style={{ fontSize: 12, color: C.mut }}>
+          {ready ? "Free while we grow. You can close it any time." : "A draft stays private until you publish it."}
+        </span>
       </div>
     </div>
   );
@@ -236,6 +254,7 @@ const S: Record<string, CSSProperties> = {
   pillOn: { background: GRAD, color: "#fff", border: "none", borderRadius: 999, padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   pillOff: { background: "#fff", color: C.slate, border: `1px solid ${C.line}`, borderRadius: 999, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
   cta: { background: GRAD, color: "#fff", border: "none", borderRadius: 10, padding: "12px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  ghost: { background: "#fff", color: C.slate, border: `1px solid ${C.line}`, borderRadius: 10, padding: "12px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
   chip: { display: "inline-flex", alignItems: "center", gap: 6, background: "#EEF2FF", color: "#4F46E5", borderRadius: 999, padding: "5px 11px", fontSize: 12.5, fontWeight: 700 },
   chipX: { border: "none", background: "none", color: "#4F46E5", cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1, fontFamily: "inherit" },
   aiToggle: { border: "none", background: "none", color: "#7C3AED", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", padding: 0 },

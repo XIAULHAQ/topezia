@@ -147,6 +147,12 @@ enum Seniority {
 }
 
 enum JobStatus {
+  // NATIVE postings only: saved by the employer but not yet published, so it
+  // is invisible to seekers, to the matcher and to every SEO surface. Every
+  // read path filters on `status: "LIVE"` already, so a DRAFT is excluded
+  // everywhere by construction — the employer dashboard is the one place
+  // that deliberately asks for it.
+  DRAFT
   LIVE
   EXPIRED
   SUSPECTED_DEAD
@@ -217,6 +223,7 @@ model Job {
   applications       Application[]
 
   clicks             JobClick[]
+  views              JobView[]
   matchScores        MatchScore[]
   tailoredResumes    TailoredResumeDoc[]
 
@@ -590,6 +597,28 @@ model JobClick {
 
   @@index([jobId])
   @@index([profileId])
+}
+
+/// One person seeing one posting on one day — what the employer dashboard's
+/// "views" number counts. Distinct from JobClick, which is a click-OUT to the
+/// employer's site and only exists for signed-in feed users.
+///
+/// Deliberately date-bucketed and deduped: a refresh-spamming visitor (or the
+/// employer reloading their own posting) must not be able to inflate the
+/// number an employer is shown. `viewerKey` is the signed-in profile id when
+/// there is one, else the anonymous topezia_uid cookie — never an IP address,
+/// which we don't want to store at all.
+model JobView {
+  id        String   @id @default(uuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  viewerKey String
+  profileId String? // known viewer, for later per-audience breakdowns
+  day       DateTime @db.Date
+  createdAt DateTime @default(now())
+
+  @@unique([jobId, viewerKey, day])
+  @@index([jobId, day])
 }
 
 model JobSave {
