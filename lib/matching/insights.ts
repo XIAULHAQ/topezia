@@ -99,7 +99,19 @@ export interface DemandSkill {
 export interface ProfileInsights {
   fieldLabel: string | null; // "backend engineer roles", or null if we can't scope
   targetJobs: number; // eligible postings in your field
-  seniority: { level: string; atOrAbove: number; below: number } | null;
+  // "role" = scoped to the person's own headline role; "vertical" = widened
+  // because that role had too few live jobs to say anything (see
+  // ROLE_SCOPE_MIN); "none" = no role resolved and no embedding fallback hit.
+  scope: "role" | "vertical" | "none";
+  // The person's own headline role name + its live job count, present
+  // whenever a headline role resolved — even if scope then widened past it.
+  roleName: string | null;
+  roleJobsCount: number | null;
+  seniority: {
+    level: string; atOrAbove: number; below: number;
+    sameLevel: number; // of atOrAbove, how many are AT the person's own tier
+    above: number; // of atOrAbove, how many are genuinely more senior (atOrAbove - sameLevel)
+  } | null;
   coveragePct: number | null; // share of skills your field asks for that you have
   skillGaps: SkillGap[]; // most-wanted skills you lack or are only familiar with
   topDemand: DemandSkill[]; // the field's most-named skills, covered or not
@@ -139,7 +151,16 @@ async function targetJobIds(p: {
   ctx: WorkContext;
   headlineRoleId: string | null;
   skillIds: string[];
-}): Promise<{ ids: string[]; verticalId: string | null; scope: "role" | "vertical" | "none"; label: string | null; fieldWhere: object | null }> {
+}): Promise<{
+  ids: string[]; verticalId: string | null; scope: "role" | "vertical" | "none"; label: string | null; fieldWhere: object | null;
+  // The person's OWN headline role name and its live job count, kept
+  // regardless of whether scope ends up widened to the vertical — the UI
+  // needs these to explain WHY it widened ("only 5 Marketing Manager jobs
+  // open — showing all Marketing roles instead"), not just show the broader
+  // number silently.
+  roleName: string | null;
+  roleJobsCount: number | null;
+}> {
   // Scoped on where they may WORK, exactly as the feed is — the mirror must
   // count the jobs the feed can actually show. Both sides read the same
   // definitions from lib/matching/eligibility.ts.
@@ -178,10 +199,12 @@ async function targetJobIds(p: {
         ids: roleJobs.map((r) => r.id), verticalId: role?.verticalId ?? null, scope: "role",
         label: role?.name?.toLowerCase() ?? null,
         fieldWhere: { roleId: p.headlineRoleId, ...eligibility },
+        roleName: role?.name ?? null, roleJobsCount: roleJobs.length,
       };
     }
     if (role?.verticalId) {
-      return scopeToVertical(role.verticalId, eligibility);
+      const scoped = await scopeToVertical(role.verticalId, eligibility);
+      return { ...scoped, roleName: role?.name ?? null, roleJobsCount: roleJobs.length };
     }
   }
 
@@ -215,12 +238,12 @@ async function targetJobIds(p: {
       const vName = (await prisma.vertical.findUnique({ where: { id: rows[0].verticalId }, select: { name: true, slug: true } }));
       if (vName && vName.slug !== "unsorted") {
         const scoped = await scopeToVertical(rows[0].verticalId, eligibility);
-        if (scoped.ids.length >= 5) return scoped;
+        if (scoped.ids.length >= 5) return { ...scoped, roleName: null, roleJobsCount: null };
       }
     }
   }
 
-  return { ids: [], verticalId: null, scope: "none", label: null, fieldWhere: null };
+  return { ids: [], verticalId: null, scope: "none", label: null, fieldWhere: null, roleName: null, roleJobsCount: null };
 }
 
 async function scopeToVertical(
@@ -273,7 +296,7 @@ async function computeProfileInsights(profileId: string): Promise<ProfileInsight
   if (!profile) return null;
 
   const mySkills = new Map(profile.skills.map((s) => [s.skillId, s.proficiency]));
-  const { ids, scope, label, fieldWhere } = await targetJobIds({
+  const { ids, scope, label, fieldWhere, roleName, roleJobsCount } = await targetJobIds({
     profileId,
     ctx: workContext(profile),
     headlineRoleId: profile.headlineRoleId,
@@ -289,7 +312,7 @@ async function computeProfileInsights(profileId: string): Promise<ProfileInsight
   // say WHY (e.g. "only 1 marketing job open to your region yet") instead of
   // silently showing nothing.
   if (ids.length < 5) {
-    return { fieldLabel, targetJobs: ids.length, seniority: null, coveragePct: null,
+    return { fieldLabel, targetJobs: ids.length, scope, roleName, roleJobsCount, seniority: null, coveragePct: null,
       skillGaps: [], topDemand: [], nextSkills: [], momentum: null, ladder: null, certs: [], premiumFrom: 2, inferred, reliable: false };
   }
 
@@ -485,13 +508,14 @@ async function computeProfileInsights(profileId: string): Promise<ProfileInsight
   if (profile.seniority) {
     const myRank = SENIORITY_RANK[profile.seniority] ?? 0;
     const jobSen = jobMeta;
-    let atOrAbove = 0, below = 0;
+    let atOrAbove = 0, below = 0, sameLevel = 0;
     for (const j of jobSen) {
       const r = SENIORITY_RANK[j.seniority] ?? 0;
       if (r === 0) continue;
       if (r >= myRank) atOrAbove += 1; else below += 1;
+      if (r === myRank) sameLevel += 1;
     }
-    seniority = { level: profile.seniority, atOrAbove, below };
+    seniority = { level: profile.seniority, atOrAbove, below, sameLevel, above: atOrAbove - sameLevel };
 
     // The ladder: what the next level's postings name that yours don't — the
     // promotion diff, counted from the same in-field postings. Only shown when
@@ -618,6 +642,9 @@ async function computeProfileInsights(profileId: string): Promise<ProfileInsight
   return {
     fieldLabel,
     targetJobs: ids.length,
+    scope,
+    roleName,
+    roleJobsCount,
     seniority,
     coveragePct,
     skillGaps: gaps,

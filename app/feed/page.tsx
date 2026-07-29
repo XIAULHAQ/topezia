@@ -85,7 +85,10 @@ function greeting(): string {
 interface FeedInsights {
   fieldLabel: string | null;
   targetJobs: number;
-  seniority: { level: string; atOrAbove: number; below: number } | null;
+  scope: "role" | "vertical" | "none";
+  roleName: string | null;
+  roleJobsCount: number | null;
+  seniority: { level: string; atOrAbove: number; below: number; sameLevel: number; above: number } | null;
   coveragePct: number | null;
   skillGaps: { skill: string; pct: number; youHave: string | null }[];
   nextSkills: { skill: string; withSkill: string; pairJobs: number; pairPct: number }[];
@@ -302,10 +305,20 @@ export default function FeedPage() {
               {insights && insights.reliable ? (
                 <>
                   <div style={S.eyebrow}>Where you stand · you against {insights.targetJobs} {insights.fieldLabel ?? "roles"}</div>
+                  {insights.scope === "vertical" && insights.roleName && insights.roleJobsCount != null && (
+                    <div style={{ fontSize: 11.5, color: "#9AA3BD", marginTop: 4 }}>
+                      Only {insights.roleJobsCount} open {insights.roleName} role{insights.roleJobsCount === 1 ? "" : "s"} near you right now — showing all {insights.fieldLabel} instead.
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 12 }}>
                     <div style={S.heroStat}><div style={S.heroNum}>{insights.coveragePct ?? "—"}%</div><div style={S.heroSub}>of the skills your field asks for, you already have</div></div>
                     {insights.seniority && (
-                      <div style={S.heroStat}><div style={S.heroNum}>{insights.seniority.atOrAbove}</div><div style={S.heroSub}>roles at or above your level ({label(insights.seniority.level)}); {insights.seniority.below} below</div></div>
+                      <div style={S.heroStat}>
+                        <div style={S.heroNum}>{insights.seniority.atOrAbove}</div>
+                        <div style={S.heroSub}>
+                          roles at or above your level ({label(insights.seniority.level)}{insights.roleName ? ` · ${insights.roleName}` : ""}) — {insights.seniority.sameLevel} at your level, {insights.seniority.above} above it; {insights.seniority.below} below
+                        </div>
+                      </div>
                     )}
                     {insights.skillGaps[0] && (
                       <div style={S.heroStat}><div style={S.heroNum}>{insights.skillGaps[0].pct}%</div><div style={S.heroSub}>want {insights.skillGaps[0].skill}{insights.skillGaps[0].youHave ? ` — you're only ${insights.skillGaps[0].youHave.toLowerCase()}` : ", which you don't list"}</div></div>

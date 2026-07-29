@@ -32,7 +32,10 @@ export interface Momentum {
 export interface Insights {
   fieldLabel: string | null;
   targetJobs: number;
-  seniority: { level: string; atOrAbove: number; below: number } | null;
+  scope: "role" | "vertical" | "none";
+  roleName: string | null;
+  roleJobsCount: number | null;
+  seniority: { level: string; atOrAbove: number; below: number; sameLevel: number; above: number } | null;
   coveragePct: number | null;
   skillGaps: SkillGap[];
   nextSkills: NextSkill[];
