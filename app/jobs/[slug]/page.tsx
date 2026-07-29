@@ -19,8 +19,10 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   return {
     title,
     description,
+    robots: "index,follow,max-image-preview:large",
     alternates: { canonical: page.canonicalPath },
     openGraph: { title, description, url: page.canonicalPath, type: "website" },
+    twitter: { card: "summary_large_image", title, description },
   };
 }
 

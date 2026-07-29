@@ -4,6 +4,7 @@ import type { SeoPage, SeoJob } from "@/lib/seo/pages";
 import { countrySlugFor, countryName } from "@/lib/seo/pages";
 import { decodeHtmlEntities } from "@/lib/sanitize";
 import { safeJsonLd } from "@/lib/seo/json-ld";
+import { buildSeoCopy, buildFaqs, buildBreadcrumbs, collectionPageLd, breadcrumbLd, faqPageLd } from "@/lib/seo/content-block";
 import AlertCapture from "./AlertCapture";
 import SiteNav from "@/app/_components/SiteNav";
 import { SiteFooter } from "@/app/_components/SiteChrome";
@@ -67,9 +68,8 @@ function freshness(d: Date): string {
 }
 
 /** JobPosting structured data — we emit the same schema we crawl (§7). */
-function jsonLd(page: SeoPage) {
+function itemListLd(page: SeoPage) {
   return {
-    "@context": "https://schema.org",
     "@type": "ItemList",
     itemListElement: page.jobs.slice(0, 25).map((j, i) => ({
       "@type": "ListItem",
@@ -99,6 +99,15 @@ function jsonLd(page: SeoPage) {
         url: j.sourceUrl,
       },
     })),
+  };
+}
+
+/** CollectionPage + BreadcrumbList + ItemList + FAQPage, one @graph — the FAQPage
+ * entries must stay byte-for-byte in sync with the visible FAQ cards below. */
+function structuredData(page: SeoPage, faqs: { q: string; a: string }[]) {
+  return {
+    "@context": "https://schema.org",
+    "@graph": [collectionPageLd(page), breadcrumbLd(page), itemListLd(page), faqPageLd(faqs)],
   };
 }
 
@@ -135,13 +144,28 @@ function ListingCard({ j }: { j: SeoJob }) {
 export default function SeoPageView({ page }: { page: SeoPage }) {
   const isHub = page.kind === "hub";
   const projects = page.projects ?? [];
+  const faqs = buildFaqs(page);
+  const seoCopy = buildSeoCopy(page);
+  const crumbs = buildBreadcrumbs(page);
   return (
     <main style={S.page}>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd(page)) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(structuredData(page, faqs)) }} />
 
       <SiteNav />
 
       <div style={S.wrap}>
+        <nav aria-label="Breadcrumb" style={S.crumbNav}>
+          {crumbs.map((c, i) => (
+            <span key={c.item} style={S.crumbItem}>
+              {i > 0 && <span style={S.crumbSep}>/</span>}
+              {i === crumbs.length - 1 ? (
+                <span style={S.crumbCurrent}>{c.name}</span>
+              ) : (
+                <Link href={c.item} style={S.crumbLink}>{c.name}</Link>
+              )}
+            </span>
+          ))}
+        </nav>
         <h1 style={S.h1}>{page.heading}</h1>
         <p style={S.intro}>{page.intro}</p>
 
@@ -197,10 +221,45 @@ export default function SeoPageView({ page }: { page: SeoPage }) {
           </nav>
         )}
       </div>
+
+      {/* SEO content block: two-column copy + FAQ, stacks under 900px (SEO_CSS). */}
+      <section style={S.seoSection}>
+        <style dangerouslySetInnerHTML={{ __html: SEO_CSS }} />
+        <div id="tz-seo-grid">
+          <div>
+            <h2 style={S.seoH2}>{seoCopy.h2}</h2>
+            {seoCopy.blocks.map((b, i) =>
+              b.type === "h3" ? (
+                <h3 key={i} style={S.seoH3}>{b.text}</h3>
+              ) : (
+                <p key={i} style={S.seoP}>{b.text}</p>
+              )
+            )}
+            <p style={S.seoP}>
+              <Link href="/jobs" style={S.seoInlineLink}>Browse every job category</Link> on Topezia, or see how this page fits into the wider taxonomy from the related searches above.
+            </p>
+          </div>
+          <div>
+            <h2 style={S.faqHead}>Common questions</h2>
+            {faqs.map((f) => (
+              <div key={f.q} style={S.faqCard}>
+                <div style={S.faqQ}>{f.q}</div>
+                <p style={S.faqA}>{f.a}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <SiteFooter />
     </main>
   );
 }
+
+const SEO_CSS = `
+#tz-seo-grid{max-width:1000px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:44px}
+@media (max-width:900px){#tz-seo-grid{grid-template-columns:minmax(0,1fr)!important;gap:28px!important}}
+`;
 
 const S: Record<string, CSSProperties> = {
   page: { minHeight: "100vh", background: "#f7f7fb", fontFamily: "var(--font-jakarta), sans-serif", color: INK },
@@ -229,4 +288,18 @@ const S: Record<string, CSSProperties> = {
   sibHead: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 700, fontSize: 15, marginBottom: 12 },
   sibList: { display: "flex", flexWrap: "wrap", gap: 8 },
   sibLink: { padding: "7px 13px", background: "#fff", border: "1px solid #e2e2ea", borderRadius: 999, color: INDIGO, fontSize: 14, fontWeight: 600, textDecoration: "none" },
+  crumbNav: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, fontSize: 12.5, color: MUTED, marginBottom: 18 },
+  crumbItem: { display: "inline-flex", alignItems: "center", gap: 6 },
+  crumbSep: { color: "#c7c7d1" },
+  crumbLink: { color: MUTED, textDecoration: "none", fontWeight: 600 },
+  crumbCurrent: { color: INK, fontWeight: 600 },
+  seoSection: { borderTop: "1px solid #ececf2", background: "#fff", padding: "48px 20px 64px" },
+  seoH2: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 24, letterSpacing: "-0.5px", margin: "0 0 16px" },
+  seoH3: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 700, fontSize: 16, margin: "20px 0 8px" },
+  seoP: { color: MUTED, fontSize: 14.5, lineHeight: 1.75, margin: "0 0 14px" },
+  seoInlineLink: { color: INDIGO, fontWeight: 600, textDecoration: "none" },
+  faqHead: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 17, letterSpacing: "-0.3px", margin: "0 0 14px" },
+  faqCard: { background: "#f7f7fb", border: "1px solid #ececf2", borderRadius: 14, padding: "16px 18px", marginBottom: 12 },
+  faqQ: { fontFamily: "var(--font-sora), sans-serif", fontWeight: 700, fontSize: 13.5, marginBottom: 6, color: INK },
+  faqA: { margin: 0, fontSize: 12.5, lineHeight: 1.65, color: MUTED },
 };

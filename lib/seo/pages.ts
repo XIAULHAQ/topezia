@@ -58,6 +58,18 @@ export interface SeoPage {
   projects?: SeoJob[];
   total: number;
   siblings: { href: string; label: string }[];
+  /**
+   * On-page SEO copy inputs (used by lib/seo/content-block.ts).
+   * `keyword` is the exact repeatable "{X} jobs" phrase for this page;
+   * `topic` is the bare label behind it; `variant` is a shorter natural
+   * alternate ("{X} roles") used to avoid repeating `keyword` verbatim
+   * every time. Kept as plain strings set at each build site rather than
+   * parsed back out of `heading`, since the heading's phrasing differs by
+   * kind ("X jobs" vs "Jobs in X" vs "Remote X jobs").
+   */
+  keyword: string;
+  topic: string;
+  variant: string;
 }
 
 const JOB_SELECT = {
@@ -131,6 +143,9 @@ async function buildHubPage(hub: SkillHub): Promise<SeoPage | null> {
     projects,
     total,
     siblings: await siblingsForHub(hub.slug),
+    keyword: `${hub.name} jobs`,
+    topic: hub.name,
+    variant: `${hub.name} roles`,
   };
 }
 
@@ -191,6 +206,9 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
         jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
         total,
         siblings: await siblingsForVertical(vertical.id, vertical.slug),
+        keyword: `${vertical.name} jobs`,
+        topic: vertical.name,
+        variant: `${vertical.name} roles`,
       };
     }
     if (!role) return null;
@@ -211,6 +229,9 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
         jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
         total,
         siblings: await siblingsForRole(role.id, role.slug, undefined, iso),
+        keyword: `${role.name} jobs`,
+        topic: role.name,
+        variant: `${role.name} roles`,
       };
     }
     const where = { status: "LIVE" as const, kind: "JOB" as const, roleId: role.id, locationState: st };
@@ -226,6 +247,9 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
       total,
       siblings: await siblingsForRole(role.id, role.slug, st),
+      keyword: `${role.name} jobs`,
+      topic: role.name,
+      variant: `${role.name} roles`,
     };
   }
 
@@ -246,6 +270,9 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
       total,
       siblings: await siblingsForRole(role.id, role.slug),
+      keyword: `Remote ${role.name} jobs`,
+      topic: role.name,
+      variant: `remote ${role.name} roles`,
     };
   }
 
@@ -264,6 +291,9 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
       total,
       siblings: await siblingsForRole(role.id, role.slug),
+      keyword: `${role.name} jobs`,
+      topic: role.name,
+      variant: `${role.name} roles`,
     };
   }
 
@@ -297,6 +327,9 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
       total,
       siblings: [],
+      keyword: `Jobs in ${name}`,
+      topic: name,
+      variant: `roles in ${name}`,
     };
   }
 
@@ -315,6 +348,9 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       jobs: await prisma.job.findMany({ where, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
       total,
       siblings: await siblingsForVertical(vertical.id, vertical.slug),
+      keyword: `${vertical.name} jobs`,
+      topic: vertical.name,
+      variant: `${vertical.name} roles`,
     };
   }
 
