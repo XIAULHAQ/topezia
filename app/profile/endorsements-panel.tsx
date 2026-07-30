@@ -1,12 +1,19 @@
 "use client";
 
 /**
- * Requested recommendations & reviews, on the member's own profile.
+ * One requested-endorsement panel, for ONE kind.
  *
- * Two halves: what has come back (hide/show, never edit) and what is still
- * out (a link to copy, or delete). The copy-a-link model is deliberate —
- * Topezia sends no email on a member's behalf, so we can never be turned into
- * a way to mail strangers.
+ * Recommendations and reviews are rendered as separate sections because they
+ * make different claims about different things: a recommendation is about the
+ * person and belongs to the profile, a review is about a single piece of work
+ * and belongs to that portfolio piece (which also renders it publicly, see
+ * app/portfolio/[slug]/page.tsx). Mixing them in one list forced the reader to
+ * work out which was which from a trailing "on <project>" label.
+ *
+ * Within a section, two halves: what has come back (hide/show, never edit) and
+ * what is still out (a link to copy, or delete). The copy-a-link model is
+ * deliberate — Topezia sends no email on a member's behalf, so we can never be
+ * turned into a way to mail strangers.
  */
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { C, GRAD, Icon } from "@/app/_components/ui";
@@ -32,11 +39,25 @@ type Row = {
 };
 type Work = { id: string; title: string; slug: string; thumb: string | null };
 
-export default function EndorsementsPanel() {
+type Kind = "RECOMMENDATION" | "REVIEW";
+
+const COPY: Record<Kind, { ask: string; what: string; linkLabel: string }> = {
+  RECOMMENDATION: {
+    ask: "Ask a colleague, manager or client to write about working with you — you'll get a link to send them.",
+    what: "About you as a person to work with — for colleagues, managers or clients.",
+    linkLabel: "Recommendation link",
+  },
+  REVIEW: {
+    ask: "Ask a client to review a specific piece of work — you'll get a link to send them.",
+    what: "About one piece of work — for clients who hired you for it. It also appears on that project's own page.",
+    linkLabel: "Review link",
+  },
+};
+
+export default function EndorsementsPanel({ kind }: { kind: Kind }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [works, setWorks] = useState<Work[]>([]);
   const [open, setOpen] = useState(false);
-  const [kind, setKind] = useState<"RECOMMENDATION" | "REVIEW">("RECOMMENDATION");
   const [workId, setWorkId] = useState("");
   const [sentTo, setSentTo] = useState("");
   const [note, setNote] = useState("");
@@ -62,8 +83,8 @@ export default function EndorsementsPanel() {
   }, [open]);
 
   // Seed the note with a suggestion — a blank box is where most requests die.
-  // Only while it is untouched, so switching kind refreshes the suggestion but
-  // never eats something the member wrote.
+  // Only while it is untouched, so "suggest another" refreshes it but never
+  // eats something the member wrote.
   useEffect(() => {
     if (!open || noteTouched) return;
     setNote(NOTE_SUGGESTIONS[kind][noteIdx % NOTE_SUGGESTIONS[kind].length]);
@@ -104,14 +125,17 @@ export default function EndorsementsPanel() {
   }
 
   if (!rows) return null;
-  const received = rows.filter((r) => r.status === "SUBMITTED");
-  const pending = rows.filter((r) => r.status === "PENDING");
+  // This panel owns exactly one kind — the other kind is a sibling section, so
+  // filtering here is what keeps the two lists from bleeding into each other.
+  const mine = rows.filter((r) => r.kind === kind);
+  const received = mine.filter((r) => r.status === "SUBMITTED");
+  const pending = mine.filter((r) => r.status === "PENDING");
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 12.5, color: C.mut, flex: 1, lineHeight: 1.55, minWidth: 180 }}>
-          Ask someone to write one themselves — you&apos;ll get a link to send them.
+          {COPY[kind].ask}
         </div>
         <button type="button" onClick={() => setOpen((o) => !o)} style={S.primary}>
           <Icon name="plus" size={14} />Request
@@ -120,18 +144,8 @@ export default function EndorsementsPanel() {
 
       {open && (
         <div style={S.form}>
-          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-            {(["RECOMMENDATION", "REVIEW"] as const).map((k) => (
-              <button key={k} type="button" onClick={() => setKind(k)}
-                style={{ ...S.kindBtn, background: kind === k ? GRAD : "#fff", color: kind === k ? "#fff" : C.slate, border: `1px solid ${kind === k ? "transparent" : C.line}` }}>
-                {k === "REVIEW" ? "Review of a project" : "Recommendation"}
-              </button>
-            ))}
-          </div>
           <p style={{ fontSize: 11.5, color: C.mut, margin: "0 0 12px", lineHeight: 1.55 }}>
-            {kind === "REVIEW"
-              ? "About one piece of work — for clients who hired you for it."
-              : "About you as a person to work with — for colleagues, managers or clients."}
+            {COPY[kind].what}
           </p>
 
           {kind === "REVIEW" && (
@@ -176,6 +190,14 @@ export default function EndorsementsPanel() {
         </div>
       )}
 
+      {received.length === 0 && pending.length === 0 && (
+        <p style={{ fontSize: 12.5, color: C.mut, margin: "2px 0 0", lineHeight: 1.6 }}>
+          {kind === "REVIEW"
+            ? "No reviews yet. A review is tied to one project and shows on that project's page as well as here."
+            : "No recommendations yet. These sit on your profile and speak to what you're like to work with."}
+        </p>
+      )}
+
       {received.length > 0 && (
         <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
           {received.map((r) => (
@@ -205,7 +227,7 @@ export default function EndorsementsPanel() {
             {pending.map((r) => (
               <div key={r.id} style={{ ...S.item, display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap", padding: "9px 12px" }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: r.expired ? C.mut : C.ink }}>
-                  {r.sentToLabel || (r.kind === "REVIEW" ? "Review link" : "Recommendation link")}
+                  {r.sentToLabel || COPY[kind].linkLabel}
                 </span>
                 {r.portfolio && <span style={{ fontSize: 11, color: C.mut }}>on {r.portfolio.title}</span>}
                 {r.responses > 0 && (
@@ -233,7 +255,6 @@ export default function EndorsementsPanel() {
 const S: Record<string, CSSProperties> = {
   primary: { display: "inline-flex", alignItems: "center", gap: 6, border: "none", background: GRAD, color: "#fff", borderRadius: 10, padding: "8px 15px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flex: "none" },
   ghost: { border: `1px solid ${C.line}`, background: "#fff", color: C.slate, borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
-  kindBtn: { borderRadius: 999, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   form: { border: `1px solid ${C.line}`, borderRadius: 13, padding: 14, background: "#FBFCFE" },
   input: { width: "100%", padding: "9px 11px", borderRadius: 9, border: `1px solid ${C.line}`, fontSize: 13, fontFamily: "inherit", background: "#fff", boxSizing: "border-box" },
   item: { border: `1px solid ${C.line}`, borderRadius: 12, padding: "11px 13px", background: "#fff" },

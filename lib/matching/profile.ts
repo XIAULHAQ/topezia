@@ -393,7 +393,10 @@ export async function updateProfileFields(
   if (edit.openToWork !== undefined) data.openToWork = Boolean(edit.openToWork);
   if (edit.publicVisible !== undefined) data.publicVisible = Boolean(edit.publicVisible);
   if (edit.hiddenSections !== undefined) {
-    const VALID = new Set(["experience", "skills", "education", "certifications", "languages", "publications", "portfolio", "endorsements"]);
+    // "endorsements" hides RECOMMENDATIONs, "reviews" hides work REVIEWs —
+    // they are separate sections and hide independently. The legacy key keeps
+    // its name so any stored value stays meaningful.
+    const VALID = new Set(["experience", "skills", "education", "certifications", "languages", "publications", "portfolio", "endorsements", "reviews"]);
     data.hiddenSections = [...new Set(edit.hiddenSections.filter((k) => VALID.has(k)))];
   }
   if (edit.linkedinUrl !== undefined) data.linkedinUrl = cleanLinkUrl(edit.linkedinUrl);

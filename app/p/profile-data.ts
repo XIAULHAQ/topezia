@@ -127,15 +127,22 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     linkedinUrl: p.linkedinUrl,
     githubUrl: p.githubUrl,
     websiteUrl: p.websiteUrl,
-    endorsements: (hid.has("endorsements") ? [] : p.endorsements ?? []).map((e) => ({
-      id: e.id,
-      kind: e.kind,
-      authorName: e.authorName ?? "",
-      authorRole: e.authorRole,
-      text: e.text ?? "",
-      rating: e.rating,
-      work: e.portfolio,
-    })).filter((e) => e.text && e.authorName),
+    // Two sections, two switches: "endorsements" hides RECOMMENDATIONs,
+    // "reviews" hides work REVIEWs. Filtering per kind here (rather than in the
+    // component) keeps a hidden section genuinely absent from the payload —
+    // same rule as every other section on this page.
+    endorsements: (p.endorsements ?? [])
+      .filter((e) => !hid.has(e.kind === "REVIEW" ? "reviews" : "endorsements"))
+      .map((e) => ({
+        id: e.id,
+        kind: e.kind,
+        authorName: e.authorName ?? "",
+        authorRole: e.authorRole,
+        text: e.text ?? "",
+        rating: e.rating,
+        work: e.portfolio,
+      }))
+      .filter((e) => e.text && e.authorName),
     employmentTypes: p.employmentTypes,
     remoteTypes: p.remoteTypes,
     locations: p.locations,

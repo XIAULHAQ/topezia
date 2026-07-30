@@ -467,14 +467,28 @@ export default function ProfileView() {
             </Card>
           )}
 
-          {/* Recommendations & reviews — CENTER column, because it was
-              invisible in the right rail. Requested-only: there is no
-              self-typed quote path anywhere in the product anymore; words
-              about you always come from someone else. */}
+          {/* Recommendations and reviews are DELIBERATELY two cards, not one
+              list with a type label. They attach to different things: a
+              recommendation is about the person and belongs to this profile; a
+              review is about a single piece of work and also renders on that
+              project's own public page. They also hide independently — a member
+              may want work reviews public while keeping personal
+              recommendations off, or the reverse.
+
+              CENTER column, because this was invisible in the right rail.
+              Requested-only: there is no self-typed quote path anywhere in the
+              product; words about you always come from someone else. */}
           {tab === "Overview" && (
             <Card>
-              <SectionHead icon="chat" title="Recommendations & reviews" action={<Acts><PubToggle hidden={hiddenHas("endorsements")} onClick={() => toggleSection("endorsements")} /></Acts>} />
-              <EndorsementsPanel />
+              <SectionHead icon="chat" title="Recommendations" action={<Acts><PubToggle hidden={hiddenHas("endorsements")} onClick={() => toggleSection("endorsements")} /></Acts>} />
+              <EndorsementsPanel kind="RECOMMENDATION" />
+            </Card>
+          )}
+
+          {tab === "Overview" && (
+            <Card>
+              <SectionHead icon="star" title="Reviews of my work" action={<Acts><PubToggle hidden={hiddenHas("reviews")} onClick={() => toggleSection("reviews")} /></Acts>} />
+              <EndorsementsPanel kind="REVIEW" />
             </Card>
           )}
 

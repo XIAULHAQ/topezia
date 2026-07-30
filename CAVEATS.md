@@ -158,6 +158,30 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟢 **Test Profile rows cleared** from prod (was 0 profiles on 2026-07-18; 8 now,
   from real signups — the count moves, so don't read a number here as current).
 
+## Recommendations vs. reviews
+- 🟢 **Split into two sections (2026-07-30).** They were one card titled
+  "Recommendations & reviews", so a reader had to infer which was which from a
+  trailing "on <project>" label. They are different claims about different
+  objects: a **recommendation** is about the person and belongs to the profile;
+  a **review** is about one piece of work and belongs to that portfolio piece.
+  The data model already separated them (`EndorsementKind`) — only the UI
+  conflated them.
+  - Owner's profile: two cards, "Recommendations" and "Reviews of my work".
+    `EndorsementsPanel` now takes a `kind` prop and owns one half, so the
+    request form no longer needs its RECOMMENDATION/REVIEW toggle.
+  - Public profile: recommendations render plainly; reviews are **grouped by the
+    work they are about**, each group linking to that piece's page — which
+    already renders the same reviews (`app/portfolio/[slug]/page.tsx`).
+- 🟡 **Two independent visibility switches now.** `hiddenSections` gained
+  `"reviews"`; the legacy `"endorsements"` key keeps its name and now hides
+  recommendations only. Safe at the time of the change because **no profile had
+  any hidden section** (verified: 0 of 8). If that had not been true, splitting
+  one switch into two would have silently exposed reviews someone had hidden.
+- 🟡 **Live data is all REVIEWs** (2 submitted, 1 pending invite; 0
+  recommendations), so the Recommendations card is currently empty everywhere
+  and the public one is absent by design. The empty-state copy is the only thing
+  most members will see there until recommendations get requested.
+
 ## Structured data (JobPosting)
 - 🟢 **Search Console "Missing field applicantLocationRequirements" FIXED
   (2026-07-30).** Google treats a `TELECOMMUTE` posting without that field as an

@@ -94,6 +94,27 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
   };
 
   const name = p.fullName ?? "Topezia member";
+  // "About Sara as someone to work with" reads better than the full name, and
+  // falls back to "them" so a profile with no name never says "About  as…".
+  const firstName = p.fullName?.trim().split(/\s+/)[0] || "them";
+
+  // Recommendations are about the person; reviews are about one piece of work.
+  // Split here so each gets its own card — see the render below for why.
+  const recommendations = p.endorsements.filter((e) => e.kind !== "REVIEW");
+  const reviewGroups = (() => {
+    const byWork = new Map<string, { title: string | null; slug: string | null; items: typeof p.endorsements }>();
+    for (const e of p.endorsements) {
+      if (e.kind !== "REVIEW") continue;
+      // A review whose project was deleted keeps its words (portfolioId is
+      // SetNull, not cascade) — group those together rather than dropping them.
+      const key = e.work?.slug ?? "";
+      const g = byWork.get(key) ?? { title: e.work?.title ?? null, slug: e.work?.slug ?? null, items: [] };
+      g.items.push(e);
+      byWork.set(key, g);
+    }
+    return [...byWork.values()];
+  })();
+
   // Core first — "Top skills" is the person's identity, not their side tools.
   const topSkills = [...p.skills]
     .sort((a, b) => {
@@ -341,18 +362,55 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
                 self-added quotes and visually distinct, because the two make
                 very different claims — and a visitor has to be able to tell
                 which is which without reading the small print. */}
-            {tab === "overview" && p.endorsements.length > 0 && (
-              <Card><Head icon="chat" title="Recommendations & reviews" />
+            {tab === "overview" && recommendations.length > 0 && (
+              <Card><Head icon="chat" title="Recommendations" />
+                <p style={{ fontSize: 12, color: C.mut, margin: "0 0 14px", lineHeight: 1.55 }}>
+                  About {firstName} as someone to work with.
+                </p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                  {p.endorsements.map((e) => (
+                  {recommendations.map((e) => (
                     <blockquote key={e.id} style={{ margin: 0, borderLeft: "3px solid #A7F3D0", paddingLeft: 14 }}>
                       <p style={{ fontSize: 13, color: C.slate, lineHeight: 1.65, margin: 0, fontStyle: "italic" }}>&ldquo;{e.text}&rdquo;</p>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
                         <span style={{ fontSize: 12, color: C.mut, fontWeight: 600 }}>— {[e.authorName, e.authorRole].filter(Boolean).join(", ")}</span>
-                        {e.rating && <span style={{ fontSize: 12, color: C.c1, fontWeight: 700 }}>{"★".repeat(e.rating)}</span>}
-                        {e.work && <span style={{ fontSize: 11, color: C.mut }}>on <a href={`/portfolio/${e.work.slug}`} style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>{e.work.title}</a></span>}
                       </div>
                     </blockquote>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {/* Reviews are a separate card and grouped BY THE WORK they are
+                about, because that is what they are claims about — the project
+                is the subject, not a footnote after the quote. Each group links
+                to the piece's own page, which renders the same reviews. */}
+            {tab === "overview" && reviewGroups.length > 0 && (
+              <Card><Head icon="star" title="Reviews of my work" />
+                <p style={{ fontSize: 12, color: C.mut, margin: "0 0 14px", lineHeight: 1.55 }}>
+                  Each one is about a specific project, written by someone who hired {firstName} for it.
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                  {reviewGroups.map((g) => (
+                    <div key={g.slug ?? "unlinked"}>
+                      {g.title && (
+                        <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 9 }}>
+                          {g.slug
+                            ? <a href={`/portfolio/${g.slug}`} style={{ color: C.c1, textDecoration: "none" }}>{g.title} →</a>
+                            : g.title}
+                        </div>
+                      )}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                        {g.items.map((e) => (
+                          <blockquote key={e.id} style={{ margin: 0, borderLeft: "3px solid #C7D2FE", paddingLeft: 14 }}>
+                            <p style={{ fontSize: 13, color: C.slate, lineHeight: 1.65, margin: 0, fontStyle: "italic" }}>&ldquo;{e.text}&rdquo;</p>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 12, color: C.mut, fontWeight: 600 }}>— {[e.authorName, e.authorRole].filter(Boolean).join(", ")}</span>
+                              {e.rating && <span style={{ fontSize: 12, color: C.c1, fontWeight: 700 }}>{"★".repeat(e.rating)}</span>}
+                            </div>
+                          </blockquote>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </Card>
