@@ -333,25 +333,37 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
             {show.edu && p.publications.length > 0 && (
               <Card><Head icon="doc" title="Publications & research" />
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  {/* Cover LEFT, details RIGHT — mirrors the owner's panel, so
+                      the member sees on their profile what a visitor sees here.
+                      The image column exists only when there is an image: an
+                      empty well on a public page reads as a broken asset. */}
                   {p.publications.map((pub) => (
-                    <div key={pub.id}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: C.c1, background: "#EEF2FF", borderRadius: 999, padding: "2px 8px", textTransform: "uppercase", letterSpacing: 0.3 }}>
-                          {PUB_TYPE_LABELS[pub.type] ?? "Publication"}
-                        </span>
-                        {pub.year && <span style={{ fontSize: 11.5, color: C.mut, fontWeight: 600 }}>{pub.year}</span>}
-                      </div>
-                      <div style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.4 }}>{pub.title}</div>
-                      {pub.authors.length > 0 && <div style={{ fontSize: 12, color: C.slate, marginTop: 3 }}>{pub.authors.join(", ")}</div>}
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4, fontSize: 11.5, color: C.mut }}>
-                        {pub.venue && <span style={{ fontWeight: 600, color: C.c1 }}>{pub.venue}</span>}
-                        {pub.doi && <a href={`https://doi.org/${pub.doi}`} target="_blank" rel="noopener noreferrer" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>DOI {pub.doi}</a>}
-                        {pub.isbn && <span>ISBN {pub.isbn}</span>}
-                        {pub.url && <a href={pub.url} target="_blank" rel="noopener noreferrer" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>View ↗</a>}
-                      </div>
-                      {pub.abstract && (
-                        <p style={{ fontSize: 12.5, color: C.slate, lineHeight: 1.65, margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{pub.abstract}</p>
+                    <div key={pub.id} style={{ display: "flex", gap: 13, alignItems: "flex-start" }}>
+                      {pub.imageUrl && (
+                        <div style={{ flex: "none", width: 74, aspectRatio: "3 / 4", borderRadius: 8, overflow: "hidden", background: "#F1F5F9" }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={pub.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        </div>
                       )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: C.c1, background: "#EEF2FF", borderRadius: 999, padding: "2px 8px", textTransform: "uppercase", letterSpacing: 0.3 }}>
+                            {PUB_TYPE_LABELS[pub.type] ?? "Publication"}
+                          </span>
+                          {pub.year && <span style={{ fontSize: 11.5, color: C.mut, fontWeight: 600 }}>{pub.year}</span>}
+                        </div>
+                        <div style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.4 }}>{pub.title}</div>
+                        {pub.authors.length > 0 && <div style={{ fontSize: 12, color: C.slate, marginTop: 3 }}>{pub.authors.join(", ")}</div>}
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4, fontSize: 11.5, color: C.mut }}>
+                          {pub.venue && <span style={{ fontWeight: 600, color: C.c1 }}>{pub.venue}</span>}
+                          {pub.doi && <a href={`https://doi.org/${pub.doi}`} target="_blank" rel="noopener noreferrer" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>DOI {pub.doi}</a>}
+                          {pub.isbn && <span>ISBN {pub.isbn}</span>}
+                          {pub.url && <a href={pub.url} target="_blank" rel="noopener noreferrer" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>View ↗</a>}
+                        </div>
+                        {pub.abstract && (
+                          <p style={{ fontSize: 12.5, color: C.slate, lineHeight: 1.65, margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{pub.abstract}</p>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

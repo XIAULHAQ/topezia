@@ -27,6 +27,8 @@ type Pub = {
   isbn: string | null;
   url: string | null;
   abstract: string | null;
+  /** Resolved server-side from imagePath — the panel never knows the bucket. */
+  imageUrl: string | null;
 };
 
 const EMPTY = {
@@ -41,6 +43,8 @@ export default function PublicationsPanel() {
   const [f, setF] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Id of the row whose cover is mid-upload, so only that one shows a spinner. */
+  const [uploading, setUploading] = useState<string | null>(null);
 
   const load = useCallback(() => {
     fetch("/api/publications")
@@ -95,6 +99,33 @@ export default function PublicationsPanel() {
   async function remove(id: string) {
     setRows((cur) => cur?.filter((r) => r.id !== id) ?? cur);
     await fetch(`/api/publications?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
+  }
+
+  /**
+   * The cover is uploaded against an EXISTING row, so a publication has to be
+   * saved before it can have an image. That keeps the storage path derived from
+   * real ownership instead of inventing a pre-save id — and it is why the
+   * upload control lives on the list item rather than inside the add form.
+   */
+  async function upload(id: string, file: File) {
+    setUploading(id); setError(null);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch(`/api/publications/image?id=${encodeURIComponent(id)}`, { method: "POST", body });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "Couldn't upload that image.");
+      setRows((cur) => cur?.map((r) => (r.id === id ? { ...r, imageUrl: d.imageUrl } : r)) ?? cur);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't upload that image.");
+    } finally {
+      setUploading(null);
+    }
+  }
+
+  async function removeImage(id: string) {
+    setRows((cur) => cur?.map((r) => (r.id === id ? { ...r, imageUrl: null } : r)) ?? cur);
+    await fetch(`/api/publications/image?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
   }
 
   const set = (k: keyof typeof EMPTY) => (v: string) => setF((cur) => ({ ...cur, [k]: v }));
@@ -165,22 +196,59 @@ export default function PublicationsPanel() {
 
       {rows !== null && rows.length > 0 && (
         <div style={{ display: "grid", gap: 10, marginTop: open ? 12 : 0 }}>
+          {/* Cover LEFT, details RIGHT. No media query: at 74px the cover plus
+              gap costs 87px, so even a 320px screen keeps ~200px of text column
+              — stacking would cost more than it saves. */}
           {rows.map((p) => (
             <div key={p.id} style={S.item}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 5 }}>
-                <span style={S.typeTag}>{PUBLICATION_TYPE_LABELS[p.type]}</span>
-                {p.year && <span style={{ fontSize: 11.5, color: C.mut, fontWeight: 600 }}>{p.year}</span>}
-                <div style={{ flex: 1 }} />
-                <button type="button" onClick={() => startEdit(p)} style={S.linkBtn}>Edit</button>
-                <button type="button" onClick={() => remove(p.id)} style={{ ...S.linkBtn, color: "#b42318" }}>Delete</button>
-              </div>
-              <div style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.4 }}>{p.title}</div>
-              {p.authors.length > 0 && <div style={{ fontSize: 12, color: C.slate, marginTop: 3 }}>{p.authors.join(", ")}</div>}
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4, fontSize: 11.5, color: C.mut }}>
-                {p.venue && <span style={{ fontWeight: 600, color: C.c1 }}>{p.venue}</span>}
-                {p.doi && <a href={`https://doi.org/${p.doi}`} target="_blank" rel="noopener noreferrer" style={S.idLink}>DOI {p.doi}</a>}
-                {p.isbn && <span>ISBN {p.isbn}</span>}
-                {p.url && <a href={p.url} target="_blank" rel="noopener noreferrer" style={S.idLink}>View ↗</a>}
+              <div style={{ display: "flex", gap: 13, alignItems: "flex-start" }}>
+                <div style={{ flex: "none", width: 74 }}>
+                  <label style={{ ...S.thumb, cursor: uploading === p.id ? "wait" : "pointer" }}>
+                    {p.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={p.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    ) : (
+                      <span style={{ fontSize: 10.5, color: C.mut, textAlign: "center", lineHeight: 1.4, padding: 4 }}>
+                        {uploading === p.id ? "Uploading…" : "Add cover"}
+                      </span>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/avif"
+                      style={{ display: "none" }}
+                      disabled={uploading === p.id}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        // Reset the input so picking the SAME file again still fires.
+                        e.target.value = "";
+                        if (file) upload(p.id, file);
+                      }}
+                    />
+                  </label>
+                  {p.imageUrl && (
+                    <button type="button" onClick={() => removeImage(p.id)} style={{ ...S.linkBtn, color: "#b42318", marginTop: 5, fontSize: 11 }}>
+                      Remove
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 5 }}>
+                    <span style={S.typeTag}>{PUBLICATION_TYPE_LABELS[p.type]}</span>
+                    {p.year && <span style={{ fontSize: 11.5, color: C.mut, fontWeight: 600 }}>{p.year}</span>}
+                    <div style={{ flex: 1 }} />
+                    <button type="button" onClick={() => startEdit(p)} style={S.linkBtn}>Edit</button>
+                    <button type="button" onClick={() => remove(p.id)} style={{ ...S.linkBtn, color: "#b42318" }}>Delete</button>
+                  </div>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.4 }}>{p.title}</div>
+                  {p.authors.length > 0 && <div style={{ fontSize: 12, color: C.slate, marginTop: 3 }}>{p.authors.join(", ")}</div>}
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4, fontSize: 11.5, color: C.mut }}>
+                    {p.venue && <span style={{ fontWeight: 600, color: C.c1 }}>{p.venue}</span>}
+                    {p.doi && <a href={`https://doi.org/${p.doi}`} target="_blank" rel="noopener noreferrer" style={S.idLink}>DOI {p.doi}</a>}
+                    {p.isbn && <span>ISBN {p.isbn}</span>}
+                    {p.url && <a href={p.url} target="_blank" rel="noopener noreferrer" style={S.idLink}>View ↗</a>}
+                  </div>
+                </div>
               </div>
             </div>
           ))}
@@ -200,4 +268,7 @@ const S: Record<string, CSSProperties> = {
   typeTag: { fontSize: 10, fontWeight: 700, color: C.c1, background: "#EEF2FF", borderRadius: 999, padding: "2px 8px", textTransform: "uppercase", letterSpacing: 0.3 },
   linkBtn: { background: "none", border: "none", color: C.c1, fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", padding: 0 },
   idLink: { color: C.c1, fontWeight: 600, textDecoration: "none" },
+  // 3:4 portrait — book covers and paper first pages are both taller than wide,
+  // so a square well would letterbox almost every real upload.
+  thumb: { display: "grid", placeItems: "center", width: 74, aspectRatio: "3 / 4", borderRadius: 8, overflow: "hidden", background: "#F1F5F9", border: `1px dashed ${C.line}` },
 };

@@ -6,9 +6,12 @@
  * happens in app/p/profile-data.ts, not here.
  */
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { PUBLICATION_LIMITS, sanitizePublication } from "@/lib/publications/doc";
+import { PUBLICATION_BUCKET, publicationImageUrl } from "@/lib/publications/storage";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,8 +24,13 @@ async function me() {
 
 const SELECT = {
   id: true, type: true, title: true, authors: true, venue: true, year: true,
-  doi: true, isbn: true, url: true, abstract: true, position: true,
+  doi: true, isbn: true, url: true, abstract: true, position: true, imagePath: true,
 } as const;
+
+/** Rows as the client wants them: the stored path resolved to a URL, because
+ *  the bucket name is a server concern and the panel only ever renders src. */
+type Row = Prisma.PublicationGetPayload<{ select: typeof SELECT }>;
+const withImage = (r: Row) => ({ ...r, imageUrl: publicationImageUrl(r.imagePath) });
 
 export async function GET() {
   const profile = await me();
@@ -32,7 +40,7 @@ export async function GET() {
     orderBy: [{ position: "asc" }, { createdAt: "desc" }],
     select: SELECT,
   });
-  return NextResponse.json({ publications });
+  return NextResponse.json({ publications: publications.map(withImage) });
 }
 
 export async function POST(req: NextRequest) {
@@ -57,7 +65,7 @@ export async function POST(req: NextRequest) {
     data: { profileId: profile.id, ...p, position: count },
     select: SELECT,
   });
-  return NextResponse.json({ publication: row });
+  return NextResponse.json({ publication: row && withImage(row) });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -80,7 +88,7 @@ export async function PATCH(req: NextRequest) {
   });
   if (!done.count) return NextResponse.json({ error: "Not found." }, { status: 404 });
   const row = await prisma.publication.findUnique({ where: { id }, select: SELECT });
-  return NextResponse.json({ publication: row });
+  return NextResponse.json({ publication: row && withImage(row) });
 }
 
 export async function DELETE(req: NextRequest) {
@@ -89,7 +97,23 @@ export async function DELETE(req: NextRequest) {
   const id = new URL(req.url).searchParams.get("id") ?? "";
   if (!id) return NextResponse.json({ error: "Bad request." }, { status: 400 });
 
+  // Read the image path BEFORE the row goes, or the object is unreachable —
+  // nothing else records it, so a delete-then-look-up loses the bytes forever.
+  const doomed = await prisma.publication.findFirst({
+    where: { id, profileId: profile.id },
+    select: { imagePath: true },
+  });
+
   const done = await prisma.publication.deleteMany({ where: { id, profileId: profile.id } });
   if (!done.count) return NextResponse.json({ error: "Not found." }, { status: 404 });
+
+  // Row first, bytes after: the member has already seen the entry disappear,
+  // and a failed cleanup leaves an orphan rather than a broken page.
+  if (doomed?.imagePath) {
+    const admin = createAdminClient();
+    await admin?.storage.from(PUBLICATION_BUCKET).remove([doomed.imagePath]).catch(() => {
+      /* best effort */
+    });
+  }
   return NextResponse.json({ ok: true });
 }

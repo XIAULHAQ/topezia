@@ -158,6 +158,33 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟢 **Test Profile rows cleared** from prod (was 0 profiles on 2026-07-18; 8 now,
   from real signups — the count moves, so don't read a number here as current).
 
+## Publication cover thumbnails
+- 🟢 **BUILT 2026-07-30** (migration 042): `Publication.imagePath`, a `publications`
+  storage bucket, `POST/DELETE /api/publications/image`, and an image-left /
+  text-right layout on both the owner's panel and the public profile. Follows
+  the existing pattern exactly (`lib/portfolio/storage.ts`,
+  `app/api/company/logo/route.ts`): the DB stores the PATH not a URL, the type
+  comes from sniffing magic bytes, the path is chosen server-side, and uploads
+  go through the service role because the bucket grants clients no write policy.
+- 🟠 **The upload round-trip is UNVERIFIED locally** — `SUPABASE_SERVICE_ROLE_KEY`
+  is not in the local `.env`, so `createAdminClient()` returns null and the route
+  answers "Uploads aren't configured on this environment". This is not specific
+  to publications: portfolio and logo uploads are equally untestable locally. The
+  key is evidently set in Vercel (portfolio images exist in production), but the
+  first real publication upload in prod is the actual test. What WAS verified:
+  the rendering path, by setting `imagePath` on a row and confirming the public
+  profile emits the right bucket URL with the cover left of the text (74×99 at
+  x=101, text column at x=188, same flex row) — then restoring the row to null.
+- 🟡 **A cover can only be added to a SAVED publication.** The upload targets an
+  existing row id, so the control lives on the list item, not inside the add
+  form. That keeps the storage path derived from real ownership instead of
+  inventing a pre-save id.
+- 🟡 **Deleting a publication removes its object; deleting an ACCOUNT does not.**
+  `DELETE /api/publications` reads `imagePath` before the row goes and cleans up
+  after. Account deletion cleans no bucket at all — pre-existing and true for
+  portfolio and logos too, not something this feature introduced. Worth one
+  sweep across all four buckets if it ever matters.
+
 ## Recommendations vs. reviews
 - 🟢 **Split into two sections (2026-07-30).** They were one card titled
   "Recommendations & reviews", so a reader had to infer which was which from a

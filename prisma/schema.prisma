@@ -976,6 +976,10 @@ model Publication {
   isbn      String?
   url       String?
   abstract  String?
+  // Cover thumbnail — the storage PATH ("{profileId}/{uuid}.jpg"), never a full
+  // URL, so moving bucket or CDN stays a change to lib/publications/storage.ts
+  // rather than a data migration. Same contract as Portfolio.coverPath.
+  imagePath String?
 
   position  Int             @default(0)
   createdAt DateTime        @default(now())

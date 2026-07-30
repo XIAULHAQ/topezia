@@ -8,6 +8,7 @@ import { cache } from "react";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { portfolioImageUrl } from "@/lib/portfolio/storage";
+import { publicationImageUrl } from "@/lib/publications/storage";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com";
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
@@ -57,6 +58,8 @@ export interface PubProfile {
     venue: string | null; year: number | null;
     doi: string | null; isbn: string | null; url: string | null;
     abstract: string | null;
+    /** Cover thumbnail, resolved from the stored path. */
+    imageUrl: string | null;
   }[];
 }
 
@@ -95,6 +98,7 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
         select: {
           id: true, type: true, title: true, authors: true, venue: true,
           year: true, doi: true, isbn: true, url: true, abstract: true,
+          imagePath: true,
         },
       },
     },
@@ -147,7 +151,9 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     remoteTypes: p.remoteTypes,
     locations: p.locations,
     portfolios: hid.has("portfolio") ? [] : p.portfolios.map((w) => ({ slug: w.slug, title: w.title, coverUrl: portfolioImageUrl(w.coverPath) })),
-    publications: hid.has("publications") ? [] : p.publications,
+    publications: hid.has("publications")
+      ? []
+      : p.publications.map(({ imagePath, ...pub }) => ({ ...pub, imageUrl: publicationImageUrl(imagePath) })),
   };
 });
 

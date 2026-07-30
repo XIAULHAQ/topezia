@@ -1,0 +1,12 @@
+-- Publication cover thumbnails: store the storage PATH, not a URL.
+--
+-- Same contract as Portfolio.coverPath and Company.logoPath — the column holds
+-- "{profileId}/{uuid}.jpg" and lib/publications/storage.ts turns it into a URL,
+-- so changing bucket or CDN never becomes a data migration.
+--
+-- Nullable with no default and no backfill: every existing publication simply
+-- has no image, which the UI already has to handle anyway (a member can add a
+-- paper and never upload a cover). That makes this additive and reversible —
+-- dropping the column loses only the pointers, and the objects in the bucket
+-- are addressable by profileId prefix if they ever need cleaning up.
+ALTER TABLE "Publication" ADD COLUMN IF NOT EXISTS "imagePath" TEXT;
