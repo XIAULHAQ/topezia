@@ -262,9 +262,34 @@ const SEED_SOURCES: { type: JobSource; companySlug: string; companyName: string 
   { type: JobSource.GREENHOUSE, companySlug: "lattice", companyName: "Lattice" },           // 4   · US, GB, CA
 ];
 
+/**
+ * `--only=slug,slug` seeds just those boards instead of the whole list.
+ *
+ * Seeding is cheap, but the ingest that follows is not: every new posting costs
+ * an LLM extraction and an embedding, and Voyage is still rate-limited on the
+ * free tier. That makes staged rollout of a big batch the norm, not the
+ * exception — seed a subset, watch one crawl, then seed the rest.
+ *
+ * An `--only` value that matches nothing is a typo, and exits non-zero rather
+ * than quietly seeding zero sources and reporting success.
+ */
+function selectSources() {
+  const arg = process.argv.find((a) => a.startsWith("--only="));
+  if (!arg) return SEED_SOURCES;
+  const wanted = arg.slice("--only=".length).split(",").map((s) => s.trim()).filter(Boolean);
+  const picked = SEED_SOURCES.filter((s) => wanted.includes(s.companySlug));
+  const missed = wanted.filter((w) => !SEED_SOURCES.some((s) => s.companySlug === w));
+  if (missed.length) {
+    console.error(`No such slug in SEED_SOURCES: ${missed.join(", ")}`);
+    process.exit(1);
+  }
+  console.log(`--only: seeding ${picked.length} of ${SEED_SOURCES.length} sources\n`);
+  return picked;
+}
+
 async function main() {
   let created = 0;
-  for (const s of SEED_SOURCES) {
+  for (const s of selectSources()) {
     const existing = await prisma.source.findUnique({
       where: { type_companySlug: { type: s.type, companySlug: s.companySlug } },
       select: { id: true },
