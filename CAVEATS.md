@@ -158,6 +158,34 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟢 **Test Profile rows cleared** from prod (was 0 profiles on 2026-07-18; 8 now,
   from real signups — the count moves, so don't read a number here as current).
 
+## Portfolio publish staleness
+- 🟢 **FIXED 2026-07-30: a published piece kept showing "This is a draft".**
+  Nothing was wrong with the data or the server. `football-ad-campaign` was
+  `PUBLISHED` in the database, the page is `force-dynamic`, and the banner
+  condition (`isOwner && status !== "PUBLISHED"`) is correct — verified by
+  fetching it anonymously: 200 with no banner in the HTML, while a real draft
+  404s for non-owners.
+  - The cause is the App Router's **client-side Router Cache**, which holds the
+    RSC payload of an already-visited route. The draft page is visited on the
+    way into the editor, so `router.push()` back to it after publishing replayed
+    that cached payload, banner and all. `export const dynamic = "force-dynamic"`
+    does NOT help — it governs server rendering and says nothing about the
+    client cache. That mismatch is the trap; check the client cache before
+    concluding the server is at fault.
+  - Fixed on both sides: `revalidatePath` in `POST`/`PATCH`/`DELETE`
+    `/api/portfolio` (server-authoritative, so a second tab or another device
+    also gets a fresh page) plus `router.refresh()` before the push in the
+    editor, for the navigation already in flight.
+- 🟡 **Unverified locally**: exercising it needs a signed-in session, so the fix
+  is reasoned from the mechanism and the server-side proof above, not from a
+  reproduced publish. If the banner survives this deploy, a hard reload will
+  distinguish a stale tab from a live bug — and it would mean the diagnosis is
+  wrong, not merely incomplete.
+- 🟡 **Same shape elsewhere, deliberately NOT patched.** `/profile` also does
+  `router.push()` after a save, but its view is a client component that
+  re-fetches `/api/profile` on mount, so the Router Cache never serves it stale
+  and `router.refresh()` would be a no-op there.
+
 ## Publication cover thumbnails
 - 🟢 **BUILT 2026-07-30** (migration 042): `Publication.imagePath`, a `publications`
   storage bucket, `POST/DELETE /api/publications/image`, and an image-left /

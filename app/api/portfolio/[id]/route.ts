@@ -7,6 +7,7 @@
  * whether it exists.
  */
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -65,6 +66,25 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
   await writeMedia(existing.id, v.media);
 
+  // Publishing changed the page but the visitor kept seeing "This is a draft".
+  //
+  // `export const dynamic = "force-dynamic"` on the portfolio page stops the
+  // SERVER caching it, which is what everyone checks first — but it says nothing
+  // about the App Router's CLIENT-side Router Cache, which holds the RSC payload
+  // for an already-visited route. The draft page was visited on the way to the
+  // editor, so `router.push()` back to it replayed that cached payload, banner
+  // and all, until the entry aged out.
+  //
+  // Invalidating here rather than only in the editor keeps it true for any
+  // caller: a second tab, a different device, or a future publish button
+  // somewhere else all get a fresh page.
+  revalidatePath(`/portfolio/${updated.slug}`);
+  // The lists that show status or published work, for the same reason.
+  revalidatePath("/portfolio/mine");
+  revalidatePath("/profile");
+  const owner = await prisma.profile.findUnique({ where: { id: profileId }, select: { publicSlug: true } });
+  if (owner?.publicSlug) revalidatePath(`/p/${owner.publicSlug}`);
+
   return NextResponse.json({ portfolio: updated });
 }
 
@@ -74,7 +94,7 @@ export async function DELETE(_request: Request, { params }: { params: { id: stri
 
   const existing = await prisma.portfolio.findFirst({
     where: { id: params.id, profileId },
-    select: { id: true, coverPath: true, media: { select: { path: true, kind: true } } },
+    select: { id: true, slug: true, coverPath: true, media: { select: { path: true, kind: true } } },
   });
   if (!existing) return NextResponse.json({ error: "not-found" }, { status: 404 });
 
@@ -97,6 +117,14 @@ export async function DELETE(_request: Request, { params }: { params: { id: stri
       if (error) console.error("[portfolio/delete] storage cleanup failed:", error.message);
     }
   }
+
+  // Same Router Cache reason as PATCH: without this the deleted piece keeps
+  // appearing in the lists a client has already visited.
+  revalidatePath(`/portfolio/${existing.slug}`);
+  revalidatePath("/portfolio/mine");
+  revalidatePath("/profile");
+  const owner = await prisma.profile.findUnique({ where: { id: profileId }, select: { publicSlug: true } });
+  if (owner?.publicSlug) revalidatePath(`/p/${owner.publicSlug}`);
 
   return NextResponse.json({ deleted: true });
 }

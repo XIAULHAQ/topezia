@@ -196,6 +196,12 @@ export default function PortfolioEditor({ existing }: { existing?: ExistingPortf
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Couldn't save.");
+      // refresh() BEFORE push(): this tab visited the piece's page on the way
+      // into the editor, so the App Router has its pre-save RSC payload cached
+      // and push() alone would replay it — which is why a published piece kept
+      // showing "This is a draft". The API revalidates these paths too; this
+      // covers the navigation already in flight here.
+      router.refresh();
       router.push(`/portfolio/${data.portfolio.slug}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save.");

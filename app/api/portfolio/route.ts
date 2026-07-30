@@ -3,6 +3,7 @@
  * GET  /api/portfolio — the caller's own portfolios, drafts included.
  */
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { validate, makeSlug, writeMedia, type PortfolioInput } from "@/lib/portfolio/save";
@@ -76,6 +77,13 @@ export async function POST(request: Request) {
   });
 
   if (v.media.length) await writeMedia(created.id, v.media);
+
+  // A brand-new piece has no cached page of its own, but the LISTS that should
+  // now include it do — see the Router Cache note in ./[id]/route.ts.
+  revalidatePath("/portfolio/mine");
+  revalidatePath("/profile");
+  const owner = await prisma.profile.findUnique({ where: { id: profileId }, select: { publicSlug: true } });
+  if (owner?.publicSlug) revalidatePath(`/p/${owner.publicSlug}`);
 
   return NextResponse.json({ portfolio: created }, { status: 201 });
 }
