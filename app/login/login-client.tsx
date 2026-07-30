@@ -192,12 +192,25 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
 
     try {
       // Only sent when a captcha is actually configured — with no site key
-      // there is no token and `options` stays undefined, exactly as before.
-      const options = captchaToken ? { captchaToken } : undefined;
+      // there is no token and this stays empty, exactly as before.
+      const captcha = captchaToken ? { captchaToken } : {};
       const { data, error } =
         mode === "signup"
-          ? await supabase.auth.signUp({ email: addr, password: pw, options })
-          : await supabase.auth.signInWithPassword({ email: addr, password: pw, options });
+          ? await supabase.auth.signUp({
+              email: addr,
+              password: pw,
+              options: {
+                ...captcha,
+                // WITHOUT this, Supabase points the confirmation link at the
+                // project's Site URL — which is exactly how the password-reset
+                // links ended up on localhost (see app/reset/page.tsx). Sending
+                // the current origin means the link comes back where the person
+                // actually is. It still has to be in Supabase's Redirect URLs
+                // allow-list, or Supabase silently falls back to Site URL again.
+                emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next ?? "/feed")}`,
+              },
+            })
+          : await supabase.auth.signInWithPassword({ email: addr, password: pw, options: captcha });
       if (error) throw error;
 
       // If email confirmation is on, signUp returns no session yet.

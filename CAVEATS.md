@@ -123,10 +123,35 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   match scores) migrated onto it — profiles now survive cookie-clears and work
   cross-device.
 - 🟡 **Signup emails are unverified** (confirm-email is off for a frictionless
-  MVP), so people can register a typo'd or someone else's address. Turn "Confirm
-  email" back on once a real email provider (Resend/Brevo, spec §9) is wired for
-  Slice 4 alerts — Supabase's built-in free-tier email is too rate-limited to
-  rely on.
+  MVP), so people can register a typo'd or someone else's address. Measured
+  2026-07-30: `email_confirmed_at` lands 0.03–0.06s after `created_at` for all
+  11 users, i.e. auto-confirm. This is what makes the spam controls' account
+  check weaker than it reads — see the spam section.
+- 🟢 **The CODE side of turning it on is now done (2026-07-30).** Both signup
+  forms pass `emailRedirectTo` pointing at the current origin, and
+  `/auth/callback` handles the confirmation link as well as OAuth. Verified by
+  probing every branch: no params, `error_description`, `token_hash&type=signup`
+  (reaches Supabase's real verifier), `type=recovery` (refused by our own
+  allow-list, since recovery belongs to `/reset`), and `code=` (PKCE).
+- 🔴 **Two dashboard settings must be right BEFORE flipping it, or every
+  confirmation link breaks.** Without `emailRedirectTo` Supabase points the
+  link at the project's **Site URL** — which is exactly how the password-reset
+  links once ended up on localhost (see `app/reset/page.tsx`). We now send
+  `emailRedirectTo`, but Supabase **silently ignores it and falls back to Site
+  URL** unless the URL is in the Redirect URLs allow-list. So: Site URL =
+  `https://www.topezia.com`, and add `https://www.topezia.com/**` to Redirect
+  URLs, THEN switch Confirm email on.
+- 🟡 **The default confirmation template is the fragile one.**
+  `{{ .ConfirmationURL }}` returns `?code=`, which is PKCE — it only works in
+  the SAME browser that signed up, and people read mail on their phone. Change
+  the "Confirm signup" template to link to
+  `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=signup` and it
+  works from any device. The callback handles both, so neither choice can strand
+  someone; one is just markedly better.
+- 🟡 **Supabase's built-in email is rate-limited** (a handful an hour) and is
+  not a sending domain anyone trusts. `RESEND_API_KEY` already exists — set
+  custom SMTP in Auth → Emails before signup volume matters, or confirmations
+  will silently stop arriving.
 - 🟡 **No password reset / logout UI yet.** Supabase supports reset out of the
   box but it needs email delivery (same dependency as above).
 - 🟢 **Résumé upload BUILT** — PDF / DOCX / txt, drag-and-drop, parsed in memory

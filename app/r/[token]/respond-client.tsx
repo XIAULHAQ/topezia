@@ -112,10 +112,17 @@ export default function RespondClient({ token }: { token: string }) {
       // MUST carry the captcha token too. Supabase's captcha setting is
       // project-wide, so enabling it while this form sent no token would break
       // every endorsement — the second signup surface is easy to forget.
-      const options = captchaToken ? { captchaToken } : undefined;
+      const captcha = captchaToken ? { captchaToken } : {};
       const { data, error: authErr } = mode === "signup"
-        ? await supabase.auth.signUp({ email: addr, password: pw, options })
-        : await supabase.auth.signInWithPassword({ email: addr, password: pw, options });
+        ? await supabase.auth.signUp({
+            email: addr,
+            password: pw,
+            // Back to THIS link, not the feed: they were part-way through doing
+            // someone a favour, and dropping them on a generic page after
+            // confirming loses both the draft and the point.
+            options: { ...captcha, emailRedirectTo: `${window.location.origin}/r/${encodeURIComponent(token)}` },
+          })
+        : await supabase.auth.signInWithPassword({ email: addr, password: pw, options: captcha });
       if (authErr) throw new Error(authErr.message);
       // With email confirmation switched on, signUp returns no session. Say so
       // plainly rather than silently failing to post the endorsement.
