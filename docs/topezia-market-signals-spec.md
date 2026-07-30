@@ -74,7 +74,8 @@ Every one of these is a **level**: a statement about the market as it stands, wi
 
 Rules:
 
-- **Minimum sample size to generate a signal at all: 10 listings in scope.** Below that, don't generate it. (For `pay_level`, the threshold is 10 listings *with extracted pay*, not 10 listings — the SEO addendum §2.1 already omits the pay block below that bar, and the feed must agree with it.)
+- **Minimum sample size to generate a signal at all: 10 listings in scope.** Below that, don't generate it.
+- **`pay_level` uses the SEO addendum's threshold, not this one: ≥ 5 listings *with extracted pay*.** The two documents must agree, because the feed card and the SEO page render the same number from the same row — and where they disagree, the addendum wins, since it owns `page_stats`. (An earlier revision of this file claimed the addendum's bar was 10. It is 5; the claim was wrong.)
 - **Always render the sample.** Every card carries "based on N postings" (§6). A level without its denominator is a claim, not a fact.
 - Round all displayed numbers the same way as `page_stats` in the SEO addendum. Since v1 reads the same row, this is automatic rather than a discipline to maintain.
 - **Pay is USD-only today** (measured: 2,150 live jobs carry a range, all USD, split HOUR 53 / YEAR 2,097). Split by pay type as the SEO addendum requires; when a second currency appears, `pay_level` must scope by currency or omit rather than mixing.

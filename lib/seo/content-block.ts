@@ -123,6 +123,11 @@ export function collectionPageLd(page: SeoPage) {
     url: `${SITE}${page.canonicalPath}`,
     description: page.intro,
     isPartOf: { "@type": "WebSite", name: "Topezia", url: SITE },
+    // §3.4: dateModified is the stats computedAt — the moment the numbers on
+    // this page were last recomputed. Omitted rather than guessed when stats
+    // haven't run yet; a made-up freshness date is exactly the kind of claim
+    // this feed must not make.
+    ...(page.pageStats ? { dateModified: page.pageStats.computedAt.toISOString() } : {}),
   };
 }
 

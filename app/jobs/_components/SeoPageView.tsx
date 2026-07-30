@@ -7,6 +7,7 @@ import { safeJsonLd } from "@/lib/seo/json-ld";
 import { placeLabel, salaryText, freshness, label } from "@/lib/seo/job-display";
 import { buildSeoCopy, buildFaqs, buildBreadcrumbs, collectionPageLd, breadcrumbLd, faqPageLd } from "@/lib/seo/content-block";
 import { jobPostingLd } from "@/lib/seo/job-posting-ld";
+import StatsBlock from "./StatsBlock";
 import AlertCapture from "./AlertCapture";
 import JobsInteractive from "./JobsInteractive";
 import SiteNav from "@/app/_components/SiteNav";
@@ -277,6 +278,17 @@ export default async function SeoPageView({ page }: { page: SeoPage }) {
           </div>
         </div>
       </section>
+
+      {/* ── Market stats (addendum §2.1) ──────────────────────────────────
+          Above the listings on purpose: it is the content that distinguishes
+          this page from a listings dump, and burying it under 150 job cards
+          would defeat the point for both readers and crawlers. Omitted, never
+          faked, when the ingestion run hasn't computed this page yet. */}
+      {page.pageStats && (
+        <div style={{ maxWidth: 1120, margin: "0 auto", padding: "24px 22px 0" }}>
+          <StatsBlock page={page} stats={page.pageStats} />
+        </div>
+      )}
 
       {/* ── Main grid: filter/sort/group + sidebar (or hub's two lists) ── */}
       <div style={S.wrap2}>

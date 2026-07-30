@@ -61,6 +61,31 @@ export const MIN_JOBS_FOR_VERTICAL_PAGE = 1;
 const REMOTE_PREFIX = "remote-";
 const REMOTE_TYPES: RemoteType[] = ["REMOTE_US", "REMOTE_GLOBAL"];
 
+/**
+ * A page as the builders produce it — everything except the precomputed stats,
+ * which resolveSeoPage attaches in one lookup keyed by canonicalPath. Splitting
+ * it this way means the eight construction sites don't each need to remember to
+ * fetch stats, and there's exactly one place the PageStats read can go wrong.
+ */
+type BuiltPage = Omit<SeoPage, "pageStats">;
+
+/** Precomputed aggregates as the view needs them (addendum §2.1). */
+export interface PageStatsView {
+  listingCount: number;
+  companyCount: number;
+  payType: string | null;
+  medianPay: number | null;
+  p25Pay: number | null;
+  p75Pay: number | null;
+  paySampleSize: number;
+  topSkills: { name: string; n: number }[];
+  empTypeBreakdown: Record<string, number>;
+  remoteShare: number;
+  postedLast7d: number;
+  /** Drives both the visible "Updated …" line and JSON-LD dateModified (§3.4). */
+  computedAt: Date;
+}
+
 export interface SeoJob {
   id: string;
   titleRaw: string;
@@ -110,6 +135,14 @@ export interface SeoPage {
    * link. Never true with `total === 0` — that case 404s instead.
    */
   thin: boolean;
+  /**
+   * Precomputed aggregates for the stats block (addendum §2.1), read from
+   * PageStats — never aggregated here, which is the whole point of that table.
+   * Null when the ingestion run hasn't computed this page yet: the block is
+   * omitted rather than rendered empty, so a new page shows listings until its
+   * first stats run rather than an empty shell.
+   */
+  pageStats: PageStatsView | null;
   siblings: { href: string; label: string }[];
   /**
    * On-page SEO copy inputs (used by lib/seo/content-block.ts).
@@ -237,7 +270,7 @@ export const countryHref = (roleSlug: string, iso: string) => `/jobs/${roleSlug}
  * live jobs — below MIN_JOBS_FOR_PAGE on its own — and 9 live projects. Judging
  * the two halves separately would de-index a page with 13 real listings on it.
  */
-async function buildHubPage(hub: SkillHub): Promise<SeoPage | null> {
+async function buildHubPage(hub: SkillHub): Promise<BuiltPage | null> {
   const { jobIds, projectIds } = await hubMatchIds(hub);
   const total = jobIds.length + projectIds.length;
   if (total === 0) return null;
@@ -277,7 +310,7 @@ async function siblingsForHub(exceptSlug: string) {
  * Resolve a /jobs/* slug (plus optional state) into a publishable page, or null
  * if it doesn't exist / is too thin. Caller should 404 on null.
  */
-async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | null> {
+async function buildSeoPage(slug: string, place?: string): Promise<BuiltPage | null> {
   const clean = slug.toLowerCase();
 
   // Skill hubs first: they own their slug outright, and a hub slug is chosen
@@ -486,15 +519,44 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
  * scripts/generate-page-intros.ts fills the cache out of band.
  */
 export async function resolveSeoPage(slug: string, place?: string): Promise<SeoPage | null> {
-  const page = await buildSeoPage(slug, place);
-  if (!page) return null;
+  const built = await buildSeoPage(slug, place);
+  if (!built) return null;
+  const page: SeoPage = { ...built, pageStats: null };
   try {
     const cached = await getCachedIntro(page.canonicalPath);
     if (cached) page.intro = cached;
   } catch {
     // Copy is a nice-to-have; never fail a page over it.
   }
+  try {
+    page.pageStats = await loadPageStats(page.canonicalPath);
+  } catch {
+    // Stats are an enhancement, not the page. A DB blip drops the block rather
+    // than the listings — same rule as the intro above.
+  }
   return page;
+}
+
+/**
+ * One indexed lookup by canonical path. This is the entire request-time cost of
+ * the stats block: the aggregation already happened at the end of the ingestion
+ * run, which is what the addendum requires.
+ */
+async function loadPageStats(pageKey: string): Promise<PageStatsView | null> {
+  const row = await prisma.pageStats.findUnique({
+    where: { pageKey },
+    select: {
+      listingCount: true, companyCount: true, payType: true, medianPay: true,
+      p25Pay: true, p75Pay: true, paySampleSize: true, topSkills: true,
+      empTypeBreakdown: true, remoteShare: true, postedLast7d: true, computedAt: true,
+    },
+  });
+  if (!row) return null;
+  return {
+    ...row,
+    topSkills: Array.isArray(row.topSkills) ? (row.topSkills as unknown as PageStatsView["topSkills"]) : [],
+    empTypeBreakdown: (row.empTypeBreakdown ?? {}) as PageStatsView["empTypeBreakdown"],
+  };
 }
 
 /** Role ↔ state ↔ remote lattice — internal linking for free (§7). */

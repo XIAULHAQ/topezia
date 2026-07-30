@@ -27,8 +27,17 @@
 import { prisma } from "@/lib/prisma";
 import { countrySlugFor } from "@/lib/countries";
 
-/** Below this, the pay block is omitted entirely rather than shown as "N/A". */
-export const MIN_PAY_SAMPLE = 10;
+/**
+ * Below this, the pay block is omitted entirely rather than shown as "N/A" —
+ * the threshold the SEO addendum §2.1 specifies.
+ *
+ * It was briefly 10 here, which was my invention, not the spec's. A median over
+ * 5 salaries IS noisy and 10 is arguably the better number, but silently
+ * enforcing a stricter rule than the spec is how the feed and the SEO page end
+ * up disagreeing about the same fact. Raise it in the spec first if it should
+ * change; at 5 the pay block appears on 52 of 597 pages rather than 29.
+ */
+export const MIN_PAY_SAMPLE = 5;
 
 /**
  * A skill must appear in at least this share of a scope's listings to count as a
