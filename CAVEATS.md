@@ -243,6 +243,30 @@ does not yet have the history to compute a delta honestly.**
   load-bearing for the whole programmatic-SEO slice, and building a one-off
   aggregation for signals first would be thrown away the moment it lands.
 
+## Route loading indicator
+- 🟢 **Navigation progress bar added 2026-07-30** (`app/_components/RouteProgress.tsx`,
+  mounted in the root layout). The App Router shows nothing during a
+  client-side navigation unless the target segment has a `loading.tsx`, so
+  clicking a heavy page looked like a dead click.
+- 🔴 **DO NOT "fix" this with `app/jobs/[slug]/loading.tsx`.** That is the
+  obvious move and it breaks the SEO lattice: a `loading.tsx` wraps the segment
+  in Suspense, Next commits HTTP 200 before the page resolves, and every
+  `notFound()` after that renders a 404 body under a 200 — a soft 404 that
+  Google indexes as a real page. Already measured once; see the comment block in
+  `app/_components/RouteLoading.tsx` for the forbidden segments.
+- 🟢 **The bar sidesteps that by living outside the routing tree** — a sibling of
+  `{children}`, no Suspense boundary, client-only, so it cannot affect a status
+  code. Verified after mounting: `/jobs/not-a-real-role`,
+  `/jobs/graphic-designer/zz`, `/portfolio/does-not-exist` and `/p/nobody-here`
+  all still return **404**.
+- 🟡 **It deliberately avoids `useSearchParams`.** In Next 14 an unwrapped
+  `useSearchParams` forces a CSR bailout for statically rendered pages, and this
+  sits in the ROOT layout — it would opt the whole site out of static rendering
+  to draw a progress bar. Keyed on `usePathname` only, so a navigation that
+  changes only the query string won't animate.
+- 🟡 **In-app navigations only.** A cold hit from Google shows the browser's own
+  loading UI and nothing here helps; the lever there is TTFB.
+
 ## Portfolio publish staleness
 - 🟢 **FIXED 2026-07-30: a published piece kept showing "This is a draft".**
   Nothing was wrong with the data or the server. `football-ad-campaign` was
