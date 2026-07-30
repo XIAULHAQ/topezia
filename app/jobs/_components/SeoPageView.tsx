@@ -55,12 +55,39 @@ function itemListLd(page: SeoPage) {
 }
 
 /** CollectionPage + BreadcrumbList + ItemList + FAQPage, one @graph — the FAQPage
- * entries must stay byte-for-byte in sync with the visible FAQ cards below. */
+ * entries must stay byte-for-byte in sync with the visible FAQ cards below.
+ *
+ * A thin page (§1.2) emits the breadcrumb only. CollectionPage, ItemList and
+ * FAQPage are all bids to be indexed as a listing hub, and we're serving this
+ * one `noindex` — asking for rich results on a page we've told Google to skip
+ * is at best noise, at worst a mixed signal. The breadcrumb stays because it
+ * describes where the URL sits, which is still true while it's thin. */
 function structuredData(page: SeoPage, faqs: { q: string; a: string }[]) {
   return {
     "@context": "https://schema.org",
-    "@graph": [collectionPageLd(page), breadcrumbLd(page), itemListLd(page), faqPageLd(faqs)],
+    "@graph": page.thin
+      ? [breadcrumbLd(page)]
+      : [collectionPageLd(page), breadcrumbLd(page), itemListLd(page), faqPageLd(faqs)],
   };
+}
+
+/**
+ * Below-floor state (§1.2). The page is `noindex,follow`, so its whole job is
+ * to be useful to the human who landed on it: say plainly how thin it is and
+ * offer the alert, rather than dressing up 2 listings as a market. This is the
+ * conversion path a 404 used to throw away.
+ */
+function ThinNotice({ total }: { total: number }) {
+  return (
+    <div style={S.thinNotice}>
+      <strong style={{ color: "#fff" }}>
+        Only {total} {total === 1 ? "listing" : "listings"} here right now.
+      </strong>{" "}
+      This page fills up as we crawl more boards. Set an email alert and we&rsquo;ll tell you the
+      moment new roles land — no need to keep checking back.{" "}
+      <a href="#alerts" style={S.thinNoticeLink}>Set an alert →</a>
+    </div>
+  );
 }
 
 function SectionHead({ title, sub }: { title: string; sub: string }) {
@@ -213,6 +240,7 @@ export default async function SeoPageView({ page }: { page: SeoPage }) {
             <div style={{ flex: "1 1 480px", minWidth: 300 }}>
               <h1 style={S.h1}>{page.heading}</h1>
               <p style={S.heroIntro}>{page.intro}</p>
+              {page.thin && <ThinNotice total={page.total} />}
               <div style={{ display: "flex", gap: 9, flexWrap: "wrap", marginTop: 22 }}>
                 <Link href="/onboard" style={S.heroCtaPrimary}>Upload résumé — score every role</Link>
                 <a href="#alerts" style={S.heroCtaSecondary}>Email me new roles</a>
@@ -322,6 +350,8 @@ const S: Record<string, CSSProperties> = {
   heroTop: { display: "flex", gap: 44, alignItems: "flex-start", flexWrap: "wrap", marginTop: 12 },
   h1: { margin: 0, fontFamily: "var(--font-sora), sans-serif", fontWeight: 800, fontSize: 36, letterSpacing: "-1.2px", lineHeight: 1.12 },
   heroIntro: { margin: "14px 0 0", fontSize: 14.5, lineHeight: 1.7, color: "#B9C0D4", maxWidth: 560 },
+  thinNotice: { margin: "16px 0 0", maxWidth: 560, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 12, padding: "13px 16px", fontSize: 13.5, lineHeight: 1.65, color: "#B9C0D4" },
+  thinNoticeLink: { color: "#A5B4FC", textDecoration: "none", fontWeight: 600, whiteSpace: "nowrap" },
   heroCtaPrimary: { display: "inline-flex", alignItems: "center", gap: 8, background: `linear-gradient(135deg, ${INDIGO}, #3B82F6)`, borderRadius: 11, padding: "12px 22px", fontSize: 13.5, fontWeight: 700, color: "#fff", textDecoration: "none", boxShadow: "0 8px 22px rgba(99,102,241,.34)", whiteSpace: "nowrap" },
   heroCtaSecondary: { display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid rgba(255,255,255,.2)", background: "rgba(255,255,255,.06)", borderRadius: 11, padding: "12px 20px", fontSize: 13.5, fontWeight: 600, color: "#E2E8F0", textDecoration: "none", whiteSpace: "nowrap" },
   statV: { fontSize: 22, fontWeight: 800, letterSpacing: "-0.7px", color: "#fff" },

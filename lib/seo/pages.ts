@@ -2,11 +2,25 @@
  * Programmatic SEO page engine — spec §7.
  *
  * The taxonomy IS the page generator: every Role and Vertical can become a page
- * at /jobs/{slug}, /jobs/remote-{role-slug}, or /jobs/{role-slug}/{state} — but
- * ONLY if at least MIN_JOBS_FOR_PAGE live jobs match it. Thin pages poison SEO,
- * so a page that drops below the floor simply 404s (auto-unpublish); one that
- * rises above it appears (auto-publish). No nightly job needed — the rule is
- * evaluated per request and reflected in the sitemap.
+ * at /jobs/{slug}, /jobs/remote-{role-slug}, or /jobs/{role-slug}/{state}.
+ *
+ * Thin pages poison SEO, so each page kind has an indexability floor. A page
+ * below its floor is NOT 404'd — it renders `noindex,follow` with an
+ * alert-capture state (`SeoPage.thin`), per docs/topezia-slice4-seo-spec.md
+ * §1.2. Only a URL with nothing behind it at all 404s: no taxonomy match, or a
+ * taxonomy match with zero live listings.
+ *
+ * Why not 404 the thin ones (this changed 2026-07-30 — it used to): a 404 tells
+ * Google the URL is gone and to drop it, so re-earning the ranking later starts
+ * from zero. Listing counts on a jobs site oscillate — a role × city page dips
+ * below the floor one week and recovers the next — and 404ing on every dip
+ * churns the index footprint. `noindex,follow` keeps the URL's crawl history and
+ * internal-link value intact while it's thin, and the alert-capture state turns
+ * a dead end into an email signup instead of a bounce.
+ *
+ * The floor still governs LINKING: sitemap.xml, the sibling lattice and job
+ * breadcrumbs all check it, so nothing ever links to a noindex page. No nightly
+ * job needed — every rule here is evaluated per request.
  */
 import { prisma } from "@/lib/prisma";
 import type { EmploymentType, JobKind, Prisma, RemoteType, SalaryPeriod } from "@prisma/client";
@@ -14,7 +28,22 @@ import { hubBySlug, hubMatchIds, HUBS, type SkillHub } from "./hubs";
 import { getCachedIntro } from "./intro";
 import { COUNTRY_NAMES, countryName } from "@/lib/countries";
 
-export const MIN_JOBS_FOR_PAGE = 5;
+/**
+ * Indexability floors by page kind (spec addendum §1.2). Below the floor a page
+ * still renders — `noindex,follow` + alert capture — it just isn't indexed or
+ * linked to. These same numbers gate the sitemap and the sibling lattice, so
+ * "indexable" and "linked" can never disagree.
+ *
+ * Role × place and remote pages sit at 3 rather than 5 on purpose: they're the
+ * long tail the lattice is built to cover, and at 5 the country lattice
+ * published almost nothing at current volume.
+ */
+export const MIN_JOBS_FOR_PAGE = 5; // role · place · skill hub
+export const MIN_JOBS_FOR_PLACE_PAGE = 3; // role|vertical × state/country
+export const MIN_JOBS_FOR_REMOTE_PAGE = 3; // remote-{role}
+/** Verticals aggregate roles, so any real listing is enough to be worth indexing. */
+export const MIN_JOBS_FOR_VERTICAL_PAGE = 1;
+
 const REMOTE_PREFIX = "remote-";
 const REMOTE_TYPES: RemoteType[] = ["REMOTE_US", "REMOTE_GLOBAL"];
 
@@ -57,6 +86,13 @@ export interface SeoPage {
    */
   projects?: SeoJob[];
   total: number;
+  /**
+   * Below this kind's indexability floor (§1.2). The page renders with real
+   * listings and a "few listings right now — set an alert" state, but must be
+   * served `noindex,follow` and must not appear in the sitemap or any internal
+   * link. Never true with `total === 0` — that case 404s instead.
+   */
+  thin: boolean;
   siblings: { href: string; label: string }[];
   /**
    * On-page SEO copy inputs (used by lib/seo/content-block.ts).
@@ -180,12 +216,12 @@ export const countryHref = (roleSlug: string, iso: string) => `/jobs/${roleSlug}
  *
  * The floor is applied to the COMBINED total on purpose. Video & Motion has 4
  * live jobs — below MIN_JOBS_FOR_PAGE on its own — and 9 live projects. Judging
- * the two halves separately would 404 a page that has 13 real listings on it.
+ * the two halves separately would de-index a page with 13 real listings on it.
  */
 async function buildHubPage(hub: SkillHub): Promise<SeoPage | null> {
   const { jobIds, projectIds } = await hubMatchIds(hub);
   const total = jobIds.length + projectIds.length;
-  if (total < MIN_JOBS_FOR_PAGE) return null;
+  if (total === 0) return null;
 
   const [jobs, projects] = await Promise.all([
     prisma.job.findMany({ where: { id: { in: jobIds } }, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
@@ -201,6 +237,7 @@ async function buildHubPage(hub: SkillHub): Promise<SeoPage | null> {
     jobs,
     projects,
     total,
+    thin: total < MIN_JOBS_FOR_PAGE,
     siblings: await siblingsForHub(hub.slug),
     keyword: `${hub.name} jobs`,
     topic: hub.name,
@@ -254,7 +291,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
     if (!STATE_NAMES[st] && iso && vertical) {
       const where = { status: "LIVE" as const, kind: "JOB" as const, verticalId: vertical.id, country: iso };
       const total = await prisma.job.count({ where });
-      if (total < MIN_JOBS_FOR_PAGE) return null;
+      if (total === 0) return null;
       const cName = countryName(iso);
       return {
         kind: "role-country",
@@ -264,6 +301,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
         slug: vertical.slug,
         country: iso,
         total,
+        thin: total < MIN_JOBS_FOR_PLACE_PAGE,
         siblings: await siblingsForVertical(vertical.id, vertical.slug),
         keyword: `${vertical.name} jobs`,
         topic: vertical.name,
@@ -277,7 +315,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
     if (!STATE_NAMES[st] && iso) {
       const where = { status: "LIVE" as const, kind: "JOB" as const, roleId: role.id, country: iso };
       const total = await prisma.job.count({ where });
-      if (total < MIN_JOBS_FOR_PAGE) return null;
+      if (total === 0) return null;
       const cName = countryName(iso);
       return {
         kind: "role-country",
@@ -287,6 +325,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
         slug: role.slug,
         country: iso,
         total,
+        thin: total < MIN_JOBS_FOR_PLACE_PAGE,
         siblings: await siblingsForRole(role.id, role.slug, undefined, iso),
         keyword: `${role.name} jobs`,
         topic: role.name,
@@ -296,7 +335,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
     }
     const where = { status: "LIVE" as const, kind: "JOB" as const, roleId: role.id, locationState: st };
     const total = await prisma.job.count({ where });
-    if (total < MIN_JOBS_FOR_PAGE) return null;
+    if (total === 0) return null;
     return {
       kind: "role-state",
       heading: `${role.name} jobs in ${stateName(st)}`,
@@ -305,6 +344,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       slug: role.slug,
       state: st.toLowerCase(),
       total,
+      thin: total < MIN_JOBS_FOR_PLACE_PAGE,
       siblings: await siblingsForRole(role.id, role.slug, st),
       keyword: `${role.name} jobs`,
       topic: role.name,
@@ -320,7 +360,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
     if (!role) return null;
     const where = { status: "LIVE" as const, kind: "JOB" as const, roleId: role.id, remoteType: { in: REMOTE_TYPES } };
     const total = await prisma.job.count({ where });
-    if (total < MIN_JOBS_FOR_PAGE) return null;
+    if (total === 0) return null;
     return {
       kind: "remote-role",
       heading: `Remote ${role.name} jobs`,
@@ -328,6 +368,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       canonicalPath: `/jobs/remote-${role.slug}`,
       slug: `remote-${role.slug}`,
       total,
+      thin: total < MIN_JOBS_FOR_REMOTE_PAGE,
       siblings: await siblingsForRole(role.id, role.slug),
       keyword: `Remote ${role.name} jobs`,
       topic: role.name,
@@ -341,7 +382,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
   if (role) {
     const where = { status: "LIVE" as const, kind: "JOB" as const, roleId: role.id };
     const total = await prisma.job.count({ where });
-    if (total < MIN_JOBS_FOR_PAGE) return null;
+    if (total === 0) return null;
     return {
       kind: "role",
       heading: `${role.name} jobs`,
@@ -349,6 +390,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       canonicalPath: `/jobs/${role.slug}`,
       slug: role.slug,
       total,
+      thin: total < MIN_JOBS_FOR_PAGE,
       siblings: await siblingsForRole(role.id, role.slug),
       keyword: `${role.name} jobs`,
       topic: role.name,
@@ -373,7 +415,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       ? { status: "LIVE" as const, kind: "JOB" as const, OR: [{ country: placeCountry }, { remoteScope: "GLOBAL" }] }
       : { status: "LIVE" as const, kind: "JOB" as const, locationState: placeState! };
     const total = await prisma.job.count({ where });
-    if (total < MIN_JOBS_FOR_PAGE) return null;
+    if (total === 0) return null;
     const name = placeCountry ? countryName(placeCountry) : stateName(placeState!);
     return {
       kind: "place",
@@ -385,6 +427,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       slug: clean,
       country: placeCountry ?? undefined, // lets the route pick the designed country layout
       total,
+      thin: total < MIN_JOBS_FOR_PAGE,
       siblings: [],
       keyword: `Jobs in ${name}`,
       topic: name,
@@ -398,7 +441,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
   if (vertical && vertical.slug !== "unsorted") {
     const where = { status: "LIVE" as const, kind: "JOB" as const, verticalId: vertical.id };
     const total = await prisma.job.count({ where });
-    if (total < MIN_JOBS_FOR_PAGE) return null;
+    if (total === 0) return null;
     return {
       kind: "vertical",
       heading: `${vertical.name} jobs`,
@@ -406,6 +449,7 @@ async function buildSeoPage(slug: string, place?: string): Promise<SeoPage | nul
       canonicalPath: `/jobs/${vertical.slug}`,
       slug: vertical.slug,
       total,
+      thin: total < MIN_JOBS_FOR_VERTICAL_PAGE,
       siblings: await siblingsForVertical(vertical.id, vertical.slug),
       keyword: `${vertical.name} jobs`,
       topic: vertical.name,
@@ -440,7 +484,7 @@ async function siblingsForRole(roleId: string, roleSlug: string, excludeState?: 
   const onPlacePage = Boolean(excludeState || excludeCountry);
 
   const remote = await prisma.job.count({ where: { status: "LIVE", kind: "JOB", roleId, remoteType: { in: REMOTE_TYPES } } });
-  if (remote >= MIN_JOBS_FOR_PAGE && !onPlacePage) out.push({ href: `/jobs/remote-${roleSlug}`, label: `Remote (${remote})` });
+  if (remote >= MIN_JOBS_FOR_REMOTE_PAGE && !onPlacePage) out.push({ href: `/jobs/remote-${roleSlug}`, label: `Remote (${remote})` });
 
   const [states, countries] = await Promise.all([
     prisma.job.groupBy({
@@ -457,7 +501,7 @@ async function siblingsForRole(roleId: string, roleSlug: string, excludeState?: 
 
   for (const s of states) {
     if (!s.locationState || s.locationState === excludeState) continue;
-    if (s._count.id < MIN_JOBS_FOR_PAGE) continue;
+    if (s._count.id < MIN_JOBS_FOR_PLACE_PAGE) continue;
     out.push({ href: `/jobs/${roleSlug}/${s.locationState.toLowerCase()}`, label: `${stateName(s.locationState)} (${s._count.id})` });
   }
 
@@ -465,7 +509,7 @@ async function siblingsForRole(roleId: string, roleSlug: string, excludeState?: 
     // US is represented by its state pages above — a "United States" sibling
     // next to "California" and "Texas" is noise.
     if (!c.country || c.country === excludeCountry || c.country === "US") continue;
-    if (c._count.id < MIN_JOBS_FOR_PAGE) continue;
+    if (c._count.id < MIN_JOBS_FOR_PLACE_PAGE) continue;
     if (!COUNTRY_NAMES[c.country]) continue; // never link a slug we can't resolve back
     out.push({ href: countryHref(roleSlug, c.country), label: `${countryName(c.country)} (${c._count.id})` });
   }
@@ -543,7 +587,7 @@ export async function listPublishedPages(): Promise<string[]> {
 
   for (const c of vCounts) {
     const slug = vSlug.get(c.verticalId);
-    if (slug && slug !== "unsorted" && c._count.id >= MIN_JOBS_FOR_PAGE) paths.push(`/jobs/${slug}`);
+    if (slug && slug !== "unsorted" && c._count.id >= MIN_JOBS_FOR_VERTICAL_PAGE) paths.push(`/jobs/${slug}`);
   }
   for (const c of rCounts) {
     const slug = c.roleId ? rSlug.get(c.roleId) : null;
@@ -551,12 +595,12 @@ export async function listPublishedPages(): Promise<string[]> {
   }
   for (const c of rRemote) {
     const slug = c.roleId ? rSlug.get(c.roleId) : null;
-    if (slug && c._count.id >= MIN_JOBS_FOR_PAGE) paths.push(`/jobs/remote-${slug}`);
+    if (slug && c._count.id >= MIN_JOBS_FOR_REMOTE_PAGE) paths.push(`/jobs/remote-${slug}`);
   }
   for (const c of vCountries) {
     const slug = vSlug.get(c.verticalId);
     if (!slug || slug === "unsorted" || !c.country || c.country === "US") continue;
-    if (c._count.id < MIN_JOBS_FOR_PAGE) continue;
+    if (c._count.id < MIN_JOBS_FOR_PLACE_PAGE) continue;
     if (!COUNTRY_NAMES[c.country]) continue;
     paths.push(countryHref(slug, c.country));
   }
@@ -565,13 +609,13 @@ export async function listPublishedPages(): Promise<string[]> {
     // US is covered by its state pages; listing /jobs/{role}/united-states too
     // would compete with them for the same intent.
     if (!slug || !c.country || c.country === "US") continue;
-    if (c._count.id < MIN_JOBS_FOR_PAGE) continue;
+    if (c._count.id < MIN_JOBS_FOR_PLACE_PAGE) continue;
     if (!COUNTRY_NAMES[c.country]) continue; // never publish a slug we can't resolve back
     paths.push(countryHref(slug, c.country));
   }
   for (const c of rStates) {
     const slug = c.roleId ? rSlug.get(c.roleId) : null;
-    if (slug && c.locationState && c._count.id >= MIN_JOBS_FOR_PAGE) {
+    if (slug && c.locationState && c._count.id >= MIN_JOBS_FOR_PLACE_PAGE) {
       paths.push(`/jobs/${slug}/${c.locationState.toLowerCase()}`);
     }
   }
@@ -640,13 +684,17 @@ export async function getBrowseHub(): Promise<BrowseHub> {
 
   const vById = new Map(verticals.map((v) => [v.id, v]));
   const rById = new Map(roles.map((r) => [r.id, r]));
+  // `keep` covers role and place links, which share the 5-job floor. Verticals
+  // have their own (they publish on any real listing), so they get their own
+  // predicate rather than being under-linked by the stricter one.
   const keep = (n: number) => n >= MIN_JOBS_FOR_PAGE;
+  const keepVertical = (n: number) => n >= MIN_JOBS_FOR_VERTICAL_PAGE;
   const desc = (a: HubLink, b: HubLink) => b.count - a.count;
 
   const vLinks: HubLink[] = [];
   for (const c of vCounts) {
     const v = vById.get(c.verticalId);
-    if (v && v.slug !== "unsorted" && keep(c._count.id)) vLinks.push({ href: `/jobs/${v.slug}`, label: v.name, count: c._count.id });
+    if (v && v.slug !== "unsorted" && keepVertical(c._count.id)) vLinks.push({ href: `/jobs/${v.slug}`, label: v.name, count: c._count.id });
   }
   vLinks.sort(desc);
 

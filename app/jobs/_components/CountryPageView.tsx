@@ -101,6 +101,16 @@ export default function CountryPageView({ page, extras }: { page: SeoPage; extra
           <p style={{ margin: "16px 0 0", fontSize: 14.5, lineHeight: 1.7, color: "#B9C0D4", maxWidth: 560 }}>
             Roles located in {cName} plus remote jobs hireable from anywhere — every one AI-matched to your profile, with an honest score and the reasons behind it.
           </p>
+          {/* Below-floor state (§1.2): served noindex,follow, so be straight with
+              the visitor and route them to the alert instead of a thin list. */}
+          {page.thin && (
+            <div style={{ margin: "16px 0 0", maxWidth: 560, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 12, padding: "13px 16px", fontSize: 13.5, lineHeight: 1.65, color: "#B9C0D4" }}>
+              <strong style={{ color: "#fff" }}>
+                Only {page.total} {page.total === 1 ? "listing" : "listings"} open to {cName} right now.
+              </strong>{" "}
+              This page fills up as we crawl more boards — set an alert below and we&rsquo;ll email you when new roles land.
+            </div>
+          )}
           <Link href="/onboard" style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 28, maxWidth: 560, background: "#fff", borderRadius: 14, padding: "14px 18px", boxShadow: "0 16px 44px rgba(0,0,0,.3)", textDecoration: "none" }}>
             <span style={{ width: 42, height: 42, borderRadius: 11, background: GRAD, color: "#fff", display: "grid", placeItems: "center", flex: "none" }}><Ic n="upload" /></span>
             <span style={{ flex: 1 }}>

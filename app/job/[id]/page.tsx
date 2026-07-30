@@ -23,7 +23,7 @@ import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 import { prisma } from "@/lib/prisma";
 import { renderJobDescription, jobDescriptionText } from "@/lib/sanitize";
-import { MIN_JOBS_FOR_PAGE } from "@/lib/seo/pages";
+import { MIN_JOBS_FOR_PAGE, MIN_JOBS_FOR_VERTICAL_PAGE } from "@/lib/seo/pages";
 import { jobPath, extractJobId } from "@/lib/seo/job-slug";
 import { safeJsonLd } from "@/lib/seo/json-ld";
 import { jobPostingLd } from "@/lib/seo/job-posting-ld";
@@ -100,7 +100,7 @@ async function parentLink(job: {
   }
   if (job.vertical.slug !== "unsorted") {
     const n = await prisma.job.count({ where: { status: "LIVE", verticalId: job.verticalId } });
-    if (n >= MIN_JOBS_FOR_PAGE) return { href: `/jobs/${job.vertical.slug}`, label: `All ${job.vertical.name.toLowerCase()} jobs` };
+    if (n >= MIN_JOBS_FOR_VERTICAL_PAGE) return { href: `/jobs/${job.vertical.slug}`, label: `All ${job.vertical.name.toLowerCase()} jobs` };
   }
   return null;
 }

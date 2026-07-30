@@ -1,6 +1,10 @@
 /**
  * /jobs/{role-slug} · /jobs/remote-{role-slug} · /jobs/{vertical-slug} — spec §7.
- * 404s (auto-unpublishes) when fewer than MIN_JOBS_FOR_PAGE live jobs match.
+ *
+ * 404s only when nothing is behind the URL (no taxonomy match, or zero live
+ * jobs). A page that resolves but sits under its indexability floor renders
+ * `noindex,follow` with an alert-capture state — see SeoPage.thin and
+ * docs/topezia-slice4-seo-spec.md §1.2.
  */
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -19,7 +23,9 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   return {
     title,
     description,
-    robots: "index,follow,max-image-preview:large",
+    // `follow` either way: even while thin, the outbound links to siblings and
+    // job details are worth crawling.
+    robots: page.thin ? "noindex,follow" : "index,follow,max-image-preview:large",
     alternates: { canonical: page.canonicalPath },
     openGraph: { title, description, url: page.canonicalPath, type: "website" },
     twitter: { card: "summary_large_image", title, description },

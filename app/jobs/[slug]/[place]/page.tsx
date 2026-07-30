@@ -6,7 +6,9 @@
  * Indiana AND India, DE is Delaware AND Germany. US pages keep their two-letter
  * codes; countries use full-name slugs, which is also what people search for.
  *
- * 404s when fewer than MIN_JOBS_FOR_PAGE live jobs match.
+ * 404s only when nothing is behind the URL (unknown place, no taxonomy match,
+ * or zero live jobs). Below the indexability floor the page renders
+ * `noindex,follow` with an alert-capture state (§1.2 of the SEO addendum).
  */
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -23,6 +25,7 @@ export async function generateMetadata({ params }: { params: { slug: string; pla
   return {
     title,
     description,
+    robots: page.thin ? "noindex,follow" : "index,follow,max-image-preview:large",
     alternates: { canonical: page.canonicalPath },
     openGraph: { title, description, url: page.canonicalPath, type: "website" },
   };
