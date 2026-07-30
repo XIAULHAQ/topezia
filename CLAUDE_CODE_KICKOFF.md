@@ -14,158 +14,103 @@ https://github.com/XIAULHAQ/topezia — clone it and read README.md and
 CLAUDE_CODE_KICKOFF.md first, then topezia-phase1-spec.md for the full
 Phase 1 spec. The database schema, deployment, and taxonomy are already
 live in production (Supabase + Vercel) — see "Current state" in the
-kickoff doc for exactly what's done vs. pending. Start by reconciling
-Prisma's local migration history with the live database (see the
-"Prisma migration debt" section) before writing any new code.
+kickoff doc for exactly what's done vs. pending, and treat that table as
+authoritative over any older prose in the doc. Don't start by fixing
+anything; read the table first and tell me what you think the next step
+is before writing code.
 ```
 
 ---
 
 ## 1. Current state — verified, not assumed
 
-**Reconciled 2026-07-30 against the repo at commit `52dbe29`** (243 commits,
-migrations through `041_company_logo`). The table below had gone badly stale —
-it was last accurate on 2026-07-16 and claimed Slices 3–4 were unbuilt. What
-follows is **code-verified only**: every "Evidence" cell names a file, migration,
-or committed record that was read during this pass. Rows whose truth lives in the
-live database are marked ⚪ and were *not* queried — do not treat them as
-confirmed.
+**Reconciled 2026-07-30** against the repo at migration `041_company_logo`, and
+against the live database by direct query. The table had gone badly stale — it was
+last accurate on 2026-07-16 and claimed Slices 3–4 were unbuilt. Every "Evidence"
+cell names a file, migration, committed record, or query run during this pass; a
+⚪ row was *not* verified and must not be treated as confirmed. Row counts are
+snapshots — re-query rather than quoting them later.
 
 | Layer | Status | Evidence (repo-verified unless marked ⚪) |
 |---|---|---|
 | Schema | ✅ **31 models, 27 enums** (was 14/12) | `grep -c '^model\|^enum' prisma/schema.prisma` |
-| Prisma migration debt | ✅ **Resolved — §2 and §3 item 1 of this doc are obsolete; skip them** | 42 tracked folders + `migration_lock.toml`; the US-East DB was rebuilt fresh from migrations, not hand-run SQL (CAVEATS → Infrastructure) |
+| Prisma migration debt | ✅ **Resolved** — procedure archived to `docs/runbooks/prisma-baseline.md`, reference-only | 42 tracked folders + `migration_lock.toml`; the US-East DB was rebuilt fresh from migrations, not hand-run SQL (CAVEATS → Infrastructure) |
 | pgvector + pg_trgm | ✅ Enabled; embedding cols still raw-migration-managed | `000_init_vector_support`, `001_pg_trgm`, `002_embedding_dim`; `schema.prisma:203,410` keep them commented |
 | Taxonomy seed | ✅ **11 verticals, 50 roles, 131 aliases, 27 seed skills** (was 8/17/37/27) | `prisma/seed.ts`; ingestion coins further unreviewed skills (`019_skill_tier`) |
 | Ingestion pipeline | ✅ **Run repeatedly against real data** — not "never run" | 128 entries in `scripts/seed-sources.ts`; 6 cron workflows in `.github/workflows/`; commits `9846309` (first full crawl), `8f9bb3b` (US expansion) |
-| `Source` table | ⚪ Populated by `seed-sources.ts`; live row count not queried | `scripts/seed-sources.ts` exists and is committed |
+| `Source` table | ✅ **128 sources** (88 Greenhouse, 36 Ashby, 4 Lever), none never-crawled | Queried 2026-07-30; `scripts/seed-sources.ts` |
 | Feed UI | ✅ Built | `app/feed/`, `app/jobs/`, `app/search/` |
 | Matching engine | ✅ Built | `lib/matching/{match,insights,parse-resume,eligibility}.ts`, `app/api/match/`, `004_match_cache` |
 | Parse-confirmation screen | ✅ Built | `app/onboard/page.tsx`, `app/api/parse/` |
 | SEO pages | ✅ Built (spec §7) — but see gaps row | `app/jobs/[slug]/[place]/`, `app/sitemap.ts`, `app/robots.ts`, `lib/seo/` (9 modules), `008_seo_page_intro` |
 | Email alerts | ✅ Built, incl. double opt-in + RFC 8058 unsubscribe | `lib/alerts/`, `scripts/send-alerts.ts`, migrations `006`/`007`, `alerts-cron.yml` |
-| Slice 4 gaps vs. the SEO addendum | ❌ `page_stats` aggregates, thin-content `noindex` gate, on-demand revalidation | No `page_stats` anywhere in repo; hubs use time-based `revalidate = 3600`; thin pages currently **404** where `docs/topezia-slice4-seo-spec.md` §1.2 requires `noindex,follow` |
+| Slice 4 gaps vs. the SEO addendum | ❌ `page_stats` aggregates, on-demand revalidation. ✅ thin-content `noindex` gate (§1.2) landed 2026-07-30 | No `page_stats` anywhere in repo; hubs still use time-based `revalidate = 3600`. Gate: per-kind floors in `lib/seo/pages.ts`, `SeoPage.thin` → `noindex,follow` + alert state |
 | Shipped well beyond Phase 1 | ✅ Employer dashboard, billing/Stripe, portfolio, blog, career coach, endorsements, publications, freelance projects, resume tooling | migrations `018`–`041`; `app/employer/`, `app/pricing/`, `app/portfolio/`, `app/blog/`, `app/coach/` |
 | Founding-employer waitlist | ✅ Functional; **admin moved to `/hq`**, `/admin/waitlist` no longer exists | `app/waitlist/`, `app/api/waitlist/`, `app/hq/hq-dashboard.tsx:61` (waitlist tab) |
 | App deployment | ⚪ Assumed still live on Vercel, auto-deploy on `main` | Carried over from 2026-07-16; not re-verified in this pass |
 | Domain | ⚪ `topezia.com` connected; canonical host is `www.topezia.com` | Carried over; CAVEATS → Slice 4 confirms the `www` canonical as of 2026-07-18 |
-| Live row counts (jobs, publishable pages) | ⚪ **Not verified — needs `DATABASE_URL`** | Last committed figures (39 live jobs, 3–4 publishable SEO pages) are from CAVEATS as of **2026-07-18** and are stale by construction |
+| Live row counts | ✅ **13,556 live jobs + 928 projects; 456 sitemap URLs** | Queried 2026-07-30. The old "39 jobs / 3 SEO pages" figures were ~350× low. Any count here is a snapshot — re-query, don't quote |
 
 ---
 
-## 2. Prisma migration debt — fix this FIRST
+## 2. Conventions that keep this doc trustworthy
 
-**Corrected account** (an earlier version of this doc got this wrong — the
-paragraph below reflects what's actually true, verified against `git log`
-and the live schema, not what was assumed):
+These exist because this doc has already rotted twice — once on the migration
+facts (corrected 2026-07-16), once wholesale when the Current-state table went
+on claiming Slices 3–4 were unbuilt for two weeks after they shipped
+(reconciled 2026-07-30). Both times the cost was paid by whoever read it next.
 
-- There is **no committed base-table migration at all**, in git or
-  otherwise. The SQL that actually created the 14 models / 12 enums was
-  run by hand in Supabase's SQL editor and was never committed to this
-  repo. It now lives at `prisma/manual-sql-log/01_base_schema.sql` — a
-  **historical record of what was actually executed**, not a real Prisma
-  migration. Same for `prisma/manual-sql-log/02_taxonomy_seed.sql` (the
-  taxonomy seed data — also run by hand, also never a tracked migration).
-- The only two real migration folders that exist —
-  `000_init_vector_support` and `001_pg_trgm` — both `ALTER` tables
-  (`Job`, `Profile`) that, from Prisma's point of view, were never created
-  by any migration in this repo's history. If you ran `prisma migrate
-  deploy` on a fresh database right now, it would fail immediately.
-- `prisma/migrations/migration_lock.toml` was missing (Prisma generates
-  this automatically the first time `migrate dev` runs; since that never
-  happened here, it never existed). Added now with `provider = "postgresql"`.
-- `schema.prisma` **does not declare the embedding columns** — they're
-  commented out as `Unsupported("vector(1536)")`. This actually matters for
-  the fix below: it means `000_init_vector_support` and `001_pg_trgm` were
-  never meant to be derived from `schema.prisma` in the first place. They're
-  legitimately hand-written, permanently-manual migrations (a common,
-  accepted pattern for pgvector with Prisma, since Prisma's schema language
-  can't fully express vector columns yet) — not something to fold into a
-  schema-driven baseline.
+1. **Any session that ships a feature updates `CAVEATS.md` in the same commit.**
+   Not "later", not a follow-up commit. `CAVEATS.md` is the highest-trust doc in
+   the repo *because* it's been maintained; it stops being that the moment it
+   lags. This is the cheapest rule here and the one that matters most.
+2. **Trust the repo over the doc, then fix the doc.** If anything in this
+   document contradicts what you find in the code, the code wins — and updating
+   the doc in that same session is part of the task, not optional cleanup.
+3. **§1's table is authoritative over any prose in this doc.** Prose here ages
+   badly; the table carries per-row provenance and a reconciliation date.
+4. **Never resolve schema drift by letting `migrate dev` / `migrate reset`
+   rewrite the live database.** Hand-write the SQL, apply it, then record it
+   with `prisma migrate resolve --applied`. See
+   `docs/runbooks/prisma-baseline.md`.
 
-**The correct fix** — Prisma's own "baselining an existing database" workflow
-(see https://www.prisma.io/docs/guides/database/baselining), adapted here:
+### Migration debt: resolved, don't re-do it
 
-```bash
-# 1. Confirm your local Prisma CLI can actually reach its engines (it
-#    should, outside the sandbox that authored this doc):
-npx prisma --version
+The Prisma migration debt this section used to describe **is fixed**. The
+current US-East database was rebuilt fresh from tracked migrations, so
+`prisma/migrations/` (42 folders + `migration_lock.toml`) and the live schema
+already agree. `prisma migrate dev` works normally for new changes.
 
-# 2. Generate a migration representing the FULL current schema.prisma
-#    (14 models, 12 enums — no vector columns, since those aren't in
-#    schema.prisma) as a single baseline, without running it against the
-#    database (the tables already exist — this just teaches Prisma's
-#    migration history about them):
-mkdir -p prisma/migrations/00000000000000_init
-npx prisma migrate diff \
-  --from-empty \
-  --to-schema-datamodel prisma/schema.prisma \
-  --script > prisma/migrations/00000000000000_init/migration.sql
-
-# 3. Diff that generated file against prisma/manual-sql-log/01_base_schema.sql
-#    — they represent the same 14 models/12 enums and should be equivalent
-#    (naming, ordering, or minor syntax may differ; the DDL should match).
-#    If they diverge meaningfully, trust schema.prisma and investigate why.
-
-# 4. Mark the baseline as applied (it matches reality already — this just
-#    records that fact in Prisma's _prisma_migrations table):
-npx prisma migrate resolve --applied 00000000000000_init
-
-# 5. Now mark the two vector/trgm migrations as applied too, since those
-#    also already ran manually and sort after the baseline alphabetically:
-npx prisma migrate resolve --applied 000_init_vector_support
-npx prisma migrate resolve --applied 001_pg_trgm
-
-# 6. Verify state is clean:
-npx prisma migrate status
-# Should show "Database schema is up to date"
-```
-
-After this, `prisma/migrations/` will contain three real, tracked folders
-(`00000000000000_init`, `000_init_vector_support`, `001_pg_trgm`) plus
-`migration_lock.toml` — a fully honest migration history matching what's
-actually in the database. From that point forward, `prisma migrate dev`
-works normally for new changes.
-
-`prisma/manual-sql-log/` can stay as a permanent historical record (it's
-genuinely useful — it's the exact SQL that built production) or be deleted
-once the baseline migration is verified equivalent; your call.
-
----
-
-## 2a. What was corrected in this doc
-
-An earlier version of this document claimed `hand_written_init.sql` was
-sitting inside `prisma/migrations/` and suggested treating it as a
-quasi-migration to resolve directly. That was wrong on two counts: the file
-was never committed to git at all (confirmed via `git log --all`), and even
-if it had been, it wasn't in a real migration folder Prisma would recognize.
-It also said "16 tables" where the actual count is 14 models / 12 enums.
-Both errors are fixed above. If anything else in this doc turns out to be
-inaccurate when you check it against reality, trust the repo over the doc
-and fix the doc.
+The baselining procedure that fixed it — plus the full historical account of
+what was wrong and the two documentation errors made along the way — now lives
+in **`docs/runbooks/prisma-baseline.md`**, labeled reference-only. Read it if
+drift ever recurs. Do not run it as onboarding.
 
 ---
 
 ## 3. Immediate next priorities, in order
 
-1. **Fix the Prisma migration debt** (above) before writing any new code —
-   otherwise every future `prisma migrate dev` is unreliable.
-2. **Populate the `Source` table for real.** The waitlist form creates
-   `Source` rows automatically, but it's empty until real founding-employer
-   signups come in. For testing ingestion, manually insert a few known
-   Greenhouse/Lever company slugs (e.g. `stripe`, `airbnb` on Greenhouse —
-   verify current slugs, these change) via Prisma Studio or a seed script.
-3. **Run `npm run ingest` against real data** and see what breaks. The
-   crawlers were written carefully but never executed — expect some bugs.
-   Check `lib/ingestion/sources/ashby.ts` first; its response shape was
-   flagged in the file comments as the least-verified of the three.
-4. **Slice 3: parse-confirmation screen + feed UI.** These are designed in
-   detail in `topezia-phase1-spec.md` §6 — two Visualizer mockups exist
-   from earlier design work (feed-first layout, parse-confirmation screen)
-   that can guide the real implementation.
-5. **Wire up the matching engine** (§5 of the spec) — retrieval via pgvector
-   cosine similarity, rerank via Haiku-class model, honest scoring rules.
+**Rewritten 2026-07-30.** All five items this list used to hold (fix migration
+debt, populate `Source`, first ingestion run, Slice 3 parse-confirmation + feed,
+wire up matching) are **done** — see §1. The list below is derived from
+`docs/topezia-slice4-seo-spec.md` §5 and the 🔴/🟠 items in `CAVEATS.md`, not
+from the original Phase 1 plan. Re-derive it the same way when it goes stale.
+
+1. **Slice 4 SEO addendum, in its own §5 order.** Item 1 (`JobPosting` + expiry
+   handling) is already built, so the open work starts at item 2:
+   `page_stats` computation at the end of each ingestion run → per-page stats
+   blocks on programmatic pages → on-demand revalidation replacing the current
+   time-based `revalidate = 3600` → remaining site-level schema (`Organization`,
+   `WebSite`/`SearchAction`). Don't ship stats blocks before `page_stats` exists.
+2. **Add a real Lever source** — 🔴 in `CAVEATS.md` → Ingestion, and it blocks
+   launch. `leverdemo` was removed because it served Lever's own fake sample
+   postings into a real alert email. The crawler is verified; it needs one real
+   board in `scripts/seed-sources.ts`.
+3. **Full re-ingest to clear noisy-text jobs** — 🟠 in `CAVEATS.md`. Two fixes
+   (Greenhouse entity-encoded HTML now decoded; Ashby should switch to
+   `descriptionHtml`) are deliberately deferred to a single re-ingest, because
+   both change `descriptionHash` and would otherwise duplicate every job.
+4. **Google Search Console** — founder action, see §4.
 
 ---
 
@@ -234,6 +179,11 @@ unblock at different times:
   decisions. Update it when reality contradicts it.
 - `docs/topezia-slice4-seo-spec.md` — Slice 4 SEO work must follow this
   addendum; it supersedes the lighter SEO notes in the base spec.
+- `CAVEATS.md` — the running honest list of what's incomplete or fragile,
+  with 🔴/🟠/🟡 severity. Highest-trust doc in the repo; keep it that way
+  (§2 convention 1).
+- `docs/runbooks/prisma-baseline.md` — reference-only recovery procedure for
+  Prisma schema drift. Already completed; don't run it as onboarding.
 - `README.md` — file-by-file map of what exists and what each piece does.
 - This document — operational handoff notes, not product spec. Delete or
   archive once Slice 2–4 are underway and this context is no longer novel.
