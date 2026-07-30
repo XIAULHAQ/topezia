@@ -45,6 +45,22 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   real alert email — is gone, replaced by four real boards: Palantir, Meesho,
   Qonto, Waabi. Verified 2026-07-30: 386 live Lever jobs, all four crawled within
   the last hour by the scheduled cron.
+- 🔴 **Pakistan employers are essentially absent from Greenhouse/Lever/Ashby.**
+  Probed 85 candidate boards against the live endpoints on 2026-07-30: Systems
+  Ltd, NETSOL, 10Pearls, Arbisoft, Devsinc, Contour, Folio3, VentureDive,
+  Tintash, Confiz, Gaditek, Daraz, Bazaar, Retailo, Bykea, PostEx, Abhi,
+  Safepay, Zameen/Dubizzle and Trukkr **all 404 on all three ATSs**. They hire
+  via Rozee.pk, Mustakbil, LinkedIn or their own sites. Only two boards carry
+  real PK-located roles (Careem 12, Educative 10). **Adding more slugs cannot
+  fix this** — real PK inventory needs a new crawler for an ATS those companies
+  actually use (Workable / SmartRecruiters / BambooHR are the usual suspects and
+  all have public JSON endpoints). Until then PK seekers are served by
+  eligibility: globally-remote roles surface on `/jobs/pakistan` because country
+  pages count "located there OR hireable from anywhere".
+- 🟡 **A live board is not proof of the right company.** `aha` was probed and
+  rejected: that Greenhouse slug belongs to a veterinary practice
+  ("Credentialed Veterinary Technician"), not Aha! the software company. HTTP
+  200 + non-empty only proves a board exists. Check the titles before adding.
 - 🟢 **Source volume is no longer the constraint.** 128 sources (88 Greenhouse,
   36 Ashby, 4 Lever), zero never-crawled. Live listings as of 2026-07-30:
   **13,556 jobs** (Greenhouse 9,994 · Ashby 3,175 · Lever 386 · 1 native) plus

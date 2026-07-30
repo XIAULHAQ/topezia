@@ -209,6 +209,57 @@ const SEED_SOURCES: { type: JobSource; companySlug: string; companyName: string 
   { type: JobSource.GREENHOUSE, companySlug: "intercom", companyName: "Intercom" },         // 130 · US, IE, GB, DE
   { type: JobSource.GREENHOUSE, companySlug: "asana", companyName: "Asana" },               // 146 · US, PL, IS, AU, IE
   { type: JobSource.GREENHOUSE, companySlug: "figma", companyName: "Figma" },               // 175 · DE, US, IN, FR, SG, AU
+
+  // ── Pakistan (2026-07-30) ───────────────────────────────────────────────
+  // Read this before adding more "Pakistan boards": PK employers are almost
+  // entirely ABSENT from Greenhouse/Lever/Ashby. 85 candidates were probed
+  // against the live endpoints — Systems Ltd, NETSOL, 10Pearls, Arbisoft,
+  // Devsinc, Contour, Folio3, VentureDive, Tintash, Confiz, Gaditek, Daraz,
+  // Bazaar, Retailo, Bykea, PostEx, Abhi, Safepay, Zameen/Dubizzle, Trukkr and
+  // the rest ALL returned 404 on all three ATSs. They hire via Rozee.pk,
+  // Mustakbil, LinkedIn or their own sites. Only two boards below carry real
+  // PK-located roles; reaching PK inventory at scale needs a NEW crawler for an
+  // ATS those companies actually use, not more slugs here.
+  { type: JobSource.GREENHOUSE, companySlug: "careem", companyName: "Careem" },             // 28  · 12 PK (Karachi, Lahore) + AE, JO — best PK source found
+  { type: JobSource.LEVER, companySlug: "educative", companyName: "Educative" },            // 11  · 10 PK (Lahore, Islamabad) + US (Bellevue WA HQ)
+
+  // Globally-remote boards. These are how PK seekers are actually served today:
+  // country pages are ELIGIBILITY-based, so "Home based — Worldwide" roles show
+  // on /jobs/pakistan even with no PK-located supply.
+  { type: JobSource.GREENHOUSE, companySlug: "canonical", companyName: "Canonical" },       // 303 · Home-based Worldwide / EMEA / Americas — all remote
+  { type: JobSource.GREENHOUSE, companySlug: "turing", companyName: "Turing" },             // 28  · US 14, India remote
+  { type: JobSource.LEVER, companySlug: "toptal", companyName: "Toptal" },                  // 22  · US, CA, LATAM (remote)
+  { type: JobSource.ASHBY, companySlug: "andela", companyName: "Andela" },                  // 18  · North America, GB, KE
+  { type: JobSource.ASHBY, companySlug: "zapier", companyName: "Zapier" },                  // 14  · NAMER, APAC, India (remote)
+
+  // ── US expansion (2026-07-30) ───────────────────────────────────────────
+  // 90 candidates probed; these are the ones that returned HTTP 200 with live
+  // jobs, unique external ids and no demo/"(copy)" titles. Counts are total
+  // board size at verification time.
+  //
+  // NOTE: `aha` was probed and REJECTED — the Greenhouse board on that slug is a
+  // veterinary practice ("Credentialed Veterinary Technician"), not Aha! the
+  // software company. Slug ≠ brand; verify identity, not just HTTP 200.
+  { type: JobSource.GREENHOUSE, companySlug: "datadog", companyName: "Datadog" },           // 425 · US 201, JP, FR
+  { type: JobSource.GREENHOUSE, companySlug: "braze", companyName: "Braze" },               // 236 · US 164 (NYC, Chicago, Austin)
+  { type: JobSource.GREENHOUSE, companySlug: "riotgames", companyName: "Riot Games" },      // 162 · US 69 (LA), CN, SG
+  { type: JobSource.GREENHOUSE, companySlug: "epicgames", companyName: "Epic Games" },      // 137 · US 46 (Cary NC)
+  { type: JobSource.GREENHOUSE, companySlug: "upstart", companyName: "Upstart" },           // 100 · US 100 (92 remote-US)
+  { type: JobSource.GREENHOUSE, companySlug: "justworks", companyName: "Justworks" },       // 94  · US 72 (NYC)
+  { type: JobSource.GREENHOUSE, companySlug: "chainguard", companyName: "Chainguard" },     // 67  · US 44 remote, GB, CA
+  { type: JobSource.GREENHOUSE, companySlug: "sweetgreen", companyName: "Sweetgreen" },     // 55  · US 53 — non-tech/hourly, thin vertical
+  { type: JobSource.GREENHOUSE, companySlug: "amplitude", companyName: "Amplitude" },       // 44  · US 34, GB
+  { type: JobSource.GREENHOUSE, companySlug: "betterment", companyName: "Betterment" },     // 39  · US 39 (NYC)
+  { type: JobSource.GREENHOUSE, companySlug: "ziprecruiter", companyName: "ZipRecruiter" }, // 36  · US 26 (Santa Monica)
+  { type: JobSource.GREENHOUSE, companySlug: "cultureamp", companyName: "Culture Amp" },    // 27  · AU, GB, US 7
+  { type: JobSource.ASHBY, companySlug: "astronomer", companyName: "Astronomer" },          // 27  · US 20 (NYC), GB
+  { type: JobSource.GREENHOUSE, companySlug: "customerio", companyName: "Customer.io" },    // 25  · Americas/EMEA remote
+  { type: JobSource.GREENHOUSE, companySlug: "applovin", companyName: "AppLovin" },         // 24  · US 17 (Palo Alto, NYC)
+  { type: JobSource.GREENHOUSE, companySlug: "iterable", companyName: "Iterable" },         // 23  · US 16, PT
+  { type: JobSource.GREENHOUSE, companySlug: "mattermost", companyName: "Mattermost" },     // 13  · US 8, GB
+  { type: JobSource.ASHBY, companySlug: "resend", companyName: "Resend" },                  // 10  · Americas/Europe remote
+  { type: JobSource.ASHBY, companySlug: "prefect", companyName: "Prefect" },                // 5   · remote
+  { type: JobSource.GREENHOUSE, companySlug: "lattice", companyName: "Lattice" },           // 4   · US, GB, CA
 ];
 
 async function main() {
