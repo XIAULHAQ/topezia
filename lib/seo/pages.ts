@@ -22,6 +22,8 @@
  * breadcrumbs all check it, so nothing ever links to a noindex page. No nightly
  * job needed — every rule here is evaluated per request.
  */
+import { cache } from "react";
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import type { EmploymentType, JobKind, Prisma, RemoteType, SalaryPeriod } from "@prisma/client";
 import { hubBySlug, hubMatchIds, HUBS, type SkillHub } from "./hubs";
@@ -653,14 +655,21 @@ export interface BrowseHub {
  */
 const EMPTY_HUB: BrowseHub = { totalLive: 0, verticals: [], roles: [], skills: [], states: [], countries: [], postedLast7d: 0, medianAgeDays: null, popular: [] };
 
-export async function getBrowseHub(): Promise<BrowseHub> {
+/**
+ * The raw computation. Deliberately does NOT swallow DB errors — it throws, so
+ * that `getBrowseHub` can decide whether a failure is cacheable. It isn't: a
+ * transient blip must not pin an empty directory in the data cache for the whole
+ * TTL, which is exactly what would happen if EMPTY_HUB were returned from inside
+ * the cached function.
+ */
+async function computeBrowseHub(): Promise<BrowseHub> {
   let verticals, roles, totalLive, vCounts, rCounts, states, countries;
   let globalRemote = 0;
   let postedLast7d = 0;
   let ageRows: { postedAt: Date | null; firstSeenAt: Date }[] = [];
   let pairCounts: { roleId: string | null; country: string | null; _count: { id: number } }[] = [];
   const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
-  try {
+  {
     [verticals, roles, totalLive, vCounts, rCounts, states, countries, globalRemote, postedLast7d, ageRows, pairCounts] = await Promise.all([
       prisma.vertical.findMany({ select: { id: true, name: true, slug: true } }),
       prisma.role.findMany({ select: { id: true, name: true, slug: true } }),
@@ -676,10 +685,6 @@ export async function getBrowseHub(): Promise<BrowseHub> {
       prisma.job.findMany({ where: { status: "LIVE", kind: "JOB" }, select: { postedAt: true, firstSeenAt: true }, take: 4000 }),
       prisma.job.groupBy({ by: ["roleId", "country"], where: { status: "LIVE", kind: "JOB", roleId: { not: null }, country: { not: null } }, _count: { id: true } }),
     ]);
-  } catch (err) {
-    // A DB blip must never crash the build or 500 the hub — degrade to empty.
-    console.error("getBrowseHub failed, rendering empty hub:", err);
-    return EMPTY_HUB;
   }
 
   const vById = new Map(verticals.map((v) => [v.id, v]));
@@ -769,3 +774,35 @@ export async function getBrowseHub(): Promise<BrowseHub> {
 
   return { totalLive, verticals: vLinks, roles: rLinks, skills, states: sLinks, countries: cLinks, postedLast7d, medianAgeDays, popular };
 }
+
+/**
+ * Cross-request cache. This data is read by /jobs, /, /about and EVERY SEO page
+ * (SeoPageView), and it only changes when ingestion runs — twice a day. Before
+ * this, every one of those page views paid the full query set; /jobs paid it
+ * twice, because generateMetadata and the page component each called it and
+ * nothing deduped them.
+ *
+ * 15 minutes: counts on a 13.5k-job directory don't meaningfully move faster
+ * than that, and it bounds how long a cold visitor's cost is amortised over.
+ */
+const cachedBrowseHub = unstable_cache(computeBrowseHub, ["browse-hub-v1"], {
+  revalidate: 900,
+  tags: ["browse-hub"],
+});
+
+/**
+ * Per-request memo on top of the cross-request cache, so two calls in one render
+ * pass (generateMetadata + the page body) hit the database at most once.
+ *
+ * The error boundary lives HERE rather than inside the cached function: a DB
+ * failure degrades this one render to an empty hub — never a 500, never a failed
+ * build — without that empty result being cached for the next 15 minutes.
+ */
+export const getBrowseHub = cache(async (): Promise<BrowseHub> => {
+  try {
+    return await cachedBrowseHub();
+  } catch (err) {
+    console.error("getBrowseHub failed, rendering empty hub:", err);
+    return EMPTY_HUB;
+  }
+});

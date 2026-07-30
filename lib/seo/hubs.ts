@@ -100,17 +100,42 @@ const group = (terms: string[]) => `\\y(${terms.join("|")})\\y`;
 /**
  * Ids only. The caller re-reads full rows through the normal select so hub
  * cards carry exactly the same fields as every other listing card.
+ *
+ * PERFORMANCE — read before editing the SQL. The naive form of this query put
+ * `descriptionRaw ~* excludeBody` in the top-level WHERE, so every LIVE row's
+ * full HTML description went through a case-insensitive regex: 1173ms of DB
+ * execution on 14.5k rows, and it was the single slowest thing in the app
+ * (hit by /jobs, /, /about and all 456 SEO pages via SeoPageView).
+ *
+ * The MATERIALIZED CTE below narrows on the CHEAP predicates first — title
+ * regexes, which run against short strings — and only then applies the
+ * description regexes to the survivors plus the ~900 projects. Same rows, same
+ * order, 246ms. MATERIALIZED is load-bearing: without it the planner inlines
+ * the CTE and collapses back to the slow plan.
+ *
+ * Logically identical to the original predicate:
+ *   LIVE ∧ ¬(title~exT) ∧ ¬(title~exB) ∧ ¬(desc~exB)
+ *        ∧ (title~T ∨ (PROJECT ∧ desc~B))
+ * The CTE's `(title~T ∨ kind='PROJECT')` pre-filter is implied by that final
+ * clause, so it can never drop a row that would have matched. Verified against
+ * live data: 166 rows, byte-identical ids in identical order.
  */
 export async function hubMatchIds(hub: SkillHub): Promise<{ jobIds: string[]; projectIds: string[] }> {
   const rows = await prisma.$queryRawUnsafe<{ id: string; kind: string }[]>(
-    `SELECT j.id, j.kind::text AS kind
-       FROM "Job" j
-      WHERE j.status = 'LIVE'
-        AND NOT (j."titleRaw" ~* $3)
-        AND NOT (j."titleRaw" ~* $4 OR j."descriptionRaw" ~* $4)
-        AND ( j."titleRaw" ~* $1
-              OR (j.kind = 'PROJECT' AND j."descriptionRaw" ~* $2) )
-      ORDER BY (j."titleRaw" ~* $1) DESC, j."lastVerifiedAt" DESC
+    `WITH cand AS MATERIALIZED (
+       SELECT j.id, j.kind, j."descriptionRaw", j."lastVerifiedAt",
+              (j."titleRaw" ~* $1) AS title_hit
+         FROM "Job" j
+        WHERE j.status = 'LIVE'
+          AND NOT (j."titleRaw" ~* $3)
+          AND NOT (j."titleRaw" ~* $4)
+          AND ( j."titleRaw" ~* $1 OR j.kind = 'PROJECT' )
+     )
+     SELECT id, kind::text AS kind
+       FROM cand
+      WHERE NOT ("descriptionRaw" ~* $4)
+        AND ( title_hit OR (kind = 'PROJECT' AND "descriptionRaw" ~* $2) )
+      ORDER BY title_hit DESC, "lastVerifiedAt" DESC
       LIMIT 200`,
     group(hub.title),
     group(hub.body),

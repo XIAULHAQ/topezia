@@ -142,6 +142,38 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟢 **Test Profile rows cleared** from prod (was 0 profiles on 2026-07-18; 8 now,
   from real signups — the count moves, so don't read a number here as current).
 
+## Performance
+- 🟢 **The `/jobs` 3-second load is FIXED (2026-07-30).** Root cause was one query,
+  not the page: `hubMatchIds` ran a case-insensitive regex over `descriptionRaw`
+  for **every** LIVE row — 14.5k full HTML descriptions through a regex engine at
+  **1,173ms of DB execution**, when every other query on the page measures 3–8ms.
+  Three compounding fixes:
+  - The SQL now narrows on cheap title regexes in a `MATERIALIZED` CTE and only
+    regexes descriptions for the survivors + the ~900 projects: **1,173ms → 246ms**,
+    verified byte-identical (166 rows, same ids, same order). `MATERIALIZED` is
+    load-bearing — without it the planner inlines the CTE and reverts to the slow
+    plan.
+  - `getBrowseHub` is now memoised per request with React `cache()`. `/jobs` called
+    it **twice** — once in `generateMetadata`, once in the page body — and nothing
+    deduped Prisma calls, so the page paid the whole cost twice.
+  - `unstable_cache` with a 900s TTL on top, because this data is read by `/jobs`,
+    `/`, `/about` **and every SEO page** via `SeoPageView`, and only changes when
+    ingestion runs (twice a day). Warm `/jobs` measured at 33–52ms.
+- 🟡 **Hub-count staleness is bounded at 15 minutes.** The ingestion cron runs
+  outside Next, so it can't call `revalidateTag("browse-hub")`. If counts ever need
+  to be exact-on-ingest, add a revalidation webhook at the end of the ingest job —
+  the tag is already there.
+- 🟡 **The DB error path is deliberately NOT cached.** `computeBrowseHub` throws;
+  the catch that degrades to an empty hub lives outside `unstable_cache`, so a
+  transient blip can't pin an empty directory for the whole TTL. Keep it that way.
+- 🟡 **`/jobs/{role}` pages still fan out ~26 queries** (`buildListing`: a company
+  groupBy plus one findMany per top company). Each is single-digit ms on Vercel, so
+  it's fine today, but it's the next hotspot if page latency regresses — and it is
+  what makes those pages slow to test from a non-colocated machine.
+- 🟡 **Don't "optimise" the median-age query into `percentile_cont`.** Measured:
+  the current `take: 4000` findMany is 3ms DB-side, the SQL percentile is 32ms.
+  The obvious refactor is 10× worse.
+
 ## Billing, employer & content (added 2026-07-30 — shipped after this file's last pass)
 
 These three areas shipped between 2026-07-18 and 2026-07-30 and had no entries
