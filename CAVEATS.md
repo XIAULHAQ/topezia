@@ -122,32 +122,46 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   account created and the pre-signup anonymous profile (13 skills, 12 cached
   match scores) migrated onto it — profiles now survive cookie-clears and work
   cross-device.
-- 🟡 **Signup emails are unverified** (confirm-email is off for a frictionless
-  MVP), so people can register a typo'd or someone else's address. Measured
-  2026-07-30: `email_confirmed_at` lands 0.03–0.06s after `created_at` for all
-  11 users, i.e. auto-confirm. This is what makes the spam controls' account
-  check weaker than it reads — see the spam section.
+- 🟢 **Signup emails are VERIFIED as of 2026-07-30** — `mailer_autoconfirm` is
+  now `false`. Before the flip, `email_confirmed_at` landed 0.03–0.06s after
+  `created_at` for all 11 users, i.e. auto-confirm; those legacy accounts keep
+  their confirmed status, and only new signups face the real check.
+- 🟢 **Custom SMTP is live: Resend, `smtp.resend.com:465`, user `resend`,
+  sender `no-reply@mail.topezia.com`.** The sender MUST stay on
+  `mail.topezia.com` — that is the domain Resend has verified, and a plain
+  `@topezia.com` sender is rejected. Credentials were checked by opening an
+  SMTP session and authenticating (ports 465 and 587 both OK) rather than by
+  sending anything.
+- 🔴 **The built-in mailer allowed 2 emails PER HOUR, site-wide**
+  (`rate_limit_email_sent: 2`, the Supabase default). Turning on Confirm Email
+  without custom SMTP first would have broken signup for everyone after the
+  second person each hour. Now 30/hour, with Resend's daily quota as the real
+  ceiling. **If signups ever fail silently at scale, check this number first.**
+- 🟡 **The confirmation template was switched to `{{ .TokenHash }}`.** It now
+  links to `{{ .SiteURL }}/auth/callback?token_hash=…&type=signup`. The
+  recovery template still uses `{{ .ConfirmationURL }}` and was deliberately
+  left alone — the app sends its own reset mail via Resend and links to
+  `/reset?token_hash=`, bypassing Supabase's template entirely.
 - 🟢 **The CODE side of turning it on is now done (2026-07-30).** Both signup
   forms pass `emailRedirectTo` pointing at the current origin, and
   `/auth/callback` handles the confirmation link as well as OAuth. Verified by
   probing every branch: no params, `error_description`, `token_hash&type=signup`
   (reaches Supabase's real verifier), `type=recovery` (refused by our own
   allow-list, since recovery belongs to `/reset`), and `code=` (PKCE).
-- 🔴 **Two dashboard settings must be right BEFORE flipping it, or every
-  confirmation link breaks.** Without `emailRedirectTo` Supabase points the
-  link at the project's **Site URL** — which is exactly how the password-reset
-  links once ended up on localhost (see `app/reset/page.tsx`). We now send
-  `emailRedirectTo`, but Supabase **silently ignores it and falls back to Site
-  URL** unless the URL is in the Redirect URLs allow-list. So: Site URL =
-  `https://www.topezia.com`, and add `https://www.topezia.com/**` to Redirect
-  URLs, THEN switch Confirm email on.
-- 🟡 **The default confirmation template is the fragile one.**
-  `{{ .ConfirmationURL }}` returns `?code=`, which is PKCE — it only works in
-  the SAME browser that signed up, and people read mail on their phone. Change
-  the "Confirm signup" template to link to
-  `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=signup` and it
-  works from any device. The callback handles both, so neither choice can strand
-  someone; one is just markedly better.
+- 🔴 **ORDER OF OPERATIONS, recorded because getting it wrong breaks signup
+  silently.** The template now points at `/auth/callback?token_hash=…`, which
+  the OLD deployed callback did not understand. Applied in this sequence:
+  (1) deploy the callback + `emailRedirectTo` code, (2) verify production
+  actually serves it, (3) set SMTP, allow-list and template, (4) only then flip
+  `mailer_autoconfirm`. Doing (4) before (1) would have sent every new member a
+  dead link. Step 2 was a real probe, not an assumption — production answered a
+  bogus `token_hash` with Supabase's *"Email link is invalid or has expired"*,
+  proving the new branch was live.
+- 🔴 **Redirect URLs needed WILDCARDS, not exact paths.** The allow-list held
+  `https://www.topezia.com/auth/callback` exactly, which does **not** match
+  `/auth/callback?next=…` or the `/r/{token}` return the endorsement signup
+  uses — Supabase would have silently fallen back to Site URL. Now
+  `https://www.topezia.com/**,https://topezia.com/**,http://localhost:3100/**`.
 - 🟡 **Supabase's built-in email is rate-limited** (a handful an hour) and is
   not a sending domain anyone trusts. `RESEND_API_KEY` already exists — set
   custom SMTP in Auth → Emails before signup volume matters, or confirmations
@@ -293,15 +307,13 @@ does not yet have the history to compute a delta honestly.**
   member; the page works and shares normally. Verified against all 8 production
   profiles: 7 real ones index, the thin `PEPSI` test profile flipped to
   `noindex, follow`.
-- 🟡 **The account check is weaker than it looks, today.** Supabase "Confirm
-  email" is still OFF, so `email_confirmed_at` is stamped at signup — measured
-  0.03–0.06s after `created_at` for every existing user. So layer 2's first
-  condition currently means *has an account*, not *controls that address*, and
-  costs an attacker one free signup with a typo'd email. The query is written
-  against `email_confirmed_at` on purpose so it becomes the real check the
-  moment that toggle flips. **Turning on Confirm Email is the highest-value
-  remaining anti-spam action and it is a dashboard setting, not code**
-  (`RESEND_API_KEY` is already in `.env`).
+- 🟢 **The account check now means what it says (as of 2026-07-30).** Supabase
+  `mailer_autoconfirm` is **false** — Confirm Email is ON — so layer 2's first
+  condition is *controls that address*, not merely *has an account*. The query
+  was written against `email_confirmed_at` from the start precisely so this
+  strengthened itself the moment the toggle flipped, with no code change.
+  Accounts created BEFORE the flip were auto-confirmed and keep that status;
+  the stronger bar applies to new signups only.
 - 🟢 **Layer 3 — content scoring at the write paths.** `scoreUgc()` in
   `lib/ugc.ts` weighs link volume, throwaway TLDs, chat-app handoffs, spam
   vocabulary, invisible/homoglyph characters, keyword stuffing and shouting.
