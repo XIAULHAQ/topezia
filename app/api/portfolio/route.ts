@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { validate, makeSlug, writeMedia, type PortfolioInput } from "@/lib/portfolio/save";
 import { portfolioImageUrl } from "@/lib/portfolio/storage";
+import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,6 +47,12 @@ export async function GET() {
 export async function POST(request: Request) {
   const profileId = await ownProfileId();
   if (!profileId) return NextResponse.json({ error: "not-authenticated" }, { status: 401 });
+
+  // A published portfolio is an indexed page in our sitemap, so bulk creation
+  // is the shape worth bounding. Far above anyone's real output in an hour.
+  if (!rateLimit(`portfolio-create:${profileId}`, 30, 60 * 60 * 1000)) {
+    return NextResponse.json(RATE_LIMITED, { status: 429 });
+  }
 
   let body: PortfolioInput;
   try {

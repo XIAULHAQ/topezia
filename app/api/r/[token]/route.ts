@@ -24,6 +24,8 @@ import { portfolioImageUrl } from "@/lib/portfolio/storage";
 import {
   ENDORSEMENT_LIMITS, newToken, clean, cleanText, cleanRating, type RequestContext,
 } from "@/lib/endorsements/doc";
+import { scoreUgcFields, isSpam, spamMessage } from "@/lib/ugc";
+import { rateLimit, clientIp, RATE_LIMITED } from "@/lib/rate-limit";
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com").replace(/\/$/, "");
 
@@ -84,6 +86,13 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
 }
 
 export async function POST(req: NextRequest, { params }: { params: { token: string } }) {
+  // The unique index caps one response per account per link, so the way to
+  // write many is to hold many accounts. This bounds that from the other side:
+  // whatever the accounts, the writing happens from somewhere.
+  if (!rateLimit(`endorse-write:${clientIp(req)}`, 10, 60 * 60 * 1000)) {
+    return NextResponse.json(RATE_LIMITED, { status: 429 });
+  }
+
   const row = await load(params.token);
   if (!row) return NextResponse.json({ error: "This link isn't valid." }, { status: 404 });
   // A SUBMITTED row's token belongs to a legacy single-use link that was
@@ -115,9 +124,17 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
   }
 
   const authorName = clean(body.authorName, ENDORSEMENT_LIMITS.authorName);
+  const authorRole = clean(body.authorRole, ENDORSEMENT_LIMITS.authorRole);
   const text = cleanText(body.text, ENDORSEMENT_LIMITS.text);
   if (!authorName) return NextResponse.json({ error: "Please add your name." }, { status: 400 });
   if (text.length < 40) return NextResponse.json({ error: "Please write at least a couple of sentences." }, { status: 400 });
+
+  // The one place a stranger's words land on someone ELSE's public page, and
+  // the member cannot edit what arrives — only hide it. So links are NOT
+  // expected here: a recommendation is prose about a person, and a URL in one
+  // is already odd. Refusing at the door beats asking the member to notice.
+  const verdict = scoreUgcFields([authorName, authorRole, text]);
+  if (isSpam(verdict)) return NextResponse.json({ error: spamMessage(verdict) }, { status: 422 });
 
   // Soft cap per link, so a link posted somewhere public can't grow a
   // profile without bound. Approximate on purpose — the hard guarantee
@@ -145,7 +162,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
         inviteId: row.id,
         authorUserId: userId,
         authorName,
-        authorRole: clean(body.authorRole, ENDORSEMENT_LIMITS.authorRole) || null,
+        authorRole: authorRole || null,
         text,
         rating: cleanRating(body.rating, row.kind),
         submittedAt: new Date(),

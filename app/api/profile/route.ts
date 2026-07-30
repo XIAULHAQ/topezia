@@ -13,10 +13,25 @@ import type { ParsedResume } from "@/lib/matching/parse-resume";
 import type { ProfilePreferences } from "@/lib/matching/profile";
 import { ANON_COOKIE, ANON_COOKIE_MAX_AGE } from "@/lib/anon-session";
 import { currentIdentity } from "@/lib/identity";
+import { rateLimit, clientIp, RATE_LIMITED } from "@/lib/rate-limit";
 
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  // This endpoint is deliberately open — profile-building starts BEFORE signup
+  // (spec §6.1, and "no signup wall" is a stated promise on the jobs pages), so
+  // it cannot require auth. That makes it the one write on the site a stranger
+  // can call in bulk, so it gets the one real ceiling: creating a profile is a
+  // once-or-twice-ever act for a person, and a hundred an hour is a script.
+  //
+  // Honest about what this is: the limiter is per-instance (see lib/rate-limit),
+  // so it raises the cost of a farm rather than making one impossible. What
+  // actually removes the payoff is that an unconfirmed profile is never indexed
+  // and every member-supplied link is rel="ugc nofollow" — see app/p/profile-data.ts.
+  if (!rateLimit(`profile-create:${clientIp(req)}`, 20, 60 * 60 * 1000)) {
+    return NextResponse.json(RATE_LIMITED, { status: 429 });
+  }
+
   let body: { parsed?: ParsedResume; preferences?: ProfilePreferences; resumeText?: string; photo?: string | null };
   try {
     body = await req.json();
@@ -142,6 +157,14 @@ export async function GET() {
 export async function PATCH(req: NextRequest) {
   const { userId } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "No profile to edit." }, { status: 401 });
+
+  // Generous on purpose: the profile page saves per field and per toggle, so a
+  // member genuinely tidying everything sends dozens of these in a sitting.
+  // This is a runaway-loop backstop, not a spam control — spam on a profile is
+  // handled by refusing to INDEX it, never by refusing the member's own edit.
+  if (!rateLimit(`profile-edit:${userId}`, 300, 60 * 60 * 1000)) {
+    return NextResponse.json(RATE_LIMITED, { status: 429 });
+  }
 
   let edit: ProfileFieldEdit;
   try {

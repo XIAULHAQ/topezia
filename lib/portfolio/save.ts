@@ -9,6 +9,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { parseCategory, type PortfolioCategoryValue } from "./categories";
 import { parseVideo, type VideoProvider } from "./video";
+import { scoreUgcFields, isSpam, spamMessage } from "@/lib/ugc";
 
 export const LIMITS = {
   title: 120,
@@ -149,6 +150,19 @@ export function validate(input: PortfolioInput, profileId: string): ValidationRe
     return { ok: false, error: "Add at least one image before publishing." };
   }
 
+  const skills = cleanTags(input.skills, LIMITS.skills);
+  const technologies = cleanTags(input.technologies, LIMITS.technologies);
+
+  // Everything a visitor will read, scored as one document — a payload split
+  // across the title and the tags is still one payload. Links are expected in a
+  // portfolio description, so they only count at half weight; this refuses the
+  // write only when several independent signals agree (lib/ugc.ts).
+  const verdict = scoreUgcFields(
+    [title, description, ...skills, ...technologies, ...cleanMedia.map((m) => m.caption)],
+    { linksExpected: true }
+  );
+  if (isSpam(verdict)) return { ok: false, error: spamMessage(verdict) };
+
   return {
     ok: true,
     value: {
@@ -158,8 +172,8 @@ export function validate(input: PortfolioInput, profileId: string): ValidationRe
       coverPath,
       coverWidth: dim(input.coverWidth),
       coverHeight: dim(input.coverHeight),
-      skills: cleanTags(input.skills, LIMITS.skills),
-      technologies: cleanTags(input.technologies, LIMITS.technologies),
+      skills,
+      technologies,
       media: cleanMedia,
       publish,
     },

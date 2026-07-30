@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { ENDORSEMENT_LIMITS, NEVER_EXPIRES, newToken, clean } from "@/lib/endorsements/doc";
+import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com").replace(/\/$/, "");
 
@@ -62,6 +63,12 @@ export async function POST(req: NextRequest) {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  // maxPending caps how many links exist at once; this caps the churn, so
+  // delete-and-remint can't be used to mint tokens in bulk.
+  if (!rateLimit(`endorse-mint:${profile.id}`, 60, 60 * 60 * 1000)) {
+    return NextResponse.json(RATE_LIMITED, { status: 429 });
   }
 
   const kind = body.kind === "REVIEW" ? "REVIEW" : "RECOMMENDATION";

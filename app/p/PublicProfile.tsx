@@ -14,6 +14,10 @@ import { useEffect, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import ShareButton from "./ShareButton";
 import { SiteFooter } from "@/app/_components/SiteChrome";
+// Every link on this page whose destination a MEMBER chose passes no ranking
+// signal — see lib/ugc.ts. A public profile is otherwise a free backlink on a
+// real domain, which is precisely what profile-spam farms are built to collect.
+import { UGC_REL } from "@/lib/ugc";
 
 const C = { c1: "#8B5CF6", c2: "#3B82F6", ink: "#0F172A", slate: "#334155", mut: "#64748B", line: "#E2E8F0", bg: "#F1F5F9", navy: "#0F172A", navy2: "#1E1B4B" };
 const GRAD = `linear-gradient(135deg, ${C.c1}, ${C.c2})`;
@@ -192,7 +196,7 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
                     ["globe", p.websiteUrl, "Website"],
                   ] as const).map(([icon, href, title]) =>
                     href ? (
-                      <a key={icon} href={href} target="_blank" rel="noopener noreferrer" title={title} style={{ ...S.social, cursor: "pointer" }}><Ic n={icon} s={16} /></a>
+                      <a key={icon} href={href} target="_blank" rel={UGC_REL} title={title} style={{ ...S.social, cursor: "pointer" }}><Ic n={icon} s={16} /></a>
                     ) : null
                   )}
                 </div>
@@ -356,9 +360,9 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
                         {pub.authors.length > 0 && <div style={{ fontSize: 12, color: C.slate, marginTop: 3 }}>{pub.authors.join(", ")}</div>}
                         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4, fontSize: 11.5, color: C.mut }}>
                           {pub.venue && <span style={{ fontWeight: 600, color: C.c1 }}>{pub.venue}</span>}
-                          {pub.doi && <a href={`https://doi.org/${pub.doi}`} target="_blank" rel="noopener noreferrer" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>DOI {pub.doi}</a>}
+                          {pub.doi && <a href={`https://doi.org/${pub.doi}`} target="_blank" rel={UGC_REL} style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>DOI {pub.doi}</a>}
                           {pub.isbn && <span>ISBN {pub.isbn}</span>}
-                          {pub.url && <a href={pub.url} target="_blank" rel="noopener noreferrer" style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>View ↗</a>}
+                          {pub.url && <a href={pub.url} target="_blank" rel={UGC_REL} style={{ color: C.c1, fontWeight: 600, textDecoration: "none" }}>View ↗</a>}
                         </div>
                         {pub.abstract && (
                           <p style={{ fontSize: 12.5, color: C.slate, lineHeight: 1.65, margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{pub.abstract}</p>

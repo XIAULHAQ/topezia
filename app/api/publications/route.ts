@@ -10,15 +10,26 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { PUBLICATION_LIMITS, sanitizePublication } from "@/lib/publications/doc";
+import { scoreUgcFields, isSpam, spamMessage } from "@/lib/ugc";
+import { rateLimit, clientIp, RATE_LIMITED } from "@/lib/rate-limit";
 import { PUBLICATION_BUCKET, publicationImageUrl } from "@/lib/publications/storage";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function me() {
-  const { userId } = await currentIdentity();
-  if (!userId) return null;
+/**
+ * The caller's profile, or null.
+ *
+ * `authed` — a real signed-in account, not just the anonymous onboarding
+ * cookie — is required for every method here, matching /api/portfolio,
+ * /api/company, /api/applications and /api/postings. A publication renders a
+ * member-supplied `url` on the public profile, so letting an anonymous cookie
+ * write one made this the cheapest way onto a public page on our domain.
+ */
+async function me(write: boolean) {
+  const { userId, authed } = await currentIdentity();
+  if (!userId || (write && !authed)) return null;
   return prisma.profile.findUnique({ where: { userId }, select: { id: true } });
 }
 
@@ -32,8 +43,16 @@ const SELECT = {
 type Row = Prisma.PublicationGetPayload<{ select: typeof SELECT }>;
 const withImage = (r: Row) => ({ ...r, imageUrl: publicationImageUrl(r.imagePath) });
 
+/** Everything a visitor reads on the public profile, scored as one document.
+ *  A citation legitimately carries a link, so links count at half weight and a
+ *  refusal needs several signals to agree — see lib/ugc.ts. */
+function spamCheck(p: NonNullable<ReturnType<typeof sanitizePublication>>): string | null {
+  const v = scoreUgcFields([p.title, p.venue, p.abstract, p.url, ...(p.authors ?? [])], { linksExpected: true });
+  return isSpam(v) ? spamMessage(v) : null;
+}
+
 export async function GET() {
-  const profile = await me();
+  const profile = await me(false);
   if (!profile) return NextResponse.json({ error: "No profile." }, { status: 401 });
   const publications = await prisma.publication.findMany({
     where: { profileId: profile.id },
@@ -44,8 +63,14 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const profile = await me();
+  const profile = await me(true);
   if (!profile) return NextResponse.json({ error: "No profile." }, { status: 401 });
+
+  // Well above any honest use — perProfile caps the total at 25, so this exists
+  // only to stop a script cycling create/delete to hammer the write path.
+  if (!rateLimit(`pub-write:${profile.id}`, 60, 60 * 60 * 1000)) {
+    return NextResponse.json(RATE_LIMITED, { status: 429 });
+  }
 
   let body: unknown;
   try {
@@ -55,6 +80,8 @@ export async function POST(req: NextRequest) {
   }
   const p = sanitizePublication(body);
   if (!p) return NextResponse.json({ error: "A publication needs at least a title." }, { status: 400 });
+  const bad = spamCheck(p);
+  if (bad) return NextResponse.json({ error: bad }, { status: 422 });
 
   const count = await prisma.publication.count({ where: { profileId: profile.id } });
   if (count >= PUBLICATION_LIMITS.perProfile) {
@@ -69,7 +96,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const profile = await me();
+  const profile = await me(true);
   if (!profile) return NextResponse.json({ error: "No profile." }, { status: 401 });
 
   let body: { id?: unknown };
@@ -81,6 +108,8 @@ export async function PATCH(req: NextRequest) {
   const id = typeof body.id === "string" ? body.id : "";
   const p = sanitizePublication(body);
   if (!id || !p) return NextResponse.json({ error: "Bad request." }, { status: 400 });
+  const bad = spamCheck(p);
+  if (bad) return NextResponse.json({ error: bad }, { status: 422 });
 
   const done = await prisma.publication.updateMany({
     where: { id, profileId: profile.id },
@@ -92,7 +121,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const profile = await me();
+  const profile = await me(true);
   if (!profile) return NextResponse.json({ error: "No profile." }, { status: 401 });
   const id = new URL(req.url).searchParams.get("id") ?? "";
   if (!id) return NextResponse.json({ error: "Bad request." }, { status: 400 });

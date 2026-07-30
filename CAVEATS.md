@@ -243,6 +243,89 @@ does not yet have the history to compute a delta honestly.**
   load-bearing for the whole programmatic-SEO slice, and building a one-off
   aggregation for signals first would be thrown away the moment it lands.
 
+## Spam & UGC abuse (added 2026-07-30)
+- 🔴 **The hole this closed, stated plainly.** Before this pass, two
+  unauthenticated HTTP requests produced an indexed page on topezia.com
+  carrying a **dofollow** link to any domain: `POST /api/profile` needs no
+  account (deliberately — profile-building starts pre-signup), `PATCH
+  /api/profile` accepts the anonymous cookie and sets `websiteUrl`,
+  `publicVisible` defaults `true`, `ensurePublicSlug` mints the URL, and
+  `profileMetadata` returned `index: true` unconditionally. **Verified on
+  production HTML**, not inferred: `/p/muhammad-zia-ul-haq` served
+  `<meta name="robots" content="index, follow">` and
+  `rel="noopener noreferrer"` with no `nofollow`. That is exactly the shape
+  profile-spam farms automate against. No spam had actually arrived yet (8
+  profiles, all real), so this is preventive.
+- 🟢 **Layer 1 — the payoff is gone.** Every member-supplied outbound link now
+  renders `rel="ugc nofollow noopener noreferrer"` (`UGC_REL` in `lib/ugc.ts`):
+  profile LinkedIn/GitHub/website, publication DOI and URL. This is the
+  load-bearing defence — it works against spam that reads perfectly human.
+  Verified in rendered HTML: 3 `ugc` rels, 0 remaining dofollow member links.
+- 🟢 **Layer 2 — thin and anonymous pages leave the index.**
+  `indexability()` in `app/p/profile-data.ts` requires an account, a substance
+  bar (name + role-or-3-skills + at least one real section) and a clean spam
+  score. Failing it is `noindex, follow` — **not** a 404 and not visible to the
+  member; the page works and shares normally. Verified against all 8 production
+  profiles: 7 real ones index, the thin `PEPSI` test profile flipped to
+  `noindex, follow`.
+- 🟡 **The account check is weaker than it looks, today.** Supabase "Confirm
+  email" is still OFF, so `email_confirmed_at` is stamped at signup — measured
+  0.03–0.06s after `created_at` for every existing user. So layer 2's first
+  condition currently means *has an account*, not *controls that address*, and
+  costs an attacker one free signup with a typo'd email. The query is written
+  against `email_confirmed_at` on purpose so it becomes the real check the
+  moment that toggle flips. **Turning on Confirm Email is the highest-value
+  remaining anti-spam action and it is a dashboard setting, not code**
+  (`RESEND_API_KEY` is already in `.env`).
+- 🟢 **Layer 3 — content scoring at the write paths.** `scoreUgc()` in
+  `lib/ugc.ts` weighs link volume, throwaway TLDs, chat-app handoffs, spam
+  vocabulary, invisible/homoglyph characters, keyword stuffing and shouting.
+  `SPAM_REJECT` (60) refuses the write on portfolio (`lib/portfolio/save.ts`
+  `validate`, so POST and PATCH both), publications and endorsement text;
+  `SPAM_REVIEW` (30) only withholds indexing.
+- 🟡 **The two error modes are deliberately asymmetric.** A false REJECT blocks
+  a real member from describing their own work; a false REVIEW only withholds a
+  page from Google. So REJECT needs several independent signals to agree.
+  Concretely: keyword classes carry **two** weights, because this site's
+  audience includes marketing, SEO and iGaming professionals — "seo services",
+  "buy now" and "online casino" are things real members were paid to do, and
+  score 20 (never enough alone to refuse), while "slot gacor" and "replica
+  watches" score 45. What separates an SEO consultant from a link farm is not
+  vocabulary but **where the links point**, hence the throwaway-TLD signal.
+- 🔴 **Profile writes are NOT spam-blocked, on purpose.** Profile fields come
+  from an LLM parse of a real CV, and real CVs carry phone numbers and links —
+  measured: 3 of 8 production résumés score at `review` on raw text (up to 20
+  links). Spam on a profile is handled by refusing to **index** it, never by
+  refusing the member's own edit. The index gate scores public fields only,
+  never `resumeText`.
+- 🟢 **Auth gap closed:** `/api/publications` checked `userId` only, so the
+  anonymous cookie satisfied it — unlike `/api/portfolio`, `/api/company`,
+  `/api/applications` and `/api/postings`, which all require `authed`. A
+  publication renders a member-supplied `url` on the public profile, so this
+  was the cheapest route onto a public page. Now requires `authed` for every
+  write method.
+- 🟢 **Rate limits added** to `POST /api/profile` (20/h per IP — the only
+  unauthenticated write on the site), `PATCH /api/profile` (300/h per user,
+  a runaway-loop backstop, generous because the page saves per field),
+  `POST /api/portfolio` (30/h), `/api/publications` (60/h),
+  `/api/endorsements` mint (60/h) and `POST /api/r/[token]` (10/h per IP).
+- 🔴 **The limiter is per-instance, not shared.** Same honest limitation as
+  every other caller of `lib/rate-limit.ts`: serverless instances don't share
+  memory, so this raises the cost of a farm rather than making one impossible.
+  Upgrade path is a shared store (Upstash/Redis) behind the same signature.
+- 🔴 **NOT built, and each is a real gap:** no CAPTCHA/Turnstile on signup (a
+  vendor + a CSP change in `next.config.js`); no disposable-email domain
+  blocklist; no moderation queue or `flagged`/`spamScore` columns — v1 is
+  deliberately migration-free, scoring at read and write time instead, so
+  nothing was applied by hand against production; no member-facing "report this
+  profile" control; no re-scoring of content that was written before this
+  shipped (nothing currently trips it, so there was nothing to re-score).
+- 🟡 **iGaming and pharma professionals get `noindex`, not a block.** A
+  legitimate casino-industry marketer or a pharmacologist whose CV names a drug
+  scores at `review` and quietly loses indexing. That is the accepted cost of
+  the asymmetry above, but it is a real false positive and worth revisiting if
+  such a member ever complains.
+
 ## Route loading indicator
 - 🟢 **Navigation progress bar added 2026-07-30** (`app/_components/RouteProgress.tsx`,
   mounted in the root layout). The App Router shows nothing during a
