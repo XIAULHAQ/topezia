@@ -40,18 +40,21 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   backfilled (Dropbox, Discord, PostHog, Linear, Lever Demo). Remaining nuance:
   a newly-discovered Ashby/Lever board with no override shows a title-cased slug
   until a name is set.
-- 🔴 **No live Lever source.** `leverdemo` was removed — it's Lever's own sample
-  board, so it served fake postings ("Account Executive (copy)", four identical
-  "Account Executive" rows) that reached a real alert email. The Lever crawler is
-  verified working; it needs a **real** Lever board added to `seed-sources.ts`
-  before launch. Current live sources: Greenhouse (dropbox, discord) + Ashby
-  (posthog, linear) = 39 real jobs.
-- 🟠 **The existing 39 jobs were extracted/embedded from noisy text.** Greenhouse
-  returns entity-encoded HTML, which `stripHtml` didn't decode — so ~78% of each
-  Greenhouse description fed to Haiku and the embedding model was raw markup and
-  generated class attributes. Fixed now, but the stored jobs still carry the old
-  text/skills/embeddings; the fresh ingest at launch resolves it. (Re-ingesting
-  *before* clearing would duplicate them — the fix changes `descriptionHash`.)
+- 🟢 **Lever RESOLVED** (was 🔴 "no live Lever source"). `leverdemo` — Lever's own
+  sample board, which once leaked fake "Account Executive (copy)" rows into a
+  real alert email — is gone, replaced by four real boards: Palantir, Meesho,
+  Qonto, Waabi. Verified 2026-07-30: 386 live Lever jobs, all four crawled within
+  the last hour by the scheduled cron.
+- 🟢 **Source volume is no longer the constraint.** 128 sources (88 Greenhouse,
+  36 Ashby, 4 Lever), zero never-crawled. Live listings as of 2026-07-30:
+  **13,556 jobs** (Greenhouse 9,994 · Ashby 3,175 · Lever 386 · 1 native) plus
+  928 freelance projects. Any figure in this file older than that — the "39 jobs"
+  era — describes a database that no longer exists; re-query before quoting.
+- 🟢 **Greenhouse noisy-text issue RESOLVED** (was 🟠). Greenhouse returns
+  entity-encoded HTML which `stripHtml` didn't decode, so ~78% of each description
+  fed to Haiku and the embedding model was raw markup. The decode fix landed, and
+  the ~39 jobs that carried the bad text/skills/embeddings have long since expired
+  and been replaced — every one of the current 13.5k was ingested after the fix.
 - 🟠 **Ashby descriptions are stored as plain text.** The crawler prefers
   `descriptionPlain` over `descriptionHtml`, so detail pages lose real lists and
   headings (we rebuild paragraphs from newlines as a fallback). Switch to
@@ -136,32 +139,84 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟡 **Layout B (structured-hourly cards for healthcare/trucking) isn't built** —
   the feed renders Layout A for everything. Current data is knowledge-work, so
   Layout B is untested.
-- 🟢 **Test Profile rows cleared** from prod (0 profiles now).
+- 🟢 **Test Profile rows cleared** from prod (was 0 profiles on 2026-07-18; 8 now,
+  from real signups — the count moves, so don't read a number here as current).
+
+## Billing, employer & content (added 2026-07-30 — shipped after this file's last pass)
+
+These three areas shipped between 2026-07-18 and 2026-07-30 and had no entries
+here at all, which is exactly the drift the kickoff doc's §2 convention 1 exists
+to prevent. Entries below are code-verified; live-behaviour claims are marked.
+
+- 🟢 **Stripe billing BUILT** (migration 036): `lib/billing/stripe.ts`,
+  `/api/billing/{checkout,portal,webhook}`, `/pricing`, pinned to API version
+  `2026-06-24.dahlia`. Every path is gated on `billingConfigured()` — until
+  `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `STRIPE_PREMIUM_PRICE_ID` are
+  all present the feature is inert rather than half-live.
+- 🟠 **Stripe keys are not in local `.env`**, so billing is inert in local dev.
+  Whatever is set in Vercel is the source of truth; the keys are the founder's to
+  manage and aren't in the repo.
+- 🟡 **One profile currently has `tier=PREMIUM` and a `stripeCustomerId`.** The
+  repo can't tell whether that came from a real checkout or a manual set during
+  testing — worth confirming before treating premium-tier behaviour as unexercised
+  in production.
+- 🟢 **Employer dashboard BUILT** (migration 040): `lib/employer/{publish,stats,
+  sourcing}.ts`, `/api/employer/{dashboard,sourced}`, `/employer` + `/employer/new`
+  + `/employer/[id]`. Native postings and a company record exist (1 company, 1
+  native job live).
+- 🟡 **Employer view/click stats read near zero, correctly.** `JobView`/`JobClick`
+  only started collecting recently and there's exactly 1 native posting, so the
+  dashboard is honest-but-empty rather than broken. Don't "fix" it by inventing
+  baselines.
+- 🟢 **Blog BUILT** (migration 039): `lib/blog/*` (slugify, TOC, reading time,
+  SEO analysis, Supabase storage), `/blog`, `/blog/[slug]`, `/blog/tag/[tag]`,
+  authoring at `/hq/posts`, and blog URLs ride in `sitemap.xml`. 2 posts published.
+- 🟡 **`/hq` is the only admin surface.** The kickoff doc's old `/admin/waitlist`
+  path no longer exists; waitlist stats are a tab inside the `/hq` dashboard.
 
 ## Slice 4 (spec §7–9)
 - 🟢 **Programmatic SEO engine BUILT** (§7): `/jobs/{role|vertical}`,
-  `/jobs/remote-{role}`, `/jobs/{role}/{state}`, the ≥5-live-jobs floor
-  (auto-publish/unpublish, evaluated per request), `sitemap.xml` (self-pruning),
-  `robots.txt`, JobPosting JSON-LD, the role↔state↔remote internal-link lattice,
-  and absolute canonicals. Verified: 3 pages publish today (tech-software 24,
-  sales 19, account-executive 13); thin ones correctly 404.
+  `/jobs/remote-{role}`, `/jobs/{role}/{state}`, `/jobs/{role|vertical}/{country}`,
+  `sitemap.xml` (self-pruning), `robots.txt`, JobPosting JSON-LD, the
+  role↔state↔remote↔country internal-link lattice, and absolute canonicals.
+  Verified 2026-07-30: **456 URLs in the live sitemap**, 34 roles with live jobs.
+- 🟢 **Thin pages are `noindex,follow`, NOT 404 — changed 2026-07-30.** Previously
+  a page below the floor 404'd. Now only a URL with nothing behind it 404s (no
+  taxonomy match, or a taxonomy match with zero live listings); a real taxonomy
+  page that's merely thin renders with `noindex,follow` and a "few listings right
+  now — set an alert" state. Per `docs/topezia-slice4-seo-spec.md` §1.2, and the
+  reasoning matters: a 404 tells Google to drop the URL, so re-earning its ranking
+  later starts from zero, and listing counts on a jobs site oscillate — a
+  role × city page dips below the floor one week and recovers the next. 404ing on
+  every dip churns the index footprint, and converts a visitor into a bounce
+  instead of an email signup.
+  - Floors are now per kind: role 5, role|vertical × place 3, remote-role 3,
+    vertical 1 (verticals aggregate roles), place/hub 5. See
+    `MIN_JOBS_FOR_*` in `lib/seo/pages.ts`.
+  - The floors still govern **linking**: sitemap, sibling lattice and job
+    breadcrumbs all check them, so nothing links to a noindex page. Verified by
+    audit: `/jobs/graphic-designer` (4 jobs) is `noindex,follow` and absent from
+    the sitemap, while 23 of 23 `/jobs/*` links crawled from an indexable page
+    resolved to `index,follow`.
+  - Thin pages emit **BreadcrumbList only** — no CollectionPage/ItemList/FAQPage.
+    Asking for rich results on a page we've told Google to skip is a mixed signal.
 - 🟢 **`NEXT_PUBLIC_SITE_URL` is correct in Vercel** — verified: the live sitemap
   and robots.txt both emit `https://www.topezia.com`, the canonical host.
-- 🟡 **Only 3 SEO pages exist until ingestion scales** — by design (the anti-thin
-  rule). With 39 live jobs the publishing set is `/jobs/tech-software` (24),
-  `/jobs/sales` (10) and `/jobs/account-executive` (5, i.e. one expiry from
-  disappearing). Every other role/vertical/state 404s **correctly**. The launch
-  target is 2–4k pages; that's gated on job volume, not code — so expect lots of
-  404s on hand-typed /jobs/* URLs until then, and don't mistake them for bugs.
-  (Anything that *links* to a hidden page is a bug — sitemap, sibling lattice and
-  job breadcrumbs all check the floor before linking.)
+- 🟡 **Page volume is still gated on job volume, not code** — but the "only 3 SEO
+  pages" era is over: 456 sitemap URLs as of 2026-07-30, against a launch target
+  of 2–4k. Two things follow, and neither is a bug: a hand-typed `/jobs/*` URL
+  outside the taxonomy still 404s, and one inside the taxonomy but under its floor
+  renders `noindex` with the alert state rather than 404ing (see above). Anything
+  that *links* to a below-floor page is still a real bug.
 - 🟢 **LLM page intros BUILT** (§7): `SeoPageIntro` cache (migration 008),
   `scripts/generate-page-intros.ts` (`npm run gen-intros`, `--dry-run/--force`),
   refreshed weekly by `page-intros-cron`. Copy is generated **out of band** — a
   page with no cached intro renders the templated fallback and never blocks on
   the model. The prompt is fed real counts/titles/companies and told not to
   invent facts; the intro also feeds each page's `<meta description>`, so search
-  snippets are unique too. Verified live on all 4 publishable pages.
+  snippets are unique too. (Verified live on all 4 publishable pages when written
+  on 2026-07-18; there are 456 publishable pages now, and the cron backfills them
+  out of band — a page without a cached intro still renders the fallback.)
 - 🟢 **Email alerts BUILT** (§7 capture + §9 delivery): above-the-fold capture on
   every SEO page, `POST /api/alerts` (resolves the saved search server-side —
   never trusts client-sent ids; idempotent per email+search), `JobAlert` table
