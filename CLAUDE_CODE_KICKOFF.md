@@ -179,6 +179,10 @@ unblock at different times:
   decisions. Update it when reality contradicts it.
 - `docs/topezia-slice4-seo-spec.md` — Slice 4 SEO work must follow this
   addendum; it supersedes the lighter SEO notes in the base spec.
+- `docs/topezia-market-signals-spec.md` — Market Signal feed cards. Received
+  2026-07-30, **not built**: it depends on `page_stats` (unbuilt) and on
+  posting history the index doesn't have yet. Read the "Market Signals" entry
+  in `CAVEATS.md` before starting — the measured blockers are there.
 - `CAVEATS.md` — the running honest list of what's incomplete or fragile,
   with 🔴/🟠/🟡 severity. Highest-trust doc in the repo; keep it that way
   (§2 convention 1).

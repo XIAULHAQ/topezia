@@ -158,6 +158,50 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟢 **Test Profile rows cleared** from prod (was 0 profiles on 2026-07-18; 8 now,
   from real signups — the count moves, so don't read a number here as current).
 
+## Market Signals (spec received 2026-07-30 — NOT built, and not yet buildable honestly)
+Spec at `docs/topezia-market-signals-spec.md`. The concept is sound and the
+guardrails are right. What follows is measured against the live database, not an
+opinion about the design — **all four v1 signals are delta signals, and Topezia
+does not yet have the history to compute a delta honestly.**
+- 🔴 **The index is 14 days old** (oldest `firstSeenAt` = 2026-07-16, after the
+  US-East rebuild). A `90d` comparison window has no data to compare against, and
+  `30d vs prior 30d` is only partly covered.
+- 🔴 **Survivorship bias makes `posting_volume_change` report a fake surge for
+  every scope.** We hold live postings; boards remove filled roles, so the
+  0–30d cohort is systematically fuller than the 30–60d one. Measured on real
+  data: account-executive 460 vs 62, backend-engineer 274 vs 64, engineering-
+  manager 172 vs 49 — that is "up 568%" for every role, always. Including
+  non-LIVE rows barely moves it (481/72) because **there are zero EXPIRED rows
+  yet** — only LIVE (13,556) and DUPLICATE (573).
+- 🟢 **Expiry MARKS rather than deletes** (`lib/ingestion/expiry.ts` sets
+  `SUSPECTED_DEAD` then `EXPIRED`), so the history needed for honest deltas will
+  accrue on its own. It just doesn't exist yet. Nothing to build for this; only
+  time.
+- 🔴 **`new_employer_activity` is currently an artifact of our own seeding**: 98
+  of 128 companies had their first listing in the last 7 days, because we added
+  boards, not because employers entered the market.
+- 🟡 **`firstSeenAt` must never drive a volume signal** — it records when
+  Topezia crawled a posting, so adding Datadog (425 jobs) would render as
+  "backend postings up 300%". `postedAt` is the honest field and is present on
+  **100%** of live jobs.
+- 🟡 **`rate_shift` is thin but real**: only 15.9% of live jobs carry a salary
+  range (2,150 of 13,556), all USD, split HOUR 53 / YEAR 2,097. 12 roles clear
+  ≥10 paid listings in 30d. Currency is not a problem today; sample size and the
+  window problem are.
+- 🟢 **`remote_share_shift` has the data** (2,813 of 13,556 remote, 20.8%) — but
+  as a *level*, not a delta, for the same window reason.
+- **Two hard blockers in the spec's own §8 step 1**, independent of the above:
+  `page_stats` **does not exist** (still the open Slice 4 item), and there is
+  **no `locations` table** — the schema stores `locationState` (US-only string) +
+  `country` (ISO-2) on `Job`, so `location_id references locations(id)` has
+  nothing to point at. The DDL is also snake_case against PascalCase tables, and
+  `baseSalary` is a JSON-LD field name, not a column (`salaryMin`/`salaryMax`/
+  `salaryPeriod`).
+- **What IS shippable today: the same four facts as LEVELS rather than deltas**
+  ("61% of backend roles are remote, based on 274 postings"). Zero survivorship
+  risk, honest at current history, and the delta version becomes correct later
+  with no schema change.
+
 ## Portfolio publish staleness
 - 🟢 **FIXED 2026-07-30: a published piece kept showing "This is a draft".**
   Nothing was wrong with the data or the server. `football-ad-campaign` was
