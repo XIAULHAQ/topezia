@@ -53,6 +53,9 @@ export interface SeoJob {
   id: string;
   titleRaw: string;
   companyName: string;
+  /** Needed for JobPosting addressLocality — the hub ItemList shares the real
+   *  emitter now, so it needs the same inputs the detail page has. */
+  locationRaw: string | null;
   locationState: string | null;
   country: string | null;
   remoteScope: string | null;
@@ -121,7 +124,7 @@ export interface SeoPage {
 }
 
 const JOB_SELECT = {
-  id: true, titleRaw: true, companyName: true, locationState: true, country: true, remoteScope: true, remoteType: true,
+  id: true, titleRaw: true, companyName: true, locationRaw: true, locationState: true, country: true, remoteScope: true, remoteType: true,
   employmentType: true, salaryMin: true, salaryMax: true, salaryPeriod: true, salaryCurrency: true, kind: true,
   lastVerifiedAt: true, postedAt: true, source: true, sourceUrl: true, descriptionRaw: true,
 } as const;

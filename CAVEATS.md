@@ -142,6 +142,42 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟢 **Test Profile rows cleared** from prod (was 0 profiles on 2026-07-18; 8 now,
   from real signups — the count moves, so don't read a number here as current).
 
+## Structured data (JobPosting)
+- 🟢 **Search Console "Missing field applicantLocationRequirements" FIXED
+  (2026-07-30).** Google treats a `TELECOMMUTE` posting without that field as an
+  *invalid item*, not an incomplete one. GSC showed 1 item because it had only
+  validated a fraction; the real exposure was ~3,000 remote listings. Three
+  separate defects, all now closed:
+  - **The hub-page `ItemList` was a hand-rolled second copy** of the JobPosting
+    shape in `SeoPageView`, and it had drifted: it never emitted
+    `applicantLocationRequirements` at all, and built an empty `PostalAddress`
+    for remote rows — the exact thing `job-posting-ld.ts` carries a comment
+    warning against. It now calls `jobPostingLd()`. **Don't re-fork it.**
+  - **Region scopes were emitted as countries.** `remoteScope` also holds
+    `EMEA`/`EUROPE`/`NORTH_AMERICA`/`APAC` (29 live rows), which went out as
+    `{"@type":"Country","name":"NORTH_AMERICA"}`. Scope values are now only used
+    when they're a real ISO-2 code in `COUNTRY_NAMES`.
+  - **`remoteScope = "GLOBAL"` produced TELECOMMUTE with no requirement** (13
+    live JOB rows). Google's vocabulary has no "worldwide" value — verified
+    against its JobPosting docs — and requires at least one real country.
+- 🟡 **`jobPostingLd` now returns `null`, and the caller must emit nothing.** A
+  posting we can't make valid produces no markup at all. This costs no traffic:
+  an invalid item generates no rich result anyway, so the broken version only
+  ever bought a Search Console error. Same principle as the rest of that file —
+  describe what we hold, never invent the rest.
+- 🟡 **~13 genuinely-worldwide remote jobs get no JobPosting markup**, and so no
+  Google Jobs eligibility. The alternative is naming a country that isn't the
+  real requirement. If we ever want them eligible, the honest fix is capturing
+  the actual eligible countries at ingestion, not picking one.
+- 🟡 **Freelance projects never emit JobPosting** — the guard moved from the
+  detail page into `jobPostingLd` (keyed off `kind`), so no future caller can
+  reintroduce it. Google's policy covers employment, not bid work.
+- **Verified before/after** on live data, per shape: REMOTE_US → valid with
+  `Country: US`; ISO-2 scope → valid with that country; `GLOBAL` → no markup;
+  `EMEA` → no markup; ONSITE → valid via `jobLocation`; PROJECT → no markup.
+  Across hub pages: 0 invalid items, 0 empty addresses, and
+  `/jobs/remote-backend-engineer` emits 25/25 valid postings.
+
 ## Performance
 - 🟢 **The `/jobs` 3-second load is FIXED (2026-07-30).** Root cause was one query,
   not the page: `hubMatchIds` ran a case-insensitive regex over `descriptionRaw`

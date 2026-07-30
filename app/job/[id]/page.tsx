@@ -156,12 +156,12 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
 
   // Google's JobPosting policy covers employment, not freelance bid work —
   // emitting it for projects would risk the whole site's rich-result standing.
-  // See lib/seo/job-posting-ld.ts for which fields we emit and, more
-  // importantly, which Search Console asks for that we deliberately omit
-  // because we don't hold the data.
-  const jsonLd = isProject
-    ? null
-    : jobPostingLd({
+  // That exclusion now lives inside jobPostingLd (keyed off `kind`) so every
+  // caller gets it, and the emitter also returns null for any posting it can't
+  // make VALID — see that file for which fields we emit and which ones Search
+  // Console asks for that we deliberately omit because we don't hold the data.
+  const jsonLd = jobPostingLd({
+        kind: job.kind,
         titleRaw: job.titleRaw,
         descriptionClean: clean,
         postedAt: job.postedAt,

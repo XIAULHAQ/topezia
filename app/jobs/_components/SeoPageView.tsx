@@ -6,6 +6,7 @@ import { decodeHtmlEntities } from "@/lib/sanitize";
 import { safeJsonLd } from "@/lib/seo/json-ld";
 import { placeLabel, salaryText, freshness, label } from "@/lib/seo/job-display";
 import { buildSeoCopy, buildFaqs, buildBreadcrumbs, collectionPageLd, breadcrumbLd, faqPageLd } from "@/lib/seo/content-block";
+import { jobPostingLd } from "@/lib/seo/job-posting-ld";
 import AlertCapture from "./AlertCapture";
 import JobsInteractive from "./JobsInteractive";
 import SiteNav from "@/app/_components/SiteNav";
@@ -19,38 +20,54 @@ const MUTED = "#6b7280";
 const plainText = (html: string) =>
   decodeHtmlEntities(html).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
-/** JobPosting structured data — we emit the same schema we crawl (§7). */
+/**
+ * ItemList of JobPosting items (§3.2).
+ *
+ * This used to be its own hand-rolled copy of the JobPosting shape, and it had
+ * drifted badly from the real emitter: it never emitted
+ * `applicantLocationRequirements` (so all ~3k remote listings were INVALID items
+ * in Search Console) and it built an empty `PostalAddress` for remote rows —
+ * the exact thing `job-posting-ld.ts` carries a comment warning against.
+ *
+ * It now calls `jobPostingLd`, so there is one definition of a valid posting.
+ * Items that can't be made valid come back null and are dropped rather than
+ * published broken.
+ */
 function itemListLd(page: SeoPage) {
+  const items = page.jobs.slice(0, 25).flatMap((j) => {
+    const ld = jobPostingLd({
+      kind: j.kind,
+      titleRaw: j.titleRaw,
+      // Decode first: Greenhouse serves entity-encoded HTML, so strip-first
+      // fed Google 800 chars of literal "&lt;div class=&quot;...&quot;&gt;".
+      // Truncated here (unlike the detail page) to keep 25 descriptions from
+      // dominating the HTML payload.
+      descriptionClean: plainText(j.descriptionRaw).slice(0, 800),
+      postedAt: j.postedAt,
+      lastVerifiedAt: j.lastVerifiedAt,
+      employmentType: j.employmentType,
+      companyName: j.companyName,
+      locationRaw: j.locationRaw,
+      locationState: j.locationState,
+      country: j.country,
+      remoteType: j.remoteType,
+      remoteScope: j.remoteScope,
+      salaryMin: j.salaryMin,
+      salaryMax: j.salaryMax,
+      salaryCurrency: j.salaryCurrency,
+      salaryPeriod: j.salaryPeriod,
+      sourceUrl: j.sourceUrl,
+      isNative: j.source === "NATIVE",
+    });
+    if (!ld) return [];
+    // @context belongs to the enclosing @graph, not to each nested item.
+    const { "@context": _ctx, ...item } = ld;
+    return [item];
+  });
+
   return {
     "@type": "ItemList",
-    itemListElement: page.jobs.slice(0, 25).map((j, i) => ({
-      "@type": "ListItem",
-      position: i + 1,
-      item: {
-        "@type": "JobPosting",
-        title: j.titleRaw,
-        // Decode first: Greenhouse serves entity-encoded HTML, so strip-first
-        // fed Google 800 chars of literal "&lt;div class=&quot;...&quot;&gt;".
-        description: plainText(j.descriptionRaw).slice(0, 800),
-        datePosted: (j.postedAt ?? j.lastVerifiedAt).toISOString(),
-        employmentType: j.employmentType,
-        hiringOrganization: { "@type": "Organization", name: j.companyName },
-        // addressCountry was hardcoded "US" — it told Google every UK, German
-        // and Indian posting was American. Omit rather than guess when unknown:
-        // a wrong country is worse than an absent one.
-        jobLocation: {
-          "@type": "Place",
-          address: {
-            "@type": "PostalAddress",
-            ...(j.remoteType.startsWith("REMOTE") ? {} : { addressRegion: j.locationState ?? undefined }),
-            ...(j.country ? { addressCountry: j.country } : {}),
-          },
-        },
-        ...(j.remoteType.startsWith("REMOTE") ? { jobLocationType: "TELECOMMUTE" } : {}),
-        directApply: false,
-        url: j.sourceUrl,
-      },
-    })),
+    itemListElement: items.map((item, i) => ({ "@type": "ListItem", position: i + 1, item })),
   };
 }
 

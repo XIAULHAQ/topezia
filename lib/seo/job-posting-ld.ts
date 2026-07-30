@@ -21,6 +21,7 @@
  * Everything below is derived from a real column.
  */
 import { isCountryName, isUsStateName } from "@/lib/ingestion/normalize-rules";
+import { COUNTRY_NAMES } from "@/lib/countries";
 
 /** schema.org accepts only these for QuantitativeValue.unitText. */
 const SALARY_UNIT: Record<string, string> = { YEAR: "YEAR", HOUR: "HOUR", DAY: "DAY", MONTH: "MONTH", WEEK: "WEEK" };
@@ -62,6 +63,8 @@ export function addressLocality(locationRaw: string | null): string | null {
 }
 
 export interface JobLdInput {
+  /** PROJECT rows never produce JobPosting markup — see the guard below. */
+  kind: string;
   titleRaw: string;
   descriptionClean: string;
   postedAt: Date | null;
@@ -81,8 +84,44 @@ export interface JobLdInput {
   isNative: boolean;
 }
 
-export function jobPostingLd(job: JobLdInput): Record<string, unknown> {
+/**
+ * The one country we can honestly name as an applicant-location requirement, or
+ * null when we can't name any.
+ *
+ * Google requires at least one REAL country on a TELECOMMUTE posting, and its
+ * vocabulary has no "worldwide" value (confirmed against the JobPosting docs).
+ * So `remoteScope` is only usable when it's an actual ISO-2 country code —
+ * `COUNTRY_NAMES` is the authority. The scope column also carries multi-country
+ * regions (GLOBAL, EMEA, EUROPE, NORTH_AMERICA, APAC), and those used to be
+ * passed straight through as `{"@type":"Country","name":"NORTH_AMERICA"}`, which
+ * is not a country and not valid. They now fail this check on purpose.
+ */
+function applicantCountry(job: JobLdInput): string | null {
+  const candidates = [
+    job.remoteScope,
+    job.remoteType === "REMOTE_US" ? "US" : null,
+    job.country,
+  ];
+  for (const c of candidates) if (c && COUNTRY_NAMES[c]) return c;
+  return null;
+}
+
+/**
+ * Returns null when we cannot produce a VALID posting, and the caller must then
+ * emit no JobPosting markup at all.
+ *
+ * This costs nothing: an item Google rejects generates no rich result anyway, so
+ * the only thing the invalid version bought us was a Search Console error and a
+ * feed that looks careless. Omitting is also the same principle the rest of this
+ * file already follows — describe what we hold, never invent the rest.
+ */
+export function jobPostingLd(job: JobLdInput): Record<string, unknown> | null {
   const isRemote = job.remoteType.startsWith("REMOTE");
+
+  // A freelance brief you bid on elsewhere is not a job posting. The detail page
+  // already skipped these; the guard lives here now so no future caller can
+  // reintroduce it.
+  if (job.kind === "PROJECT") return null;
 
   // Only the address parts we actually hold. An empty PostalAddress is worse
   // than none — it's what makes a remote posting look like it's missing every
@@ -110,13 +149,18 @@ export function jobPostingLd(job: JobLdInput): Record<string, unknown> {
   }
 
   if (isRemote) {
+    // Google treats a TELECOMMUTE posting with no applicantLocationRequirements
+    // as an INVALID item, not merely an incomplete one — this was the Search
+    // Console error. If we can't name a real country, emit nothing.
+    const where = applicantCountry(job);
+    if (!where) return null;
     ld.jobLocationType = "TELECOMMUTE";
-    // Where someone may actually be to take it. Google expects this on a
-    // TELECOMMUTE posting instead of a physical address; "GLOBAL" means no
-    // restriction we know of, so it stays unset rather than claiming one.
-    const scope = job.remoteScope && job.remoteScope !== "GLOBAL" ? job.remoteScope : null;
-    const where = scope ?? (job.remoteType === "REMOTE_US" ? "US" : null) ?? job.country;
-    if (where) ld.applicantLocationRequirements = { "@type": "Country", name: where };
+    ld.applicantLocationRequirements = { "@type": "Country", name: where };
+  } else if (!ld.jobLocation) {
+    // Non-remote and no address at all: Google needs jobLocation on a posting
+    // that isn't marked remote, so this would be invalid for the mirror-image
+    // reason. Same treatment.
+    return null;
   }
 
   // Real pay only. ~16% of live postings publish a range; the rest genuinely
