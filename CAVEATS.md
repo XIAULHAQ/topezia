@@ -148,6 +148,27 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
   probing every branch: no params, `error_description`, `token_hash&type=signup`
   (reaches Supabase's real verifier), `type=recovery` (refused by our own
   allow-list, since recovery belongs to `/reset`), and `code=` (PKCE).
+- 🔴 **KNOWN LIVE BUG — confirming in a different browser orphans the
+  pre-signup profile.** Reproduced 2026-07-30: account created in incognito,
+  confirmation link opened in the normal browser. `/auth/callback` ran in a
+  browser with no `ANON_COOKIE`, so the anon→account migration found nothing to
+  move; the account ended up with zero profiles and the callback correctly sent
+  it to `/onboard`. Evidence in production: `email2xia@gmail.com` (confirmed
+  +41.8s, 0 profiles) alongside an orphaned Profile named "top" whose `userId`
+  matches no `auth.users` row.
+  - This will hit ordinary users, not just testers — signing up on a laptop and
+    reading mail on a phone is the normal case. The `{{ .TokenHash }}` template
+    makes the CONFIRMATION work cross-device; it does nothing for the profile
+    migration, which needs a cookie that only exists in the original browser.
+  - **The agreed fix is a design change, deferred 2026-07-30 ("keep the logic,
+    we can work on it later"):** grant the session at signup, migrate the anon
+    profile immediately in the same browser, and verify email afterwards on a
+    7-day grace period with a dashboard countdown, going dormant (NOT deleted —
+    dormancy is reversible and an auto-delete timer is not) if unverified.
+    That model removes this bug structurally rather than patching it, because
+    confirmation stops carrying any profile-migration burden.
+  - Until then: someone who hits it can sign in again **in the original
+    browser**, where `/api/auth/link` still finds the anon cookie and migrates.
 - 🔴 **ORDER OF OPERATIONS, recorded because getting it wrong breaks signup
   silently.** The template now points at `/auth/callback?token_hash=…`, which
   the OLD deployed callback did not understand. Applied in this sequence:
