@@ -22,6 +22,7 @@ import { extractWithLlm, hashDescription } from "@/lib/ingestion/llm-extract";
 import { resolveRole, resolveSkills } from "@/lib/ingestion/resolve-taxonomy";
 import { embedText, buildJobEmbeddingInput, writeJobEmbedding } from "@/lib/ingestion/embed";
 import { dedupeJob } from "@/lib/ingestion/dedupe";
+import { computeAllPageStats } from "@/lib/seo/page-stats";
 import { JobSource, JobStatus, Prisma } from "@prisma/client";
 import type { CrawledJob } from "@/lib/ingestion/sources/greenhouse";
 
@@ -352,6 +353,24 @@ async function main() {
     );
     console.log(`Embeddings deferred: ${missing[0].n} live jobs have none. Run: npx tsx scripts/backfill-embeddings.ts`);
   }
+
+  // Page stats last, because they describe the listings this run just changed
+  // (SEO addendum §2.2, market-signals spec §8). Here rather than on its own
+  // cron so the numbers can never describe a different crawl than the one that
+  // produced them — and never at request time, which is what the addendum
+  // explicitly rules out.
+  //
+  // Non-fatal: a stats failure must not fail the ingestion that already
+  // succeeded. Stale stats are recoverable on the next run; a crawl reported as
+  // failed is not.
+  try {
+    console.log("\nComputing page stats…");
+    const { written, removed } = await computeAllPageStats((m) => console.log(m));
+    console.log(`Page stats: ${written} pages written, ${removed} stale rows removed.`);
+  } catch (err) {
+    console.error("Page stats failed (ingestion itself succeeded):", err);
+  }
+
   await prisma.$disconnect();
 }
 

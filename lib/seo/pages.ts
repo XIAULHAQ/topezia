@@ -22,13 +22,25 @@
  * breadcrumbs all check it, so nothing ever links to a noindex page. No nightly
  * job needed — every rule here is evaluated per request.
  */
-import { cache } from "react";
+import { cache as reactCache } from "react";
 import { unstable_cache } from "next/cache";
+
+/**
+ * React's `cache()` exists only inside a React runtime. This module is ALSO
+ * imported by plain Node scripts (scripts/generate-page-intros.ts,
+ * scripts/compute-page-stats.ts), where it is undefined and calling it throws at
+ * import time — which is exactly what broke the page-intros cron after the
+ * per-request memo was added. Outside React, degrade to identity: the memo is a
+ * render-time optimisation and a one-shot script has no request to dedupe.
+ */
+const perRequest: typeof reactCache =
+  typeof reactCache === "function" ? reactCache : (<T,>(fn: T): T => fn) as typeof reactCache;
+
 import { prisma } from "@/lib/prisma";
 import type { EmploymentType, JobKind, Prisma, RemoteType, SalaryPeriod } from "@prisma/client";
 import { hubBySlug, hubMatchIds, HUBS, type SkillHub } from "./hubs";
 import { getCachedIntro } from "./intro";
-import { COUNTRY_NAMES, countryName } from "@/lib/countries";
+import { COUNTRY_NAMES, countryName, countrySlugFor } from "@/lib/countries";
 
 /**
  * Indexability floors by page kind (spec addendum §1.2). Below the floor a page
@@ -204,14 +216,16 @@ export const stateSlugFor = (abbr: string) => stateSlug(abbr);
  * happen to be what people actually search.
  */
 
-const countrySlug = (iso: string) =>
-  (COUNTRY_NAMES[iso] ?? iso).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+// Re-exported below for existing callers; the definition lives in
+// lib/countries so background jobs can build the same paths without importing
+// this module (which needs a React runtime).
+const countrySlug = countrySlugFor;
 
 const ISO_BY_SLUG: Record<string, string> = Object.fromEntries(
   Object.keys(COUNTRY_NAMES).map((iso) => [countrySlug(iso), iso])
 );
 
-export const countrySlugFor = (iso: string) => countrySlug(iso);
+export { countrySlugFor };
 export const isoForCountrySlug = (slug: string): string | null => ISO_BY_SLUG[slug.toLowerCase()] ?? null;
 export { countryName };
 export const countryHref = (roleSlug: string, iso: string) => `/jobs/${roleSlug}/${countrySlug(iso)}`;
@@ -801,7 +815,7 @@ const cachedBrowseHub = unstable_cache(computeBrowseHub, ["browse-hub-v1"], {
  * failure degrades this one render to an empty hub — never a 500, never a failed
  * build — without that empty result being cached for the next 15 minutes.
  */
-export const getBrowseHub = cache(async (): Promise<BrowseHub> => {
+export const getBrowseHub = perRequest(async (): Promise<BrowseHub> => {
   try {
     return await cachedBrowseHub();
   } catch (err) {

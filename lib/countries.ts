@@ -33,6 +33,16 @@ export const COUNTRY_NAMES: Record<string, string> = {
 export const countryName = (iso: string) => COUNTRY_NAMES[iso.toUpperCase()] ?? iso.toUpperCase();
 
 /**
+ * ISO-2 → URL slug ("DE" → "germany"). Lives here rather than in lib/seo/pages
+ * so that background jobs can build the same canonical paths without importing
+ * the render module — which pulls in React and cannot load in a plain script.
+ * Both sides MUST use this one function: a second copy would drift, and a
+ * PageStats row keyed by a slug the page doesn't use is a row nothing reads.
+ */
+export const countrySlugFor = (iso: string) =>
+  (COUNTRY_NAMES[iso] ?? iso).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+/**
  * One-tap groups for the eligibility picker. These are the cases where work
  * rights genuinely come as a bundle — an EU citizen may work in all 27 member
  * states, so making them tap 27 checkboxes would be our data model leaking

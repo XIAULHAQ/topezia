@@ -17,7 +17,8 @@
     "expiry-check": "tsx scripts/run-expiry-check.ts",
     "send-alerts": "tsx scripts/send-alerts.ts",
     "insight-alerts": "tsx scripts/run-insight-alerts.ts",
-    "gen-intros": "tsx scripts/generate-page-intros.ts"
+    "gen-intros": "tsx scripts/generate-page-intros.ts",
+    "page-stats": "tsx scripts/compute-page-stats.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",

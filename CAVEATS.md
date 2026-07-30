@@ -158,6 +158,42 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟢 **Test Profile rows cleared** from prod (was 0 profiles on 2026-07-18; 8 now,
   from real signups — the count moves, so don't read a number here as current).
 
+## PageStats
+- 🟢 **BUILT 2026-07-30** (migration 043, applied by hand per
+  `docs/runbooks/prisma-baseline.md`, never `migrate dev`). `lib/seo/page-stats.ts`
+  computes 448 pages across 5 scope families — role (34), vertical (10),
+  remote-role (30), role-state (200), role-country (174) — and runs at the END of
+  `scripts/run-ingestion.ts`, never at request time. `npm run page-stats` re-runs
+  it standalone.
+- 🟢 **Sanity-checked against real output**, not just "it ran":
+  `/jobs/remote-backend-engineer` is 100% remote (the scope filter works),
+  `/jobs/backend-engineer/ca` is 77 listings (matches the sitemap), and
+  `/jobs/backend-engineer` reports median $200,500/yr from 72 postings with
+  Python/AWS/Kubernetes on top.
+- 🟡 **Top skills need a SHARE floor, not just rank** (`MIN_SKILL_SHARE`, 10%).
+  The first run gave `/jobs/account-executive` top skills "SQL" (8 of 565
+  listings) and "AWS" (3 of 565) — not AE skills at all, just the only
+  *reviewed* skills present, because the seeded skill list is tech-heavy. Rank
+  alone made 1.4% look like a headline. A scope with nothing above the floor now
+  renders no skill block, which is the honest answer.
+- 🟡 **Pay is the DOMINANT type only.** Mixing hourly and annual into one median
+  describes nothing, so `payType` records which the figures mean. Whole-DB split
+  is YEAR 2,097 / HOUR 53, so a scope with 10+ of both is currently
+  hypothetical; when it isn't, add a second row keyed by payType rather than
+  averaging across types.
+- 🟡 **The upsert loop is one round-trip per page.** 448 sequential upserts is
+  ~2s co-located on the cron runner but minutes from a laptop — don't judge it by
+  local wall-clock. Batch it if the page count grows an order of magnitude.
+- 🔴 **Regression shipped and fixed the same day**: the React `cache()` added to
+  `lib/seo/pages.ts` in the `/jobs` perf fix (commit `703416f`) made that module
+  fail at IMPORT time outside a React runtime, which broke
+  `scripts/generate-page-intros.ts` and therefore the weekly `page-intros-cron`.
+  It would have failed silently until someone noticed missing intros. Fixed with
+  a `perRequest` fallback that degrades to identity outside React. **Lesson: a
+  module imported by both Next and plain scripts cannot call React-only APIs at
+  module scope.** `lib/seo/page-stats.ts` deliberately imports `countrySlugFor`
+  from `lib/countries`, not from `lib/seo/pages`, to stay script-safe.
+
 ## Market Signals (spec revised 2026-07-30 — NOT built; blocked on page_stats)
 Spec at `docs/topezia-market-signals-spec.md`. The concept is sound and the
 guardrails are right. What follows is measured against the live database, not an

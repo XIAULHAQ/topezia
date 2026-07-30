@@ -659,6 +659,54 @@ enum AlertFrequency {
 // paragraph reads as boilerplate — the whole point is that each page says
 // something true and specific about ITS slice of the index. Generated out of
 // band by scripts/generate-page-intros.ts; pages never block on the model.
+/// Per-page aggregate stats for programmatic SEO pages and market-signal feed
+/// cards (SEO addendum §2, market-signals spec §2). Precomputed at the end of
+/// each ingestion run — never aggregated at request time.
+///
+/// Keyed by `pageKey` (the canonical path) rather than a composite of
+/// role/vertical/state/country, for the same reason SeoPageIntro is: Postgres
+/// treats NULLs as distinct in a unique index, so a composite key with nullable
+/// scope columns silently permits duplicate rows and breaks upsert. One text key
+/// that already exists as a concept sidesteps that entirely.
+model PageStats {
+  id           String   @id @default(uuid())
+  pageKey      String   @unique // canonical path, e.g. "/jobs/backend-engineer/ca"
+  /// "role" | "vertical" | "remote-role" | "role-state" | "role-country"
+  scopeType    String
+
+  listingCount Int
+  /// Distinct employers in scope — the market-signals `employer_breadth` level.
+  companyCount Int
+
+  /// Pay is the midpoint of each posting's range, over postings that actually
+  /// state one. Stats describe the DOMINANT pay type in scope (recorded in
+  /// payType) rather than mixing hourly and annual into one meaningless median.
+  /// A scope with 10+ of both is vanishingly rare at current volume (whole-DB
+  /// split is YEAR 2,097 / HOUR 53); when that changes, add a second row keyed
+  /// by payType rather than averaging across types.
+  payType      String? // "HOUR" | "YEAR"
+  medianPay    Int?
+  p25Pay       Int?
+  p75Pay       Int?
+  /// How many postings carried pay. Below 10 the pay block is omitted entirely
+  /// rather than shown as "N/A" (addendum §2.1).
+  paySampleSize Int     @default(0)
+
+  /// [{ name, n }] — top 5 by frequency across the scope.
+  topSkills    Json
+  /// { FULL_TIME: pct, CONTRACT: pct, ... } — percentages, rounded.
+  empTypeBreakdown Json
+  /// Percent of postings in scope that are remote, 0-100.
+  remoteShare  Int
+  /// Freshness input for the "Updated <date>" line.
+  postedLast7d Int
+
+  computedAt   DateTime @default(now())
+
+  @@index([scopeType])
+  @@index([computedAt])
+}
+
 model SeoPageIntro {
   id          String   @id @default(uuid())
   pageKey     String   @unique // canonical path, e.g. "/jobs/account-executive/ca"
