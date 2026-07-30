@@ -102,14 +102,14 @@ from the original Phase 1 plan. Re-derive it the same way when it goes stale.
    blocks on programmatic pages → on-demand revalidation replacing the current
    time-based `revalidate = 3600` → remaining site-level schema (`Organization`,
    `WebSite`/`SearchAction`). Don't ship stats blocks before `page_stats` exists.
-2. **Add a real Lever source** — 🔴 in `CAVEATS.md` → Ingestion, and it blocks
-   launch. `leverdemo` was removed because it served Lever's own fake sample
-   postings into a real alert email. The crawler is verified; it needs one real
-   board in `scripts/seed-sources.ts`.
-3. **Full re-ingest to clear noisy-text jobs** — 🟠 in `CAVEATS.md`. Two fixes
-   (Greenhouse entity-encoded HTML now decoded; Ashby should switch to
-   `descriptionHtml`) are deliberately deferred to a single re-ingest, because
-   both change `descriptionHash` and would otherwise duplicate every job.
+2. **Verify `mail.topezia.com` in Resend** — 🔴 in `CAVEATS.md` → Slice 4, and the
+   hardest blocker left: no alert email can send at all until the domain is added
+   at https://resend.com/domains and its DNS records published. Founder action.
+   Everything else in the alerts pipeline is built and proven.
+3. **Switch Ashby to `descriptionHtml` at the next full re-ingest** — 🟠 in
+   `CAVEATS.md`. `sources/ashby.ts:47` still prefers `descriptionPlain`, so detail
+   pages lose lists and headings. Deferred to a re-ingest on purpose: the change
+   re-hashes every Ashby job and would otherwise duplicate ~3.2k of them.
 4. **Google Search Console** — founder action, see §4.
 
 ---
