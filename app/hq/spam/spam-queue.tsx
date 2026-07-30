@@ -30,9 +30,15 @@ interface ReportRow {
   id: string; kind: string; targetId: string; reason: string; note: string | null;
   reporterUserId: string | null; createdAt: string;
 }
+interface CompanyRow {
+  id: string; slug: string; name: string; createdAt: string; spamCleared: boolean;
+  score: number; reasons: string[]; wouldReject: boolean;
+  work: { id: string; slug: string; title: string }[];
+  articles: { id: string; slug: string; title: string }[];
+}
 interface Payload {
-  profiles: ProfileRow[]; works: WorkRow[]; reports: ReportRow[];
-  threshold: number; scanned: { profiles: number; works: number; limit: number };
+  profiles: ProfileRow[]; works: WorkRow[]; companies: CompanyRow[]; reports: ReportRow[];
+  threshold: number; scanned: { profiles: number; works: number; companies: number; limit: number };
 }
 
 const REASON_LABELS: Record<string, string> = {
@@ -80,13 +86,13 @@ export default function SpamQueue() {
   if (err) return <HqShell title="Review queue"><p style={S.err}>{err}</p></HqShell>;
   if (!data) return <HqShell title="Review queue"><p style={S.mut}>Loading…</p></HqShell>;
 
-  const nothing = !data.profiles.length && !data.works.length && !data.reports.length;
+  const nothing = !data.profiles.length && !data.works.length && !data.companies.length && !data.reports.length;
 
   return (
     <HqShell
       title="Review queue"
       subtitle="Content the scorer flagged, plus anything a visitor reported."
-      counts={{ queue: data.profiles.length + data.works.length + data.reports.length }}
+      counts={{ queue: data.profiles.length + data.works.length + data.companies.length + data.reports.length }}
     >
       <p style={S.sub}>
         Everything scoring {data.threshold} or above on the content scorer, plus anything a visitor
@@ -94,9 +100,10 @@ export default function SpamQueue() {
         the reasons are shown so you can disagree with it.
       </p>
       <p style={S.scan}>
-        Scanned the {data.scanned.profiles.toLocaleString()} newest profiles and{" "}
-        {data.scanned.works.toLocaleString()} newest published works (cap {data.scanned.limit.toLocaleString()} each).
-        {data.scanned.profiles >= data.scanned.limit || data.scanned.works >= data.scanned.limit
+        Scanned the {data.scanned.profiles.toLocaleString()} newest profiles, {data.scanned.works.toLocaleString()}{" "}
+        newest published works and {data.scanned.companies.toLocaleString()} newest companies (cap{" "}
+        {data.scanned.limit.toLocaleString()} each).
+        {data.scanned.profiles >= data.scanned.limit || data.scanned.works >= data.scanned.limit || data.scanned.companies >= data.scanned.limit
           ? " The cap was reached — older rows were NOT scored this pass."
           : " That is everything there is."}
       </p>
@@ -180,6 +187,48 @@ export default function SpamQueue() {
                   Back to draft
                 </button>
               </div>
+            </div>
+          ))}
+        </section>
+      )}
+      {data.companies.length > 0 && (
+        <section style={S.section}>
+          <h2 style={S.h2}>Companies ({data.companies.length})</h2>
+          {data.companies.map((c) => (
+            <div key={c.id} style={S.card}>
+              <div style={S.cardHead}>
+                <strong>{c.name}</strong>
+                <span style={c.score >= 60 ? S.scoreHi : S.score}>score {c.score}</span>
+                {c.spamCleared && <span style={S.badgeOk}>cleared</span>}
+                <a style={S.link} href={`/company/${c.slug}`} target="_blank" rel="noopener noreferrer">
+                  /company/{c.slug} ↗
+                </a>
+              </div>
+              {c.reasons.length > 0 && <p style={S.reasons}>{c.reasons.join(" · ")}</p>}
+              <div style={S.actions}>
+                {c.spamCleared ? (
+                  <button style={S.btn} onClick={() => act("unclear-company", c.id)}>Undo &quot;not spam&quot;</button>
+                ) : (
+                  <button style={S.btnOk} onClick={() => act("clear-company", c.id)}>Not spam — index it</button>
+                )}
+              </div>
+              {/* Pulling ONE piece back to draft is usually the right remedy —
+                  a company page is rarely wholly bad, and unpublishing the
+                  page it hangs on isn't an option this queue offers. */}
+              {(c.work.length > 0 || c.articles.length > 0) && (
+                <div style={{ ...S.actions, marginTop: 10 }}>
+                  {c.work.map((w) => (
+                    <button key={w.id} style={S.btnBad} onClick={() => act("unpublish-company-work", w.id)}>
+                      Unpublish work: {w.title.slice(0, 40)}
+                    </button>
+                  ))}
+                  {c.articles.map((a) => (
+                    <button key={a.id} style={S.btnBad} onClick={() => act("unpublish-company-article", a.id)}>
+                      Unpublish article: {a.title.slice(0, 40)}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </section>

@@ -444,6 +444,8 @@ model Profile {
   endorsements      Endorsement[]
   publications      Publication[]
   applications      Application[]
+  // Companies this person was invited onto and accepted (migration 045).
+  companyTeams      CompanyTeamMember[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -1087,6 +1089,21 @@ model Company {
 
   jobs        Job[]
 
+  // Everything below arrived with migration 045 — the company's own presence,
+  // as opposed to its postings. All of it is user-generated, so all of it is
+  // scored by lib/ugc.ts on write and gated by lib/company/indexing.ts on read.
+  work          CompanyWork[]
+  testimonials  CompanyTestimonial[]
+  clients       CompanyClient[]
+  articles      CompanyArticle[]
+  team          CompanyTeamMember[]
+  invites       CompanyInvite[]
+
+  // /hq override for the spam scorer, exactly as Profile.spamCleared: the
+  // scorer has known false positives and the only other remedy would be
+  // weakening it for everyone. Never set by the employer.
+  spamCleared Boolean @default(false)
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -1168,4 +1185,238 @@ model ContentReport {
   @@unique([kind, targetId, reporterUserId])
   @@index([resolvedAt, createdAt])
   @@index([kind, targetId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Company presence (migration 045) — the work, the proof, the writing, the team
+//
+// The member side already has all four of these shapes (Portfolio, Endorsement,
+// Post, Profile). These are deliberately SEPARATE tables rather than a
+// nullable companyId bolted onto those, for two different reasons:
+//
+//  - Portfolio/Endorsement hang off a Profile with a NOT NULL FK, and every
+//    query, save path and delete path in the app assumes that. Making the owner
+//    polymorphic would mean auditing all of it, forever, on every future change.
+//  - Post is FIRST-PARTY editorial. app/blog, the tag pages, the sitemap and
+//    /hq/posts all read it with no author filter, and sanitizeBlogHtml
+//    deliberately leaves external links DOFOLLOW because the site chose them.
+//    A company article is user-generated content: it must be nofollowed and it
+//    must not appear on /blog. One shared table would make that a filter
+//    everyone has to remember; two tables make it true by construction.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// One piece of work the company did — the agency case study, the shipped
+// product. PortfolioStatus is reused rather than cloned: DRAFT/PUBLISHED means
+// exactly the same thing here as it does for a member's work.
+model CompanyWork {
+  id          String          @id @default(uuid())
+  companyId   String
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Stable URL at /company/{companySlug}/work/{slug}. Unique per company, not
+  // globally: two agencies may both have done a "brand refresh".
+  slug        String
+  title       String
+  // One line for the card; the body is the case study itself.
+  summary     String?
+  description String?
+  // Who it was for. Free text — a client is rarely an account on Topezia.
+  clientName  String?
+  // Live link to the work. OUTBOUND and user-supplied: rendered with
+  // rel="ugc nofollow" (lib/ugc.ts UGC_REL), like every other UGC link.
+  projectUrl  String?
+  tags        String[]
+
+  // Cover for the grid, plus its intrinsic size so the card reserves the right
+  // box before the image arrives — same reasoning as Portfolio.coverWidth.
+  coverPath   String?
+  coverWidth  Int?
+  coverHeight Int?
+
+  status      PortfolioStatus @default(DRAFT)
+  position    Int             @default(0)
+
+  images      CompanyWorkImage[]
+
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([companyId, slug])
+  @@index([companyId, status, position])
+}
+
+model CompanyWorkImage {
+  id        String      @id @default(uuid())
+  workId    String
+  work      CompanyWork @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  // Storage path inside the `company` bucket, never a full URL.
+  path      String
+  width     Int?
+  height    Int?
+  caption   String?
+  position  Int         @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([workId, position])
+}
+
+// A client quote the COMPANY typed in.
+//
+// Not an Endorsement: an Endorsement is written by a signed-in third party
+// through an invite the subject cannot write into, which is what makes "someone
+// else said this" enforceable. Nothing here is verified — a company's clients
+// generally have no Topezia account — so the public page labels these as
+// supplied by the company and they carry no schema.org Review markup. Calling
+// them the same thing as an Endorsement would launder unverified copy through
+// a word that means something stricter.
+model CompanyTestimonial {
+  id            String  @id @default(uuid())
+  companyId     String
+  company       Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  quote         String
+  authorName    String
+  authorRole    String?
+  authorCompany String?
+  // Optional link to the person or their company — UGC, so nofollowed.
+  authorUrl     String?
+  rating        Int?    // 1-5, optional
+
+  position      Int     @default(0)
+  visible       Boolean @default(true)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([companyId, position])
+}
+
+// A client logo with a link to that client's site. The link is the whole point
+// of the feature and also its only real risk: it is an outbound, user-supplied
+// URL on a page we host, so it renders with rel="ugc nofollow" and the company
+// page's own indexability is gated on the spam score of everything on it.
+model CompanyClient {
+  id         String  @id @default(uuid())
+  companyId  String
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  name       String
+  websiteUrl String?
+  // Storage path in the `logos` bucket, under "{companyId}/clients/".
+  logoPath   String?
+  position   Int     @default(0)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([companyId, position])
+}
+
+// The company's own writing, at /company/{companySlug}/articles/{slug}.
+//
+// Same editor as /hq/posts and the same SEO fields, but a different table and a
+// different sanitizer (sanitizeUgcHtml, not sanitizeBlogHtml) — see the header
+// above. Never appears on /blog.
+model CompanyArticle {
+  id              String     @id @default(uuid())
+  companyId       String
+  company         Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  slug            String
+  title           String
+  excerpt         String?
+  contentHtml     String
+  // Storage path in the `company` bucket. Named coverPath, not coverImage,
+  // to match the path-not-URL contract every other image column here uses.
+  coverPath       String?
+  coverAlt        String?
+
+  focusKeyword    String?
+  metaTitle       String?
+  metaDescription String?
+
+  tags            String[]
+  status          PostStatus @default(DRAFT)
+
+  publishedAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@unique([companyId, slug])
+  @@index([companyId, status, publishedAt])
+}
+
+// OWNER is the Company.ownerUserId — the only account that can edit anything.
+// MEMBER is listed on the company page and nothing more. That gap is
+// deliberate: the ask was "invite team members to join Topezia and be listed
+// under the company", and handing every invitee write access to the employer's
+// public page and hiring pipeline is a permissions system, not a listing.
+enum CompanyRole {
+  OWNER
+  MEMBER
+}
+
+enum CompanyInviteStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
+model CompanyTeamMember {
+  id           String      @id @default(uuid())
+  companyId    String
+  company      Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // The Supabase auth id is the anchor, not the profile: someone can join a
+  // team before they have built a profile, and deleting a profile must not
+  // silently remove them from a company they really do work at.
+  userId       String
+  profileId    String?
+  profile      Profile?    @relation(fields: [profileId], references: [id], onDelete: SetNull)
+
+  // Snapshot taken at accept time, so the row still renders a name after a
+  // profile is deleted. The live profile wins when there is one.
+  name         String
+  title        String?
+  role         CompanyRole @default(MEMBER)
+  visible      Boolean     @default(true)
+  // Which address the invite went to — kept so the owner can tell two people
+  // with the same display name apart. Never shown publicly.
+  invitedEmail String?
+
+  joinedAt     DateTime    @default(now())
+
+  @@unique([companyId, userId])
+  @@index([companyId, role])
+}
+
+// A pending invitation to join a company's team.
+//
+// Revoking DELETES the row rather than flagging it: the token is the capability,
+// and the only honest way to withdraw a capability is to destroy it. REVOKED
+// exists in the enum for invites that were declined server-side after the fact.
+model CompanyInvite {
+  id              String              @id @default(uuid())
+  companyId       String
+  company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  email           String
+  // The secret in /join/{token}. High entropy; consumed once on accept.
+  token           String              @unique
+  invitedByUserId String
+  status          CompanyInviteStatus @default(PENDING)
+
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  acceptedUserId  String?
+
+  createdAt       DateTime @default(now())
+
+  // One invite per address per company. Re-inviting means revoking first,
+  // which deletes the row — so this can't strand anyone.
+  @@unique([companyId, email])
+  @@index([companyId, status])
 }

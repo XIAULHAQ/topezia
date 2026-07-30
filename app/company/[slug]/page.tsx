@@ -3,10 +3,19 @@
  * shape: gradient cover, dark hero with logo + hiring pill, styled role rows,
  * about card, at-a-glance rail. Only companies that exist ON Topezia get one.
  *
- * Honesty rule: the mock's invented panels (hiring pulse, team, benefits,
- * client stats, verified badge, Follow) are NOT rendered — we show only what
- * the company actually told us plus counts we compute. Those panels can light
- * up later when the data behind them is real.
+ * Honesty rule: the mock's invented panels (hiring pulse, benefits, client
+ * stats, verified badge, Follow) are NOT rendered — we show only what the
+ * company actually told us plus counts we compute. Those panels can light up
+ * later when the data behind them is real. Team IS rendered now, because
+ * migration 045 made it real: each of those rows is an account that accepted
+ * an invitation sent to an address this company typed.
+ *
+ * Everything added in 045 — work, clients, testimonials, articles, team — is
+ * user-generated, and two consequences run through this file:
+ *   - every outbound link the company supplied carries rel="ugc nofollow"
+ *     (lib/ugc.ts UGC_REL), including client links and testimonial links;
+ *   - whether the page may be indexed at all is now decided by
+ *     lib/company/indexing.ts rather than assumed.
  */
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -17,7 +26,9 @@ import SiteNav from "@/app/_components/SiteNav";
 import { SiteFooter } from "@/app/_components/SiteChrome";
 import { curSym } from "@/lib/currency";
 import { jobPath } from "@/lib/seo/job-slug";
-import { companyLogoUrl } from "@/lib/company/storage";
+import { companyLogoUrl, companyImageUrl } from "@/lib/company/storage";
+import { companyIndexable } from "@/lib/company/indexing";
+import { UGC_REL } from "@/lib/ugc";
 
 export const revalidate = 900;
 
@@ -32,7 +43,8 @@ async function getCompany(slug: string) {
   return prisma.company.findUnique({
     where: { slug },
     select: {
-      name: true, slug: true, tagline: true, about: true, website: true, location: true, logoPath: true, createdAt: true,
+      name: true, slug: true, tagline: true, about: true, website: true, location: true,
+      logoPath: true, createdAt: true, spamCleared: true,
       jobs: {
         where: { status: "LIVE" },
         orderBy: { createdAt: "desc" },
@@ -41,7 +53,56 @@ async function getCompany(slug: string) {
           createdAt: true, salaryMin: true, salaryMax: true, salaryCurrency: true, salaryPeriod: true,
         },
       },
+      work: {
+        where: { status: "PUBLISHED" },
+        orderBy: [{ position: "asc" }, { publishedAt: "desc" }],
+        select: { slug: true, title: true, summary: true, clientName: true, coverPath: true },
+      },
+      clients: {
+        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+        select: { id: true, name: true, websiteUrl: true, logoPath: true },
+      },
+      testimonials: {
+        where: { visible: true },
+        orderBy: [{ position: "asc" }, { createdAt: "desc" }],
+        select: { id: true, quote: true, authorName: true, authorRole: true, authorCompany: true, authorUrl: true, rating: true },
+      },
+      articles: {
+        where: { status: "PUBLISHED" },
+        orderBy: { publishedAt: "desc" },
+        take: 6,
+        select: { slug: true, title: true, excerpt: true, publishedAt: true },
+      },
+      team: {
+        where: { visible: true },
+        orderBy: [{ role: "asc" }, { joinedAt: "asc" }],
+        select: {
+          name: true, title: true, role: true,
+          profile: { select: { fullName: true, publicSlug: true, publicVisible: true } },
+        },
+      },
     },
+  });
+}
+
+type CompanyRecord = NonNullable<Awaited<ReturnType<typeof getCompany>>>;
+
+/** One function decides indexability, so nothing else can quietly disagree. */
+function indexable(c: CompanyRecord): boolean {
+  return companyIndexable({
+    name: c.name,
+    tagline: c.tagline,
+    about: c.about,
+    website: c.website,
+    spamCleared: c.spamCleared,
+    liveJobCount: c.jobs.length,
+    extraText: [
+      ...c.testimonials.map((t) => t.quote),
+      ...c.testimonials.map((t) => t.authorName),
+      ...c.clients.map((cl) => cl.name),
+      ...c.work.map((w) => w.title),
+      ...c.work.map((w) => w.summary),
+    ],
   });
 }
 
@@ -50,7 +111,15 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   if (!c) return { title: "Company — Topezia" };
   const title = `${c.name} — jobs & projects | Topezia`;
   const description = c.tagline ?? `${c.name} is hiring on Topezia.`;
-  return { title, description, alternates: { canonical: `/company/${c.slug}` }, openGraph: { title, description } };
+  return {
+    title,
+    description,
+    alternates: { canonical: `/company/${c.slug}` },
+    openGraph: { title, description },
+    // noindex, FOLLOW when it fails: the page works exactly the same for a
+    // visitor, it just doesn't put our domain behind thin or suspect content.
+    robots: { index: indexable(c), follow: true },
+  };
 }
 
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (ch) => ch.toUpperCase()).replace("Us", "US");
@@ -66,6 +135,7 @@ const ago = (d: Date) => {
   const days = Math.floor((Date.now() - d.getTime()) / 86_400_000);
   return days === 0 ? "today" : days === 1 ? "1 day ago" : days < 7 ? `${days} days ago` : days < 14 ? "1 week ago" : `${Math.floor(days / 7)} weeks ago`;
 };
+const initialsOf = (s: string) => s.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "?";
 const TAG_TINTS = [["#EEF2FF", "#4F46E5"], ["#F5F3FF", "#7C3AED"], ["#ECFEFF", "#0E7490"], ["#FFF7ED", "#C2410C"], ["#ECFDF5", "#047857"]];
 
 export default async function CompanyPage({ params }: { params: { slug: string } }) {
@@ -113,7 +183,7 @@ export default async function CompanyPage({ params }: { params: { slug: string }
                 {c.tagline && <div style={{ fontSize: 14.5, color: "#C7CEE4", marginTop: 8, fontWeight: 500, maxWidth: 620 }}>{c.tagline}</div>}
                 <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginTop: 12, color: "#94A3C0", fontSize: 12.5 }}>
                   {c.location && <span>📍 {c.location}</span>}
-                  {host && <a href={c.website!} target="_blank" rel="noopener noreferrer" style={{ color: "#A5B4FC", fontWeight: 600 }}>{host} ↗</a>}
+                  {host && <a href={c.website!} target="_blank" rel={UGC_REL} style={{ color: "#A5B4FC", fontWeight: 600 }}>{host} ↗</a>}
                   <span>On Topezia since {c.createdAt.toLocaleDateString(undefined, { month: "short", year: "numeric" })}</span>
                 </div>
               </div>
@@ -135,7 +205,7 @@ export default async function CompanyPage({ params }: { params: { slug: string }
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
                 <span style={S.cardIcon}>💼</span>
                 <h2 style={S.h2}>Open roles</h2>
-                <span style={{ background: "#EEF2FF", color: "#4F46E5", borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>{c.jobs.length}</span>
+                <span style={S.count}>{c.jobs.length}</span>
               </div>
               {c.jobs.length === 0 && <p style={{ fontSize: 13.5, color: MUTED, margin: 0 }}>Nothing open at the moment.</p>}
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -173,6 +243,137 @@ export default async function CompanyPage({ params }: { params: { slug: string }
                 <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.75, color: "#334155", whiteSpace: "pre-wrap" }}>{c.about}</p>
               </section>
             )}
+
+            {/* ── Work ── */}
+            {c.work.length > 0 && (
+              <section style={S.card}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                  <span style={S.cardIcon}>🎨</span>
+                  <h2 style={S.h2}>Our work</h2>
+                  <span style={S.count}>{c.work.length}</span>
+                </div>
+                <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
+                  {c.work.map((w) => (
+                    <Link key={w.slug} href={`/company/${c.slug}/work/${w.slug}`} style={S.workCard}>
+                      <span style={S.workCover}>
+                        {companyImageUrl(w.coverPath) ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={companyImageUrl(w.coverPath)!} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        ) : (
+                          <span style={{ fontSize: 22 }}>🖼️</span>
+                        )}
+                      </span>
+                      <span style={{ display: "block", padding: "12px 14px 14px" }}>
+                        <b style={{ fontSize: 13.8, fontWeight: 700, display: "block", lineHeight: 1.4 }}>{w.title}</b>
+                        {(w.clientName || w.summary) && (
+                          <span style={{ display: "block", fontSize: 12, color: MUTED, marginTop: 5, lineHeight: 1.5 }}>
+                            {w.clientName && <b style={{ color: "#475569", fontWeight: 600 }}>{w.clientName}</b>}
+                            {w.clientName && w.summary ? " — " : ""}
+                            {w.summary}
+                          </span>
+                        )}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* ── Clients ── */}
+            {c.clients.length > 0 && (
+              <section style={S.card}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                  <span style={S.cardIcon}>🤝</span>
+                  <h2 style={S.h2}>Clients</h2>
+                </div>
+                <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))" }}>
+                  {c.clients.map((cl) => {
+                    const logo = companyLogoUrl(cl.logoPath);
+                    const inner = (
+                      <>
+                        <span style={S.clientMark}>
+                          {logo ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={logo} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                          ) : (
+                            <span style={{ fontSize: 13, fontWeight: 800, color: "#94A3B8" }}>{cl.name.slice(0, 3).toUpperCase()}</span>
+                          )}
+                        </span>
+                        {/* The name always renders, never replaced by the logo:
+                            an image-only link is unreadable to a screen reader
+                            and is the exact shape of a link farm. */}
+                        <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginTop: 8, textAlign: "center" }}>{cl.name}</span>
+                      </>
+                    );
+                    return cl.websiteUrl ? (
+                      <a key={cl.id} href={cl.websiteUrl} target="_blank" rel={UGC_REL} style={S.clientCell}>{inner}</a>
+                    ) : (
+                      <div key={cl.id} style={S.clientCell}>{inner}</div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {/* ── Testimonials ──
+                No Review or AggregateRating JSON-LD anywhere near these. They
+                are unverified copy a company typed about itself; marking them
+                up as reviews would launder that through a vocabulary that
+                means something stricter. The label says where they came from. */}
+            {c.testimonials.length > 0 && (
+              <section style={S.card}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                  <span style={S.cardIcon}>💬</span>
+                  <h2 style={S.h2}>What clients say</h2>
+                </div>
+                <p style={{ margin: "0 0 16px", fontSize: 11.5, color: "#94A3B8" }}>Provided by {c.name}. Topezia hasn&apos;t verified these.</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {c.testimonials.map((t) => (
+                    <figure key={t.id} style={S.quote}>
+                      {t.rating != null && (
+                        <div style={{ color: "#F59E0B", fontSize: 13, letterSpacing: 1.5, marginBottom: 7 }} aria-label={`${t.rating} out of 5`}>
+                          {"★".repeat(t.rating)}<span style={{ color: "#E2E8F0" }}>{"★".repeat(5 - t.rating)}</span>
+                        </div>
+                      )}
+                      <blockquote style={{ margin: 0, fontSize: 13.8, lineHeight: 1.75, color: "#334155" }}>&ldquo;{t.quote}&rdquo;</blockquote>
+                      <figcaption style={{ fontSize: 12.3, color: MUTED, marginTop: 10 }}>
+                        <b style={{ color: INK }}>{t.authorName}</b>
+                        {[t.authorRole, t.authorCompany].filter(Boolean).length > 0 && ` — ${[t.authorRole, t.authorCompany].filter(Boolean).join(", ")}`}
+                        {t.authorUrl && (
+                          <> · <a href={t.authorUrl} target="_blank" rel={UGC_REL} style={{ color: "#4F46E5", fontWeight: 600 }}>site ↗</a></>
+                        )}
+                      </figcaption>
+                    </figure>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* ── Articles ── */}
+            {c.articles.length > 0 && (
+              <section style={S.card}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                  <span style={S.cardIcon}>✍️</span>
+                  <h2 style={S.h2}>Writing</h2>
+                  <Link href={`/company/${c.slug}/articles`} style={{ marginLeft: "auto", fontSize: 12.5, color: "#4F46E5", fontWeight: 700, textDecoration: "none" }}>All articles →</Link>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {c.articles.map((a) => (
+                    <Link key={a.slug} href={`/company/${c.slug}/articles/${a.slug}`} style={S.articleRow}>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <b style={{ fontSize: 14, fontWeight: 700, display: "block" }}>{a.title}</b>
+                        {a.excerpt && <span style={{ display: "block", fontSize: 12.3, color: MUTED, marginTop: 5, lineHeight: 1.55 }}>{a.excerpt}</span>}
+                      </span>
+                      {a.publishedAt && (
+                        <span style={{ flex: "none", fontSize: 11.5, color: MUTED, whiteSpace: "nowrap" }}>
+                          {a.publishedAt.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
+                        </span>
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
 
           <aside style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
@@ -181,6 +382,7 @@ export default async function CompanyPage({ params }: { params: { slug: string }
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {([
                   ["Open roles", String(c.jobs.length)],
+                  c.work.length ? ["Work shown", String(c.work.length)] : null,
                   c.location ? ["Location", c.location] : null,
                   host ? ["Website", host] : null,
                   ["On Topezia", `Since ${c.createdAt.toLocaleDateString(undefined, { month: "short", year: "numeric" })}`],
@@ -192,6 +394,36 @@ export default async function CompanyPage({ params }: { params: { slug: string }
                 ))}
               </div>
             </section>
+
+            {/* ── Team ── real rows: each accepted an invitation sent to an
+                address this company typed, and signed in with it. */}
+            {c.team.length > 0 && (
+              <section style={S.card}>
+                <h3 style={{ margin: "0 0 14px", fontSize: 14, fontWeight: 700 }}>Team</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {c.team.map((m, i) => {
+                    const name = m.profile?.fullName?.trim() || m.name;
+                    const href = m.profile?.publicVisible && m.profile.publicSlug ? `/p/${m.profile.publicSlug}` : null;
+                    const body = (
+                      <>
+                        <span style={S.teamAvatar}>{initialsOf(name)}</span>
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <b style={{ fontSize: 13, fontWeight: 700, display: "block" }}>{name}</b>
+                          <span style={{ display: "block", fontSize: 11.5, color: MUTED, marginTop: 2 }}>
+                            {m.title || (m.role === "OWNER" ? "Owner" : "Team")}
+                          </span>
+                        </span>
+                      </>
+                    );
+                    return href ? (
+                      <Link key={i} href={href} style={S.teamRow}>{body}</Link>
+                    ) : (
+                      <div key={i} style={S.teamRow}>{body}</div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             <section style={{ border: "1px solid #C7D2FE", background: "linear-gradient(150deg,#EEF2FF,#F5F3FF)", borderRadius: 16, padding: "20px 22px" }}>
               <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Get matched to {c.name}</h3>
@@ -212,5 +444,14 @@ const S: Record<string, CSSProperties> = {
   card: { background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, padding: "24px 26px" },
   cardIcon: { width: 32, height: 32, borderRadius: 9, background: "#EEF2FF", display: "grid", placeItems: "center", fontSize: 15 },
   h2: { margin: 0, fontSize: 16, fontWeight: 700 },
+  count: { background: "#EEF2FF", color: "#4F46E5", borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700 },
   roleRow: { border: `1px solid ${LINE}`, borderRadius: 14, padding: "16px 18px", display: "flex", gap: 16, alignItems: "center", color: INK, textDecoration: "none" },
+  workCard: { display: "block", border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden", color: INK, textDecoration: "none", background: "#fff" },
+  workCover: { display: "grid", placeItems: "center", height: 148, background: "#F1F5F9", overflow: "hidden" },
+  clientCell: { display: "flex", flexDirection: "column", alignItems: "center", border: `1px solid ${LINE}`, borderRadius: 12, padding: "14px 10px", textDecoration: "none" },
+  clientMark: { display: "grid", placeItems: "center", width: "100%", height: 44, padding: "0 6px" },
+  quote: { margin: 0, border: `1px solid ${LINE}`, borderRadius: 14, padding: "16px 18px", background: "#FCFCFD" },
+  articleRow: { border: `1px solid ${LINE}`, borderRadius: 14, padding: "14px 16px", display: "flex", gap: 14, alignItems: "flex-start", color: INK, textDecoration: "none" },
+  teamRow: { display: "flex", gap: 11, alignItems: "center", color: INK, textDecoration: "none" },
+  teamAvatar: { flex: "none", width: 34, height: 34, borderRadius: "50%", background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 11.5, fontWeight: 800 },
 };

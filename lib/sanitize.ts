@@ -7,6 +7,8 @@
  * logged-in user's session. Allow only formatting tags; drop everything else.
  */
 import sanitizeHtml from "sanitize-html";
+import { UGC_REL } from "@/lib/ugc";
+import { storageOrigin } from "@/lib/company/storage";
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -113,6 +115,12 @@ function isInternalHref(href: string): boolean {
  * check. Only external links get target=_blank + noopener/noreferrer — no
  * nofollow, since this is first-party editorial content the site chose to
  * link to, not user-generated text.
+ *
+ * `rel` and `target` MUST be in allowedAttributes even though nothing but
+ * transformTags ever sets them: sanitize-html filters attributes AFTER
+ * transformTags runs, so anything the transform adds and the allow-list omits
+ * is added and then immediately thrown away. Without them this function
+ * silently emitted plain external links — reverse-tabnabbing and all.
  */
 export function sanitizeBlogHtml(dirty: string): string {
   return sanitizeHtml(dirty, {
@@ -124,7 +132,7 @@ export function sanitizeBlogHtml(dirty: string): string {
       "img", "figure", "figcaption",
     ],
     allowedAttributes: {
-      a: ["href", "title"],
+      a: ["href", "title", "rel", "target"],
       img: ["src", "alt", "width", "height"],
     },
     // Only real web links/images; no javascript:/data: URIs.
@@ -138,6 +146,71 @@ export function sanitizeBlogHtml(dirty: string): string {
       },
     },
     // Strip style/class so foreign CSS can't fight our layout.
+    allowedStyles: {},
+  });
+}
+
+/**
+ * Sanitize a COMPANY-authored article body (app/employer/articles), before
+ * storing and before rendering.
+ *
+ * Same tag allow-list as sanitizeBlogHtml — a company article needs the same
+ * structure a blog post does — and two deliberate differences, both because
+ * this is user-generated content rather than first-party editorial:
+ *
+ *  1. Every EXTERNAL link gets rel="ugc nofollow noopener noreferrer"
+ *     (lib/ugc.ts UGC_REL). sanitizeBlogHtml leaves external links dofollow on
+ *     purpose: /hq chose those. Nobody at Topezia chose these, and a dofollow
+ *     link from a page on our domain is precisely what a link farm signs up
+ *     for. Internal links stay plain — nofollowing our own /jobs pages would
+ *     only hurt us.
+ *  2. <img> may only point at our own storage origin. The editor uploads
+ *     through /api/company/image and inserts the URL it gets back, so a remote
+ *     src can only have been hand-written — and a foreign image on a page we
+ *     serve is a tracking pixel that reports every reader to a third party.
+ *     A blocked image is dropped rather than left broken.
+ */
+export function sanitizeUgcHtml(dirty: string): string {
+  const origin = storageOrigin();
+  return sanitizeHtml(dirty, {
+    allowedTags: [
+      "p", "br", "strong", "b", "em", "i", "u", "s",
+      "ul", "ol", "li",
+      "h2", "h3", "h4",
+      "blockquote", "a", "code", "pre", "hr", "span", "div",
+      "img", "figure", "figcaption",
+    ],
+    // rel/target are allowed for the same reason as in sanitizeBlogHtml —
+    // sanitize-html filters attributes after transformTags, so omitting them
+    // here would throw away the nofollow this whole function exists to add.
+    allowedAttributes: {
+      a: ["href", "title", "rel", "target"],
+      img: ["src", "alt", "width", "height"],
+    },
+    allowedSchemes: ["http", "https", "mailto"],
+    allowedSchemesByTag: { img: ["http", "https"] },
+    transformTags: {
+      a: (tagName, attribs) => {
+        const href = attribs.href ?? "";
+        // Author-supplied rel/target are dropped either way: on an internal
+        // link there is no reason for them, and on an external one ours has to
+        // be the last word.
+        const { rel: _rel, target: _target, ...rest } = attribs;
+        if (isInternalHref(href)) return { tagName, attribs: rest };
+        return { tagName, attribs: { ...rest, rel: UGC_REL, target: "_blank" } };
+      },
+    },
+    // Runs after the allow-lists. Returning TRUE discards the element.
+    exclusiveFilter: (frame) => {
+      if (frame.tag !== "img") return false;
+      const src = frame.attribs.src ?? "";
+      if (!origin) return true; // storage origin unknown — trust no image URL
+      try {
+        return new URL(src).origin !== origin;
+      } catch {
+        return true; // relative or unparseable: not one of ours
+      }
+    },
     allowedStyles: {},
   });
 }

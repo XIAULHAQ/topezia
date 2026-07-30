@@ -10,8 +10,8 @@ import { useRouter } from "next/navigation";
 import { slugify } from "@/lib/blog/slugify";
 import { blogImageUrl } from "@/lib/blog/storage";
 import { analyzeSeo } from "@/lib/blog/seo-analysis";
-import TiptapEditor from "./tiptap-editor";
-import SeoPanel from "./seo-panel";
+import TiptapEditor from "@/app/_components/editor/TiptapEditor";
+import SeoPanel from "@/app/_components/editor/SeoPanel";
 
 type PostRecord = {
   id: string;

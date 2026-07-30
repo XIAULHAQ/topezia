@@ -1160,3 +1160,95 @@ to prevent. Entries below are code-verified; live-behaviour claims are marked.
   an embedding it can't be retrieved by the pgvector stage-1 matcher, so a driver's
   /drive feed won't show the full driving set until the backfill completes. Verify
   the /drive → feed flow surfaces real CDL/driver matches once it finishes.
+
+## Company presence — work, testimonials, clients, articles, team (added 2026-07-31)
+
+Migration 045. Everything below is user-generated content on a page we host,
+which is why so much of this section is about links and indexing rather than
+about features.
+
+- 🔴 **A real bug found while building this: `sanitizeBlogHtml` had never
+  actually applied `target="_blank" rel="noopener noreferrer"`.**
+  `sanitize-html` filters attributes **after** `transformTags` runs, so the
+  `rel`/`target` the transform added were added and then immediately thrown
+  away, because `allowedAttributes.a` listed only `href` and `title`. Blog
+  posts have been emitting bare external links since the sanitizer shipped —
+  reverse-tabnabbing exposure, and it would have silently swallowed the
+  `nofollow` this whole feature depends on. Fixed by allow-listing `rel` and
+  `target` in both sanitizers. **No backfill was needed**: all three existing
+  posts were checked and contain zero external links.
+- 🟢 **Company articles get their own table, not `Post`.** `app/blog`, the tag
+  pages, `app/sitemap.ts` and `/hq/posts` all read `Post` with no author
+  filter, and `sanitizeBlogHtml` leaves external links **dofollow** on purpose
+  because /hq chose them. A company article is UGC and must be nofollowed and
+  must not appear on /blog. One shared table would have made that a filter
+  every future query has to remember; `CompanyArticle` makes it true by
+  construction. Same reasoning for `CompanyWork` vs `Portfolio`.
+- 🟢 **`sanitizeUgcHtml` (lib/sanitize.ts)** is the company-article sanitizer:
+  external links get `UGC_REL`, internal links stay plain, and `<img>` is
+  dropped unless its origin is our own storage — a remote image on a page we
+  serve is a tracking pixel that reports every reader to a third party.
+  Verified: 29/29 assertions in a throwaway harness, including that a
+  `<script>` is stripped and a foreign cover path is refused.
+- 🟢 **Indexing is decided by `lib/company/indexing.ts`, and the sitemap calls
+  the same functions.** Before 045 a company page was a name, a tagline and a
+  list of postings — nothing worth farming. It now carries testimonial copy and
+  outbound client links, so it gets the same treatment profiles got: a
+  substance bar (about ≥40 chars, or a tagline ≥20, or a live role) and a spam
+  score, with `Company.spamCleared` overriding the score only, never the
+  substance. Verified end to end on a throwaway company: the company page and
+  its long case study served `index, follow` and appear in `sitemap.xml`; the
+  deliberately short article served `noindex, follow` and is **absent** from the
+  sitemap. Rodeo Graphics still indexes and is still listed — the new gate did
+  not deindex the one real company.
+- 🟡 **Testimonials are unverified by construction, and the page says so.**
+  These are quotes the company typed about itself. They are *not*
+  `Endorsement`s — an endorsement is written by a signed-in third party through
+  a link the subject cannot edit. The public page labels them "Provided by
+  {company}. Topezia hasn't verified these." and carries **no `Review` or
+  `AggregateRating` JSON-LD** (verified: 0 occurrences). Adding that markup
+  would launder unverified copy through a vocabulary that means something
+  stricter, and is the single most tempting shortcut in this whole feature.
+- 🟡 **Team membership is a listing, not a permission.** A `MEMBER` appears on
+  the company page and can do nothing else — no editing the company, no
+  posting roles, no seeing applicants. `requireCompanyOwner()` is the only
+  gate, in one file, so widening it later is one change. The ask was "invite
+  team members to join and be listed"; handing every invitee write access to
+  an employer's public page and hiring pipeline is a permissions system nobody
+  asked for.
+- 🟡 **Accepting an invite requires the signed-in account's email to match the
+  invited address.** Otherwise an invite link is bearer-authorization: anyone
+  it is forwarded to could list themselves as staff at a company they have
+  nothing to do with. This is also the most likely reason a real invite fails,
+  so the invite email, the dashboard and the /join page all say it up front.
+  A failed email lookup **refuses** the join rather than waving it through.
+- 🟡 **Invite delivery failure does not fail the request.** The invite row and
+  its link are the artifact; the email is a convenience. When Resend is
+  unreachable — or `RESEND_API_KEY` is unset — the owner gets the link back and
+  can send it themselves. The email carries **no free-text message**, because
+  an invite that let the sender type a paragraph would be an open relay with
+  our sending reputation on it.
+- 🟡 **Article body images are not garbage-collected.** Deleting an article
+  removes its cover from storage but not images embedded in the body, because
+  nothing tracks which objects a given body references. Same gap the /hq blog
+  has had since it shipped; the fix for both is one pass that parses stored
+  HTML for our own storage URLs. Orphaned bytes, not broken pages.
+- 🟡 **A company survives its owner deleting their account.** `ownerUserId` is
+  a plain string with no FK to `auth.users` (it predates this work), so
+  `lib/account/purge.ts` leaves the Company row and everything cascading from
+  it. Pre-existing; worth knowing now that far more hangs off a Company.
+- 🟢 **`/hq/spam` now scores companies too**, so `Company.spamCleared` has a
+  button rather than needing hand-written SQL. A company is scored as one
+  document — name, tagline, about, testimonials, client names, published work
+  and article bodies together — and a reviewer can pull a single piece of work
+  or one article back to DRAFT rather than acting on the whole page.
+- 🟢 **Storage: a new public `company` bucket** (10MB, raster only, no client
+  write policy) for work images and article covers; client logos live in the
+  existing `logos` bucket under `{companyId}/clients/`. Created with
+  `scripts/setup-company-storage.sql`. Uploads still go through our own route,
+  which sniffs magic bytes and picks the path — the declared Content-Type and
+  the filename are ignored.
+- 🔴 **Uploads need `SUPABASE_SERVICE_ROLE_KEY`, which is not set locally.**
+  Every upload route in the project degrades the same way ("Uploads are
+  temporarily unavailable", HTTP 500). The image paths in this feature were
+  verified by validation and by rendering, **not** by a real upload.

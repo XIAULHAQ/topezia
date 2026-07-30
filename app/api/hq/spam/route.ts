@@ -22,6 +22,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { HQ_COOKIE, sessionValid } from "@/lib/hq-auth";
 import { scoreUgcFields, isSuspect, isSpam, SPAM_REVIEW } from "@/lib/ugc";
+import { htmlToText } from "@/lib/company/article";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ function unauthorized() {
 export async function GET(req: NextRequest) {
   if (!sessionValid(req.cookies.get(HQ_COOKIE)?.value)) return unauthorized();
 
-  const [profileRows, workRows, reports] = await Promise.all([
+  const [profileRows, workRows, companyRows, reports] = await Promise.all([
     prisma.profile.findMany({
       orderBy: { createdAt: "desc" },
       take: SCAN_LIMIT,
@@ -60,6 +61,20 @@ export async function GET(req: NextRequest) {
         id: true, slug: true, title: true, description: true, skills: true, technologies: true,
         status: true, publishedAt: true,
         profile: { select: { fullName: true, publicSlug: true } },
+      },
+    }),
+    // Companies carry UGC of their own since migration 045 — testimonial copy,
+    // client names and outbound client links all sit on a public company page.
+    prisma.company.findMany({
+      orderBy: { createdAt: "desc" },
+      take: SCAN_LIMIT,
+      select: {
+        id: true, slug: true, name: true, tagline: true, about: true, website: true,
+        spamCleared: true, createdAt: true,
+        testimonials: { select: { quote: true, authorName: true, authorUrl: true } },
+        clients: { select: { name: true, websiteUrl: true } },
+        work: { where: { status: "PUBLISHED" as const }, select: { id: true, slug: true, title: true, summary: true, description: true, tags: true } },
+        articles: { where: { status: "PUBLISHED" as const }, select: { id: true, slug: true, title: true, excerpt: true, contentHtml: true, tags: true } },
       },
     }),
     prisma.contentReport.findMany({
@@ -125,13 +140,46 @@ export async function GET(req: NextRequest) {
     .filter((w) => isSuspect({ score: w.score, reasons: w.reasons }) || w.reported)
     .sort((a, b) => b.score - a.score);
 
+  // A company is scored as ONE document, its published work and articles
+  // included — a testimonial that reads clean beside a case study full of
+  // casino links is not clean, and the page shows them together.
+  const companies = companyRows
+    .map((c) => {
+      const verdict = scoreUgcFields(
+        [
+          c.name, c.tagline, c.about, c.website,
+          ...c.testimonials.flatMap((t) => [t.quote, t.authorName, t.authorUrl]),
+          ...c.clients.flatMap((cl) => [cl.name, cl.websiteUrl]),
+          ...c.work.flatMap((w) => [w.title, w.summary, w.description, ...w.tags]),
+          ...c.articles.flatMap((a) => [a.title, a.excerpt, htmlToText(a.contentHtml), ...a.tags]),
+        ],
+        { linksExpected: true }
+      );
+      return {
+        id: c.id,
+        slug: c.slug,
+        name: c.name,
+        createdAt: c.createdAt,
+        spamCleared: c.spamCleared,
+        score: verdict.score,
+        reasons: verdict.reasons,
+        wouldReject: isSpam(verdict),
+        // Listed so a reviewer can pull one piece rather than the whole page.
+        work: c.work.map((w) => ({ id: w.id, slug: w.slug, title: w.title })),
+        articles: c.articles.map((a) => ({ id: a.id, slug: a.slug, title: a.title })),
+      };
+    })
+    .filter((c) => isSuspect({ score: c.score, reasons: c.reasons }))
+    .sort((a, b) => b.score - a.score);
+
   return NextResponse.json({
     profiles,
     works,
+    companies,
     reports,
     threshold: SPAM_REVIEW,
     // Stated so an empty queue can be read correctly — see the header comment.
-    scanned: { profiles: profileRows.length, works: workRows.length, limit: SCAN_LIMIT },
+    scanned: { profiles: profileRows.length, works: workRows.length, companies: companyRows.length, limit: SCAN_LIMIT },
   });
 }
 
@@ -176,6 +224,20 @@ export async function PATCH(req: NextRequest) {
     // Back to DRAFT, not deleted: the member keeps their work and can fix it.
     case "unpublish-work":
       await prisma.portfolio.update({ where: { id }, data: { status: "DRAFT", publishedAt: null } });
+      break;
+    // Same override as clear-profile, for a company page.
+    case "clear-company":
+      await prisma.company.update({ where: { id }, data: { spamCleared: true } });
+      break;
+    case "unclear-company":
+      await prisma.company.update({ where: { id }, data: { spamCleared: false } });
+      break;
+    // Back to DRAFT, not deleted — the employer keeps what they wrote.
+    case "unpublish-company-work":
+      await prisma.companyWork.update({ where: { id }, data: { status: "DRAFT", publishedAt: null } });
+      break;
+    case "unpublish-company-article":
+      await prisma.companyArticle.update({ where: { id }, data: { status: "DRAFT", publishedAt: null } });
       break;
     case "resolve-report":
       await prisma.contentReport.update({

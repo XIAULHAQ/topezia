@@ -1,10 +1,14 @@
 "use client";
 
 /**
- * The WYSIWYG post body. Emits sanitized-on-blur-worthy HTML via
- * editor.getHTML() — still re-sanitized server-side on every save
- * (lib/sanitize.ts sanitizeBlogHtml), this is only a display nicety, never
- * the trust boundary.
+ * The WYSIWYG article body, shared by /hq/posts (first-party editorial) and
+ * /employer/articles (a company's own writing).
+ *
+ * Whatever comes out of editor.getHTML() is re-sanitized server-side on every
+ * save — sanitizeBlogHtml for /hq, sanitizeUgcHtml for companies (see
+ * lib/sanitize.ts, they differ on nofollow and remote images). This component
+ * is a display nicety and never the trust boundary, which is exactly why it
+ * can be shared by two paths with different trust levels.
  */
 import { useEffect, useRef, type CSSProperties } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
