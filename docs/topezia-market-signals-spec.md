@@ -1,7 +1,26 @@
 # Topezia — Market Signal Cards Spec
 
-> **Status:** New feature spec, additive to the feed. Not a replacement for any existing slice — can ship whenever ingestion volume supports it (already true at current scale: 13,556 jobs / 128 sources).
+> **Status:** New feature spec, additive to the feed. Not a replacement for any existing slice.
+> **Revised 2026-07-30** after testing the original v1 against the live database. The concept and guardrails are unchanged; the *metrics* changed from deltas to levels, because deltas are not honestly computable yet. See §0.
 > **Origin:** Replaces the "third-party news snippet" idea. Rejected that approach for licensing risk (republishing AP/Reuters-sourced content without full attribution/outbound links) and low differentiation. This spec uses Topezia's own ingested data instead — legally clean, on-brand with the honesty-through-data positioning, and reuses the ingestion pipeline with no new external dependency.
+
+---
+
+## 0. What changed in the 2026-07-30 revision, and why
+
+The first draft specced four **delta** signals ("up 18% this month"). Measured against the live database, every one of them would have shipped a confidently wrong number:
+
+- **Survivorship bias.** We hold *live* postings; boards remove filled roles. So the 0–30d cohort is systematically fuller than the 30–60d one, and `posting_volume_change` reads "up" for every scope, always: account-executive 460 vs 62, backend-engineer 274 vs 64, engineering-manager 172 vs 49. That is board attrition, not a market move.
+- **Index age.** Oldest `firstSeenAt` is 2026-07-16 — the index is 14 days old, so a `90d` window has nothing to compare against.
+- **Our own seeding looks like market activity.** 98 of 128 companies had a first listing in the last 7 days because we added boards, not because employers entered the market.
+
+The original `≥10 listings in both windows` rule did not catch any of this, and could not have: it is a **magnitude** check, and these are **bias** failures — large samples, high confidence, systematically wrong. That distinction is now a shipping requirement (§4a).
+
+Three fixes, all adopted:
+
+1. **`postedAt`, never `firstSeenAt`,** for anything time-scoped. `firstSeenAt` records when *we crawled* a posting, so adding one big board renders as a market surge. `postedAt` is present on **100%** of live jobs.
+2. **Levels, not deltas, for v1.** "61% of backend roles are remote, based on 274 postings" is true today and carries no survivorship risk. The delta version becomes correct later with no schema change — expiry *marks* rows (`SUSPECTED_DEAD` → `EXPIRED`) rather than deleting them, so the history accrues on its own. Nothing to build for that; only time.
+3. **Read from `page_stats`, don't recompute.** See §2.
 
 ---
 
@@ -11,57 +30,65 @@ A **Market Signal** is a short, data-backed observation about a user's field, co
 
 Examples of the sentence shapes to generate (not literal copy — see §3 for exact templates):
 
-- "Travel nurse postings in Texas are up 18% this month."
-- "3 new companies started posting frontend roles this week."
-- "Median rate for graphic designers moved from $42/hr to $45/hr over the last 30 days."
-- "Remote share for backend roles is now 61%, up from 48% last quarter."
+- "142 travel nurse postings are open in Texas right now."
+- "38 companies are hiring frontend developers right now."
+- "Median rate for graphic designers is $45/hr, most between $38 and $52."
+- "61% of backend roles are remote."
+
+Each carries its sample ("based on N postings"), which is the whole trust mechanism.
+
+The v1 shapes are **levels** — statements about the market as it stands. The delta shapes the first draft used ("up 18% this month", "moved from $42 to $45") are deferred to v2 and listed in §3a; §0 explains why they would have been wrong today.
 
 All numbers trace directly to a query Claude Code can point to — no LLM-generated numbers, ever. If an LLM is used at all (optional, see §5), it only rephrases a pre-computed fact, it never invents or estimates one.
 
 ---
 
-## 2. Data model
+## 2. Data model — v1 adds NO new table
 
-New table, computed at the end of each ingestion run (same job that already produces `page_stats` from the SEO addendum — this reuses that computation, don't duplicate it):
+The original draft specced a `market_signals` table. Following its own instruction not to duplicate the `page_stats` computation to its conclusion: **every v1 level signal is a column `page_stats` already has to hold** (SEO addendum §2.1 — listing count, median/p25/p75 pay, pay sample size, top skills, employment-type breakdown, remote share, `computed_at`, all scoped by role/location).
 
-```sql
-create table market_signals (
-  id uuid primary key default gen_random_uuid(),
-  scope_type text not null,        -- 'role' | 'role_location' | 'vertical' | 'remote_role'
-  role_id uuid references roles(id),
-  location_id uuid references locations(id),  -- nullable
-  vertical_id uuid references verticals(id),  -- nullable
-  signal_type text not null,       -- see §3 enum
-  metric_value numeric,            -- the computed delta/value
-  metric_unit text,                -- 'percent' | 'usd_hour' | 'usd_year' | 'count'
-  comparison_window text not null, -- '7d' | '30d' | '90d'
-  confidence text not null,        -- 'high' | 'low' — see §4
-  computed_at timestamptz not null default now(),
-  expires_at timestamptz not null  -- computed_at + comparison_window, signal stops surfacing after this
-);
-```
+So v1 is a **read layer**, not a second aggregation. This is not a scope cut — it is the only way to guarantee the feed card and the SEO page never show two different numbers for the same fact, which §3 already demanded and which a parallel query would eventually violate.
 
-- One row per (scope, signal_type, window) per computation run — overwrite/upsert rather than accumulate history, unless you want a "trend over time" feature later (out of scope for v1).
-- Indexed on `(role_id, expires_at)` and `(vertical_id, expires_at)` for feed lookup.
+A `MarketSignal` table earns its place when **deltas** arrive, because a delta needs a stored prior observation that `page_stats` (a current-state snapshot) does not keep. Defer the table until then, and add it with real history behind it.
+
+Corrections to the original DDL, for whenever that table is written:
+
+- **There is no `locations` table.** `Job` carries `locationState` (US state code, US-only concept) and `country` (ISO-3166 alpha-2, nullable — `null` means genuinely unknown, never assume US). Scope by those columns, not a foreign key that has nothing to point at.
+- **Table and column casing is PascalCase, quoted** (`"Job"`, `"Role"`, `"Vertical"`) — this is a Prisma-managed schema, so the model goes in `prisma/schema.prisma` and the migration is hand-written SQL applied per `docs/runbooks/prisma-baseline.md`, never `migrate dev` against production.
+- **`baseSalary` is a JSON-LD field name, not a column.** The columns are `salaryMin`, `salaryMax`, `salaryPeriod` (`HOUR`/`YEAR`/…) and `salaryCurrency`.
 
 ---
 
-## 3. Signal types (v1 — ship these four, nothing else)
+## 3. Signal types (v1 — ship these four levels, nothing else)
 
 Keep the list small. A feed with 12 signal types feels like noise; 4 feels like insight.
 
-| `signal_type` | Template | Data source |
+Every one of these is a **level**: a statement about the market as it stands, with the sample it rests on. None compares two time windows, so none can be distorted by survivorship or by when we started collecting.
+
+| `signal_type` | Template | Source column in `page_stats` |
 |---|---|---|
-| `posting_volume_change` | "{role} postings in {location} are up/down {pct}% this {window}" | count of active listings this window vs. prior window, same scope |
-| `new_employer_activity` | "{n} new companies started posting {role} roles this week" | distinct employers with first-ever listing in scope, in last 7d |
-| `rate_shift` | "Median rate for {role} moved from ${old} to ${new}/{unit} over the last {window}" | median `baseSalary` this window vs. prior window |
-| `remote_share_shift` | "Remote share for {role} is now {pct}%, up/down from {old_pct}% last {window}" | % remote this window vs. prior window |
+| `open_volume` | "{n} {role} postings are open in {location} right now" | `listing_count` |
+| `employer_breadth` | "{n} companies are hiring {role} right now" | distinct employer count in scope |
+| `pay_level` | "Median {role} pay is ${median}/{unit}, most between ${p25} and ${p75}" | `median_pay`, `p25_pay`, `p75_pay`, `pay_type`, `pay_sample_size` |
+| `remote_level` | "{pct}% of {role} postings are remote" | `remote_share` |
 
 Rules:
 
-- **Minimum sample size to generate a signal at all: 10 listings in both the current and comparison window.** Below that, don't generate the row — small-sample deltas are noise and undermine the honesty positioning ("up 40%!" from 2→3 postings is misleading, not honest).
-- **Minimum meaningful delta to surface:** ±5% for posting_volume/remote_share, ±$1/hr or ±$2,000/yr for rate_shift. Compute smaller deltas but don't feed-surface them — store them (useful for future trend features) but mark `confidence: 'low'` or skip insertion.
-- Round all displayed numbers the same way as `page_stats` in the SEO addendum (consistency between feed and SEO pages matters — a user shouldn't see two different numbers for the same fact).
+- **Minimum sample size to generate a signal at all: 10 listings in scope.** Below that, don't generate it. (For `pay_level`, the threshold is 10 listings *with extracted pay*, not 10 listings — the SEO addendum §2.1 already omits the pay block below that bar, and the feed must agree with it.)
+- **Always render the sample.** Every card carries "based on N postings" (§6). A level without its denominator is a claim, not a fact.
+- Round all displayed numbers the same way as `page_stats` in the SEO addendum. Since v1 reads the same row, this is automatic rather than a discipline to maintain.
+- **Pay is USD-only today** (measured: 2,150 live jobs carry a range, all USD, split HOUR 53 / YEAR 2,097). Split by pay type as the SEO addendum requires; when a second currency appears, `pay_level` must scope by currency or omit rather than mixing.
+
+### 3a. Deferred to v2 — the delta signals
+
+Held back, not abandoned. Each becomes correct once there is real posting history:
+
+| `signal_type` | Blocked on |
+|---|---|
+| `posting_volume_change` | Retained `EXPIRED` rows spanning both windows, so the comparison isn't survivorship. Cohort by `postedAt`, count **all statuses**, never LIVE-only. |
+| `rate_shift` | Same, plus pay coverage above 15.9% so the per-window sample clears the bar. |
+| `remote_share_shift` | Same window history. |
+| `new_employer_activity` | A way to distinguish "employer newly entered the market" from "we newly added their board". Until then it measures our own ingestion. |
 
 ---
 
@@ -69,9 +96,25 @@ Rules:
 
 Same principle as the match-score framing from earlier: **describe the market, never judge the user or the employer.**
 
-- `confidence: 'high'` = sample size ≥ 25 in both windows. `'low'` = 10–24. Only render `'high'` signals by default; `'low'` signals are a fallback if a scope has nothing else to show, styled visually softer (e.g., "early signal" tag).
+- `confidence: 'high'` = sample size ≥ 25 in scope (≥ 25 in *both* windows, once delta signals exist). `'low'` = 10–24. Only render `'high'` signals by default; `'low'` signals are a fallback if a scope has nothing else to show, styled visually softer (e.g., "early signal" tag).
+- Confidence is a **sample-size** grade and nothing more. It says the number is not noisy; it does not say the number is unbiased. That is a separate gate — see §4a.
 - No editorializing language — "up 18%" not "hot market" or "don't miss out." No urgency framing ("act now," "limited time") — that's an ethical line for a platform whose whole pitch is honesty over hype.
 - Never generate an employer-specific signal ("Acme Corp posted 5 jobs this week") without that employer's consent — this is the same boundary as declining the employer-honesty-score idea. Aggregate only; no single-employer call-outs in v1.
+
+---
+
+## 4a. Bias risk must be stated before a signal ships
+
+**A sample-size threshold is a magnitude check. It cannot see a bias.** The original v1 cleared its own `≥10 in both windows` rule with samples in the hundreds and still produced "up 568%" for every role, because survivorship is not noise — it is a systematic tilt that gets *more* confident with more data.
+
+So every new signal type must answer these in writing before it ships, alongside its threshold:
+
+1. **Is this metric sensitive to when we started collecting?** A window longer than the index's own age cannot be honest. (Index age = oldest `firstSeenAt`.)
+2. **Is it sensitive to collection completeness?** If adding or removing a source moves the number, it measures Topezia, not the market. `firstSeenAt` fails this by construction; so does anything counting "new" employers.
+3. **Does the population change between the things being compared?** Live-only cohorts are depleted by age, so any two-window comparison over live rows is biased by default.
+4. **What would this render if the underlying market were completely flat?** If the answer isn't "no signal", the metric is measuring something other than the market.
+
+A signal that cannot answer all four ships as a **level** (§3) or not at all. Levels are immune to 1–3 by construction, which is the real reason v1 is levels-only rather than a temporary concession.
 
 ---
 
@@ -105,8 +148,13 @@ If the template sentences feel too mechanical later, an LLM (Haiku-class, same a
 
 ## 8. Sequencing
 
-1. Extend the ingestion run to compute `market_signals` alongside `page_stats` (shared computation window logic — do this in the same job, not a separate cron).
-2. Backfill signal rows once against current data (13,556 jobs is plenty of sample size to validate the queries before wiring up the feed).
-3. Feed card component + placement logic.
-4. Deep-link to SEO pages.
-5. (Later) LLM rephrasing layer, if template copy feels stale after user feedback.
+**`page_stats` is a hard prerequisite, and it does not exist yet** — it is still the open item from the SEO addendum §5. Nothing in this document should start before it lands. Building a one-off aggregation for market signals now would be thrown away the moment `page_stats` arrives, and until then would be a second query drifting out of step with the first.
+
+That ordering is also the better trade on its own: `page_stats` is load-bearing for the entire programmatic-SEO slice, not just this feature, and it makes market signals nearly free.
+
+1. **Build `page_stats`** (SEO addendum §2.2): computed at the end of each ingestion run, keyed by `(page_type, role_id, location)`, holding listing count, median/p25/p75 pay + pay sample size, top skills, employment-type breakdown, remote share, `computed_at`. Scope by `locationState`/`country`, not a `locations` table — there isn't one.
+2. **Stats blocks on the programmatic SEO pages** (SEO addendum §2.1) — the first consumer, and the one that proves the numbers.
+3. **Market signal cards as a read layer** over that table: the four levels in §3, no new aggregation, no new table.
+4. Feed placement logic (§6) + deep-link to the matching SEO page.
+5. **(Later, needs history)** the delta signals in §3a, once retained `EXPIRED` rows span both windows. Each must pass §4a first.
+6. **(Later, optional)** LLM rephrasing layer, if template copy feels stale after user feedback.

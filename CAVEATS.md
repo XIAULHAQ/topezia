@@ -158,7 +158,7 @@ traffic · 🟠 should fix before launch · 🟡 known tradeoff / later.
 - 🟢 **Test Profile rows cleared** from prod (was 0 profiles on 2026-07-18; 8 now,
   from real signups — the count moves, so don't read a number here as current).
 
-## Market Signals (spec received 2026-07-30 — NOT built, and not yet buildable honestly)
+## Market Signals (spec revised 2026-07-30 — NOT built; blocked on page_stats)
 Spec at `docs/topezia-market-signals-spec.md`. The concept is sound and the
 guardrails are right. What follows is measured against the live database, not an
 opinion about the design — **all four v1 signals are delta signals, and Topezia
@@ -197,10 +197,15 @@ does not yet have the history to compute a delta honestly.**
   nothing to point at. The DDL is also snake_case against PascalCase tables, and
   `baseSalary` is a JSON-LD field name, not a column (`salaryMin`/`salaryMax`/
   `salaryPeriod`).
-- **What IS shippable today: the same four facts as LEVELS rather than deltas**
-  ("61% of backend roles are remote, based on 274 postings"). Zero survivorship
-  risk, honest at current history, and the delta version becomes correct later
-  with no schema change.
+- 🟢 **Spec revised and agreed**: v1 is now four LEVEL signals reading straight
+  off `page_stats` — no `market_signals` table until deltas arrive, since a
+  delta is the only thing `page_stats` can't already answer. Deltas deferred to
+  v2 behind real history. The spec also gained §4a: a new signal type must state
+  its BIAS risk, not just its sample-size threshold — the original rule cleared
+  samples in the hundreds and still produced "up 568%" for every role.
+- **Next action is `page_stats`, not this.** It is the hard prerequisite, it is
+  load-bearing for the whole programmatic-SEO slice, and building a one-off
+  aggregation for signals first would be thrown away the moment it lands.
 
 ## Portfolio publish staleness
 - 🟢 **FIXED 2026-07-30: a published piece kept showing "This is a draft".**
