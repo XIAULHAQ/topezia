@@ -7,6 +7,7 @@ import type { MetadataRoute } from "next";
 import { listPublishedPages } from "@/lib/seo/pages";
 import { jobPath } from "@/lib/seo/job-slug";
 import { prisma } from "@/lib/prisma";
+import { portfolioIndexable, INDEXABLE_WORK_SELECT } from "@/lib/portfolio/indexing";
 
 export const revalidate = 3600;
 
@@ -35,14 +36,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       where: { status: "PUBLISHED" },
       orderBy: { publishedAt: "desc" },
       take: 5000,
-      select: { slug: true, updatedAt: true },
+      select: { slug: true, updatedAt: true, ...INDEXABLE_WORK_SELECT },
     });
-    portfolioPages = rows.map((r) => ({
-      url: `${base}/portfolio/${r.slug}`,
-      lastModified: r.updatedAt,
-      changeFrequency: "monthly" as const,
-      priority: 0.6,
-    }));
+    portfolioPages = rows
+      // Same function the page's generateMetadata uses. Advertising a URL here
+      // that then serves `noindex` is a contradiction Search Console reports
+      // back as an error, so the two decisions come from one place.
+      .filter(portfolioIndexable)
+      .map((r) => ({
+        url: `${base}/portfolio/${r.slug}`,
+        lastModified: r.updatedAt,
+        changeFrequency: "monthly" as const,
+        priority: 0.6,
+      }));
   } catch {
     /* leave empty */
   }

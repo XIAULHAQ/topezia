@@ -25,6 +25,8 @@ import { portfolioImageUrl } from "@/lib/portfolio/storage";
 import { safeJsonLd } from "@/lib/seo/json-ld";
 import { categoryLabel, categorySlug } from "@/lib/portfolio/categories";
 import { videoEmbedUrl, videoPosterUrl } from "@/lib/portfolio/video";
+import { portfolioIndexable } from "@/lib/portfolio/indexing";
+import ReportButton from "@/app/_components/ReportButton";
 import PortfolioRail from "./portfolio-rail";
 import VideoEmbed from "./video-embed";
 import InviteReviewers from "./invite-reviewers";
@@ -79,6 +81,10 @@ export async function generateMetadata({ params }: { params: { slug: string } })
       ...(cover ? { images: [cover] } : {}),
     },
     twitter: { card: "summary_large_image" },
+    // Clean enough to publish is not automatically clean enough to put our
+    // domain behind — see lib/portfolio/indexing.ts. `follow` stays on, and
+    // sitemap.ts uses the same function so the two can't disagree.
+    robots: { index: portfolioIndexable({ ...p, captions: p.media.map((m) => m.caption) }), follow: true },
   };
 }
 
@@ -339,6 +345,11 @@ export default async function PortfolioDetailPage({ params }: { params: { slug: 
 
         <div style={S.backRow}>
           <Link href="/portfolio" style={S.backLink}>← All work</Link>
+        </div>
+
+        {/* Quiet, and at the bottom. See ReportButton for why it isn't louder. */}
+        <div style={{ marginTop: 22 }}>
+          <ReportButton kind="PORTFOLIO" targetId={p.id} />
         </div>
       </main>
 

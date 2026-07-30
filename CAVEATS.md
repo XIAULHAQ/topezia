@@ -313,18 +313,85 @@ does not yet have the history to compute a delta honestly.**
   every other caller of `lib/rate-limit.ts`: serverless instances don't share
   memory, so this raises the cost of a farm rather than making one impossible.
   Upgrade path is a shared store (Upstash/Redis) behind the same signature.
-- 🔴 **NOT built, and each is a real gap:** no CAPTCHA/Turnstile on signup (a
-  vendor + a CSP change in `next.config.js`); no disposable-email domain
-  blocklist; no moderation queue or `flagged`/`spamScore` columns — v1 is
-  deliberately migration-free, scoring at read and write time instead, so
-  nothing was applied by hand against production; no member-facing "report this
-  profile" control; no re-scoring of content that was written before this
-  shipped (nothing currently trips it, so there was nothing to re-score).
 - 🟡 **iGaming and pharma professionals get `noindex`, not a block.** A
   legitimate casino-industry marketer or a pharmacologist whose CV names a drug
   scores at `review` and quietly loses indexing. That is the accepted cost of
-  the asymmetry above, but it is a real false positive and worth revisiting if
-  such a member ever complains.
+  the asymmetry above. `Profile.spamCleared` (migration 044, set from
+  `/hq/spam`) is the remedy — it overrides the SCORE only, never the substance
+  bar, because thinness is not a false positive.
+
+### Second pass (same day) — the remaining gaps, closed
+- 🟢 **Disposable-email blocklist** (`lib/email-domains.ts`). Deliberately
+  narrow and curated: public blocklists run to 100k+ domains and sweep up real
+  providers, and blocking a real job seeker is worse here than admitting a
+  throwaway. Apple Hide-My-Email, SimpleLogin, DuckDuckGo and Firefox Relay are
+  deliberately ABSENT — an alias is not a throwaway, and blocking them punishes
+  privacy-minded users. Enforced server-side in the index gate (a throwaway
+  address never earns an indexed page); the check at signup is a courtesy that
+  fails fast and is trivially bypassed, which it does not pretend otherwise.
+- 🟢 **Portfolio indexing + sitemap gated too** (`lib/portfolio/indexing.ts`).
+  Published work was in `sitemap.xml` and indexed with no score check. Both the
+  page's `generateMetadata` and `app/sitemap.ts` now call ONE function, so the
+  sitemap can't advertise a URL the page then refuses to index — Search Console
+  reports that contradiction as an error.
+- 🟢 **Migration 044 applied by hand** — `Profile.spamCleared` + `ContentReport`.
+  Additive and idempotent only.
+- 🔴 **`prisma migrate diff` tried to delete the embeddings.** The generated
+  script for this change contained `ALTER TABLE "Profile" DROP COLUMN
+  "embedding"`, because pgvector is commented out in `schema.prisma` and the
+  differ reads it as drift — running it would have destroyed the matcher's core
+  data, plus dropped array defaults and re-added existing foreign keys.
+  Generated SQL here is **a suggestion to read, never a script to run.**
+  Verified before and after: 8/8 profiles still hold embeddings.
+- 🟢 **Member-facing report control** (`app/_components/ReportButton.tsx`) on
+  public profiles and portfolio pages, plus `POST /api/report` (10/h per IP).
+  Verified end-to-end in the browser: row written, surfaced in the queue,
+  resolved, then the test row deleted by exact note match.
+- 🔴 **A report is a SIGNAL, never an action.** Filing one hides nothing and
+  changes no score. Auto-hiding on N reports would turn the button into a way
+  to take a stranger's profile down, which on a site about people's careers is
+  a worse failure than the spam it would catch. The UI says so in as many words.
+- 🟡 **Reports are open to signed-out visitors, and no IP is stored.** The
+  person best placed to notice an impersonation is the one being impersonated,
+  who has no account here. The unique index is `(kind, targetId,
+  reporterUserId)` and NULLs are distinct in Postgres, so anonymous reports are
+  bounded by the rate limit rather than by the index — intended, not an
+  oversight.
+- 🟢 **`/hq/spam` review queue.** Shows the score AND the reasons, because a
+  queue that only says "suspicious" trains a reviewer to rubber-stamp it.
+  Actions: clear (re-index), hide, back-to-draft, resolve report. There is
+  deliberately **no delete-member** action. Verified: unauthenticated GET and
+  PATCH both 401; the unauthenticated page serves the login form with zero
+  queue markup (only `<title>` matches, same as `/hq/posts`).
+- 🟡 **The queue scores at read time and is capped at 500 rows of each kind.**
+  There is no stored score — changing a threshold in `lib/ugc.ts` re-decides
+  every page immediately rather than leaving numbers computed under dead rules.
+  The cap is REPORTED in the response and shown in the UI, so "queue is empty"
+  can never quietly mean "we only looked at the newest few hundred". When it
+  starts to bite, the fix is a stored score written at the end of the ingestion
+  run, same shape as PageStats.
+- 🟢 **Turnstile wired into BOTH signup forms** (`/login` and `/r/[token]`),
+  using Supabase's own captcha support rather than proxying auth through our
+  own route. **Inert until `NEXT_PUBLIC_TURNSTILE_SITE_KEY` is set** — no
+  script loads, no token is sent, nothing changes. Verified: 0 Cloudflare
+  script tags on the rendered pages today.
+- 🔴 **The two halves must be switched on in the right order.** Enabling
+  captcha in Supabase Auth WITHOUT setting the site key breaks every signup and
+  sign-in, because Supabase would demand a token nothing is producing. Set the
+  key, deploy, THEN enable it in Supabase. Both forms send the token because
+  the setting is project-wide — the `/r/[token]` one is easy to forget and
+  would silently break every endorsement.
+- 🟢 **`scripts/rescore-ugc.ts`** re-scores all existing content against the
+  current rules. Read-only on purpose: retroactively un-publishing someone's
+  work because a threshold moved is not a thing to do from a script. Run it
+  after ANY change to `lib/ugc.ts`. Current result: 14 items scanned, 0 at or
+  above the review bar.
+- 🔴 **Still NOT built:** no CAPTCHA on `POST /api/profile` — that is the
+  anonymous onboarding path and the "no signup wall" promise on the jobs pages,
+  so it keeps its rate limit and its `noindex` instead of a challenge; no
+  appeal path for a member whose page was hidden (they are not told, and there
+  is no form — today the remedy is emailing a human); no automated re-scoring
+  on a schedule.
 
 ## Route loading indicator
 - 🟢 **Navigation progress bar added 2026-07-30** (`app/_components/RouteProgress.tsx`,

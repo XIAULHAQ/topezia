@@ -24,6 +24,8 @@ import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { C, GRAD, FONT, BrandMark, Icon } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/client";
 import { ENDORSEMENT_LIMITS, type RequestContext } from "@/lib/endorsements/doc";
+import Turnstile, { turnstileEnabled } from "@/app/_components/Turnstile";
+import { isDisposableEmail, DISPOSABLE_EMAIL_MESSAGE } from "@/lib/email-domains";
 
 type Step = "write" | "auth" | "done";
 type Listing = {
@@ -47,6 +49,8 @@ export default function RespondClient({ token }: { token: string }) {
 
   // Auth
   const [mode, setMode] = useState<"signup" | "signin">("signup");
+  // Null unless a captcha is configured — inert by default, see Turnstile.tsx.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
 
@@ -104,9 +108,14 @@ export default function RespondClient({ token }: { token: string }) {
     try {
       const supabase = createClient();
       const addr = email.trim();
+      if (mode === "signup" && isDisposableEmail(addr)) throw new Error(DISPOSABLE_EMAIL_MESSAGE);
+      // MUST carry the captcha token too. Supabase's captcha setting is
+      // project-wide, so enabling it while this form sent no token would break
+      // every endorsement — the second signup surface is easy to forget.
+      const options = captchaToken ? { captchaToken } : undefined;
       const { data, error: authErr } = mode === "signup"
-        ? await supabase.auth.signUp({ email: addr, password: pw })
-        : await supabase.auth.signInWithPassword({ email: addr, password: pw });
+        ? await supabase.auth.signUp({ email: addr, password: pw, options })
+        : await supabase.auth.signInWithPassword({ email: addr, password: pw, options });
       if (authErr) throw new Error(authErr.message);
       // With email confirmation switched on, signUp returns no session. Say so
       // plainly rather than silently failing to post the endorsement.
@@ -302,8 +311,11 @@ export default function RespondClient({ token }: { token: string }) {
 
         {error && <p style={S.err}>{error}</p>}
 
-        <button type="button" onClick={authAndSend} disabled={busy || !email.trim() || pw.length < 8}
-          style={{ ...S.submit, opacity: busy || !email.trim() || pw.length < 8 ? 0.5 : 1 }}>
+        <Turnstile onToken={setCaptchaToken} />
+
+        <button type="button" onClick={authAndSend}
+          disabled={busy || !email.trim() || pw.length < 8 || (turnstileEnabled() && !captchaToken)}
+          style={{ ...S.submit, opacity: busy || !email.trim() || pw.length < 8 || (turnstileEnabled() && !captchaToken) ? 0.5 : 1 }}>
           {busy ? "Sending…" : mode === "signup" ? "Create account & send" : "Sign in & send"}
         </button>
         <button type="button" onClick={() => { setStep("write"); setError(null); }} style={S.back}>← Back to what you wrote</button>

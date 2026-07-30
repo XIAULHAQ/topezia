@@ -18,12 +18,17 @@
 const dev = process.env.NODE_ENV !== "production";
 const CSP = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""} https://*.posthog.com`,
+  // challenges.cloudflare.com: Turnstile on the signup form. Loaded only when
+  // NEXT_PUBLIC_TURNSTILE_SITE_KEY is set (app/_components/Turnstile.tsx), but
+  // the CSP has to allow it unconditionally — a header can't read that env var
+  // per-request, and allowing a host is not the same as loading from it.
+  `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""} https://*.posthog.com https://challenges.cloudflare.com`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.posthog.com",
-  "frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com",
+  // Turnstile renders its challenge in an iframe, so it needs frame-src too.
+  "frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com https://challenges.cloudflare.com",
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",

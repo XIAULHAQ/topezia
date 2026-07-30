@@ -424,6 +424,14 @@ model Profile {
   // Member-chosen availability badge on the public profile.
   openToWork        Boolean  @default(false)
 
+  // /hq override: index this profile even though the spam scorer flagged it.
+  // Exists because the scorer has KNOWN false positives — an iGaming marketer
+  // or a pharmacologist describes real work in vocabulary that scores badly
+  // (see lib/ugc.ts). Without a way to say "no, this person is fine", the only
+  // remedy for a wrongly-withheld page would be weakening the scorer for
+  // everyone. Never set by the member; only from /hq/spam.
+  spamCleared       Boolean  @default(false)
+
   // Insight alerts (opt-in from /coach): weekly snapshot + diff of the user's
   // market; an email goes out only when something actually moved.
   insightAlerts     Boolean @default(false)
@@ -1113,4 +1121,51 @@ model Application {
   @@unique([jobId, profileId])
   @@index([profileId])
   @@index([jobId, stage])
+}
+
+enum ReportKind {
+  PROFILE
+  PORTFOLIO
+}
+
+enum ReportReason {
+  SPAM
+  IMPERSONATION
+  OFFENSIVE
+  NOT_THEIR_WORK
+  OTHER
+}
+
+// Someone telling us a public page is wrong.
+//
+// A report is a SIGNAL, never an action: filing one hides nothing and changes
+// no score. It puts the page in the /hq queue for a person to look at. The
+// alternative — auto-hiding on N reports — turns the button into a way to take
+// someone's profile down, which on a site about people's careers is a worse
+// failure than the spam it would catch.
+//
+// No IP is stored. Rate limiting happens in memory at the route; keeping a log
+// of who-looked-at-whom is exactly the sort of data this product has avoided
+// elsewhere (résumé files, contact emails on public pages), and it would be
+// retained long after it stopped being useful.
+model ContentReport {
+  id             String       @id @default(uuid())
+  kind           ReportKind
+  targetId       String // Profile.id or Portfolio.id — deliberately not an FK,
+                        // so a report survives the thing it is about being deleted
+  reason         ReportReason
+  note           String?
+  // Supabase auth id when the reporter was signed in; null when they weren't.
+  reporterUserId String?
+
+  createdAt      DateTime  @default(now())
+  resolvedAt     DateTime?
+  resolution     String?
+
+  // One report per person per page. NULLs are DISTINCT in Postgres, so this
+  // deliberately does NOT collapse anonymous reports into one — those are
+  // bounded by the route's rate limit instead.
+  @@unique([kind, targetId, reporterUserId])
+  @@index([resolvedAt, createdAt])
+  @@index([kind, targetId])
 }

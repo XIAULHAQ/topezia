@@ -20,6 +20,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { clearClientCaches } from "@/lib/client-cache";
+import Turnstile, { turnstileEnabled } from "@/app/_components/Turnstile";
+import { isDisposableEmail, DISPOSABLE_EMAIL_MESSAGE } from "@/lib/email-domains";
 
 const C = { c1: "#8B5CF6", c2: "#3B82F6", ink: "#0F172A", slate: "#334155", mut: "#64748B", line: "#E2E8F0" };
 const GRAD = `linear-gradient(135deg,${C.c1},${C.c2})`;
@@ -90,6 +92,9 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
   const [notice, setNotice] = useState<string | null>(null);
+  // Stays null when no captcha is configured — see Turnstile.tsx. The form only
+  // waits on it when a key exists, so this is inert by default.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   // What the button reports while it works. "…" alone left people unsure
   // anything had happened during a multi-second sign-in.
   const [phase, setPhase] = useState<"idle" | "auth" | "setup">("idle");
@@ -171,11 +176,28 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
     // password-manager fill signs in with empty credentials.
     const addr = (email || emailRef.current?.value || "").trim();
     const pw = password || pwRef.current?.value || "";
+
+    // Signup only — someone who ALREADY has an account on a throwaway domain
+    // should still be able to reach it. This is a courtesy check that fails
+    // fast with a clear message; the enforcement that matters happens
+    // server-side, where a profile on a throwaway address simply never earns an
+    // indexed page (app/p/profile-data.ts). A client-side check is trivially
+    // bypassed and is not pretending otherwise.
+    if (mode === "signup" && isDisposableEmail(addr)) {
+      setError(DISPOSABLE_EMAIL_MESSAGE);
+      setLoading(false);
+      setPhase("idle");
+      return;
+    }
+
     try {
+      // Only sent when a captcha is actually configured — with no site key
+      // there is no token and `options` stays undefined, exactly as before.
+      const options = captchaToken ? { captchaToken } : undefined;
       const { data, error } =
         mode === "signup"
-          ? await supabase.auth.signUp({ email: addr, password: pw })
-          : await supabase.auth.signInWithPassword({ email: addr, password: pw });
+          ? await supabase.auth.signUp({ email: addr, password: pw, options })
+          : await supabase.auth.signInWithPassword({ email: addr, password: pw, options });
       if (error) throw error;
 
       // If email confirmation is on, signUp returns no session yet.
@@ -313,7 +335,18 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
               {error && <p style={S.error}>{error}</p>}
               {notice && <p style={S.notice}>{notice}</p>}
 
-              <button type="submit" className="lg-btn" style={{ ...S.submit, opacity: loading ? 0.85 : 1 }} disabled={loading} aria-busy={loading}>
+              <Turnstile onToken={setCaptchaToken} />
+
+              {/* Blocked on the captcha ONLY when one is configured. With no
+                  site key turnstileEnabled() is false and this reads exactly as
+                  it did before: disabled while loading, nothing else. */}
+              <button
+                type="submit"
+                className="lg-btn"
+                style={{ ...S.submit, opacity: loading || (turnstileEnabled() && !captchaToken) ? 0.85 : 1 }}
+                disabled={loading || (turnstileEnabled() && !captchaToken)}
+                aria-busy={loading}
+              >
                 {loading ? (
                   <>
                     <svg className="lg-spin" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>

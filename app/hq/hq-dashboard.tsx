@@ -112,6 +112,11 @@ export default function HqDashboard() {
         <button onClick={() => setTab("waitlist")} style={tab === "waitlist" ? S.tabOn : S.tabOff}>
           Employer waitlist · {waitlist.totalSignups}
         </button>
+        {/* A real page, not a tab: the queue scores rows on demand, so it
+            shouldn't load alongside the dashboard on every visit. */}
+        <a href="/hq/spam" style={{ ...S.tabOff, textDecoration: "none", display: "inline-block" }}>
+          Review queue →
+        </a>
       </div>
 
       {tab === "members" ? (

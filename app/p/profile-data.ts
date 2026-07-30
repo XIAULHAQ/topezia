@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { portfolioImageUrl } from "@/lib/portfolio/storage";
 import { publicationImageUrl } from "@/lib/publications/storage";
 import { scoreUgcFields, isSuspect } from "@/lib/ugc";
+import { isDisposableEmail } from "@/lib/email-domains";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com";
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
@@ -17,6 +18,8 @@ const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g,
 export type PublicTab = "overview" | "experience" | "skills" | "projects" | "education";
 export const TAB_SLUGS: Exclude<PublicTab, "overview">[] = ["experience", "skills", "projects", "education"];
 export interface PubProfile {
+  /** Profile.id — needed only so the report control knows what it is reporting. */
+  id: string;
   slug: string;
   fullName: string | null;
   photoUrl: string | null;
@@ -97,9 +100,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 async function accountState(userId: string): Promise<"confirmed" | "none" | "unknown"> {
   if (!UUID.test(userId)) return "none";
   try {
-    const rows = await prisma.$queryRaw<{ ok: boolean }[]>`
-      SELECT (email_confirmed_at IS NOT NULL) AS ok FROM auth.users WHERE id = ${userId}::uuid LIMIT 1`;
+    const rows = await prisma.$queryRaw<{ ok: boolean; email: string | null }[]>`
+      SELECT (email_confirmed_at IS NOT NULL) AS ok, email FROM auth.users WHERE id = ${userId}::uuid LIMIT 1`;
     if (!rows.length) return "none";
+    // A ten-minute mailbox makes "has an account" free, which is the one thing
+    // this check is supposed to cost something. Enforced HERE rather than at
+    // signup because signup goes client-side straight to Supabase; the account
+    // still gets created, it just never earns an indexed page.
+    if (isDisposableEmail(rows[0]!.email)) return "none";
     return rows[0]!.ok ? "confirmed" : "none";
   } catch (err) {
     console.error("accountState: could not read auth.users — profile indexing falls back to content checks only:", err);
@@ -128,7 +136,11 @@ async function accountState(userId: string): Promise<"confirmed" | "none" | "unk
  * share it, and it starts carrying `noindex, follow` so the links on it still
  * lead somewhere. Nothing is hidden from the member.
  */
-async function indexability(v: Omit<PubProfile, "indexable">, userId: string): Promise<boolean> {
+async function indexability(
+  v: Omit<PubProfile, "indexable">,
+  userId: string,
+  spamCleared: boolean
+): Promise<boolean> {
   const account = await accountState(userId);
   if (account === "none") return false;
 
@@ -137,6 +149,12 @@ async function indexability(v: Omit<PubProfile, "indexable">, userId: string): P
   const backed =
     v.workHistory.length > 0 || v.education.length > 0 || v.portfolios.length > 0 || v.publications.length > 0;
   if (!named || !described || !backed) return false;
+
+  // An /hq reviewer looked at this and said it is a real person. That overrides
+  // the SCORE only — never the bars above. Thinness is not a false positive, it
+  // is genuine thinness, and an empty page should stay out of the index no
+  // matter who vouched for it.
+  if (spamCleared) return true;
 
   // Links are expected here — a real profile links its own site and GitHub.
   const verdict = scoreUgcFields(
@@ -161,6 +179,8 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
     where: { publicSlug: slug },
     select: {
       userId: true, // account-backed? — see indexability()
+      spamCleared: true, // /hq override for a false positive
+      id: true, // for the report control
       publicSlug: true, fullName: true, photoUrl: true, headlineRoleId: true, yearsExperience: true,
       currentLocation: true, industries: true, employmentTypes: true, remoteTypes: true, locations: true,
       workHistory: true, education: true, certifications: true, languages: true, hiddenSections: true,
@@ -206,6 +226,7 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
   const hid = new Set(p.hiddenSections ?? []);
   const headline = p.headlineRoleId ? (await prisma.role.findUnique({ where: { id: p.headlineRoleId }, select: { name: true } }))?.name ?? null : null;
   const view: Omit<PubProfile, "indexable"> = {
+    id: p.id,
     slug: p.publicSlug,
     fullName: p.fullName,
     photoUrl: p.photoUrl,
@@ -248,7 +269,7 @@ export const getPublicProfile = cache(async (slug: string): Promise<PubProfile |
       ? []
       : p.publications.map(({ imagePath, ...pub }) => ({ ...pub, imageUrl: publicationImageUrl(imagePath) })),
   };
-  return { ...view, indexable: await indexability(view, p.userId) };
+  return { ...view, indexable: await indexability(view, p.userId, p.spamCleared) };
 });
 
 export function profileMetadata(p: PubProfile, tab: PublicTab): Metadata {

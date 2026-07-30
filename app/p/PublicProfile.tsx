@@ -18,6 +18,7 @@ import { SiteFooter } from "@/app/_components/SiteChrome";
 // signal — see lib/ugc.ts. A public profile is otherwise a free backlink on a
 // real domain, which is precisely what profile-spam farms are built to collect.
 import { UGC_REL } from "@/lib/ugc";
+import ReportButton from "@/app/_components/ReportButton";
 
 const C = { c1: "#8B5CF6", c2: "#3B82F6", ink: "#0F172A", slate: "#334155", mut: "#64748B", line: "#E2E8F0", bg: "#F1F5F9", navy: "#0F172A", navy2: "#1E1B4B" };
 const GRAD = `linear-gradient(135deg, ${C.c1}, ${C.c2})`;
@@ -473,6 +474,10 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
               </div>
             </Card>
           </div>
+        </div>
+        {/* Quiet, and at the bottom. See ReportButton for why it isn't louder. */}
+        <div style={{ margin: "26px 0 4px" }}>
+          <ReportButton kind="PROFILE" targetId={p.id} />
         </div>
       </main>
       <SiteFooter />
