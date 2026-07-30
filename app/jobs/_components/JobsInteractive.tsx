@@ -16,6 +16,18 @@
  */
 import { useMemo, useState, type ReactNode } from "react";
 import type { SeoJob } from "@/lib/seo/pages";
+
+/**
+ * Everything a job card needs, and nothing it doesn't.
+ *
+ * `descriptionRaw` is deliberately absent. This is a client component, so every
+ * field on this type is serialised into the RSC payload and shipped to the
+ * browser — and descriptions average ~4KB of HTML each. At 150 jobs that was
+ * ~600KB of payload for a field no card ever reads: /jobs/tech-software was
+ * 1,888KB uncompressed. The JSON-LD does need the description, but that is
+ * built server-side in SeoPageView from the full row before it is narrowed here.
+ */
+export type CardJob = Omit<SeoJob, "descriptionRaw">;
 import { placeLabel, salaryText, freshness, salaryBandOf, SALARY_BAND_ORDER, label } from "@/lib/seo/job-display";
 
 type SortKey = "newest" | "salary" | "company";
@@ -25,7 +37,7 @@ const INK = "#1a1a2e";
 const MUTED = "#6b7280";
 const LINE = "#ececf2";
 
-function timeValue(j: SeoJob): number {
+function timeValue(j: CardJob): number {
   return (j.postedAt ?? j.lastVerifiedAt).getTime();
 }
 
@@ -35,7 +47,7 @@ export default function JobsInteractive({
   matchGate,
   alertSlot,
 }: {
-  jobs: SeoJob[];
+  jobs: CardJob[];
   /** What to call this pool in the "showing N of M" line, e.g. "Backend Engineer". */
   poolLabel: string;
   matchGate?: ReactNode;
@@ -115,7 +127,7 @@ export default function JobsInteractive({
   // group capped to 5 rows with an expand toggle.
   const groups = useMemo(() => {
     const order: string[] = [];
-    const byCompany = new Map<string, SeoJob[]>();
+    const byCompany = new Map<string, CardJob[]>();
     for (const j of sorted) {
       if (!byCompany.has(j.companyName)) {
         byCompany.set(j.companyName, []);

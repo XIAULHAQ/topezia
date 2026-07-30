@@ -9,7 +9,7 @@ import { buildSeoCopy, buildFaqs, buildBreadcrumbs, collectionPageLd, breadcrumb
 import { jobPostingLd } from "@/lib/seo/job-posting-ld";
 import StatsBlock from "./StatsBlock";
 import AlertCapture from "./AlertCapture";
-import JobsInteractive from "./JobsInteractive";
+import JobsInteractive, { type CardJob } from "./JobsInteractive";
 import SiteNav from "@/app/_components/SiteNav";
 import { SiteFooter } from "@/app/_components/SiteChrome";
 
@@ -225,6 +225,15 @@ export default async function SeoPageView({ page }: { page: SeoPage }) {
 
   const alertLabel = page.country ? `jobs open to ${countryName(page.country)}` : page.heading;
   const alertPlace = page.state ?? (page.country ? countrySlugFor(page.country) : undefined);
+  /**
+   * Narrow the rows before they cross into the client component. The JSON-LD
+   * above already consumed the full descriptions server-side, so dropping them
+   * here costs nothing and removes the single largest thing in the payload —
+   * see CardJob for the numbers.
+   */
+  const cardJobs: CardJob[] = page.jobs.map(({ descriptionRaw: _drop, ...j }) => j);
+  const cardProjects: CardJob[] = (page.projects ?? []).map(({ descriptionRaw: _drop, ...j }) => j);
+
   const alertSlot = (
     <div id="alerts">
       <AlertCapture slug={page.slug} place={alertPlace} label={alertLabel} />
@@ -302,7 +311,7 @@ export default async function SeoPageView({ page }: { page: SeoPage }) {
               sub="Salaried roles, straight from company career pages."
             />
             {page.jobs.length > 0 ? (
-              <JobsInteractive jobs={page.jobs} poolLabel={page.topic} matchGate={matchGate} alertSlot={alertSlot} />
+              <JobsInteractive jobs={cardJobs} poolLabel={page.topic} matchGate={matchGate} alertSlot={alertSlot} />
             ) : (
               <p style={S.empty}>No salaried openings matching this right now — the freelance briefs below are where this work is being posted today.</p>
             )}
@@ -315,7 +324,7 @@ export default async function SeoPageView({ page }: { page: SeoPage }) {
             {projects.length === 0 && <p style={S.empty}>No open briefs right now. New ones land daily.</p>}
           </>
         ) : (
-          <JobsInteractive jobs={page.jobs} poolLabel={page.topic} matchGate={matchGate} alertSlot={alertSlot} />
+          <JobsInteractive jobs={cardJobs} poolLabel={page.topic} matchGate={matchGate} alertSlot={alertSlot} />
         )}
 
         {page.siblings.length > 0 && (

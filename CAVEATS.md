@@ -382,6 +382,17 @@ does not yet have the history to compute a delta honestly.**
 - 🟡 **The DB error path is deliberately NOT cached.** `computeBrowseHub` throws;
   the catch that degrades to an empty hub lives outside `unstable_cache`, so a
   transient blip can't pin an empty directory for the whole TTL. Keep it that way.
+- 🟢 **SEO listing pages were shipping their job descriptions to the browser
+  (fixed 2026-07-30).** `JobsInteractive` is a client component, so every field
+  on the rows handed to it is serialised into the RSC payload — including
+  `descriptionRaw`, ~4KB of HTML per job, for 150 jobs, which no card ever
+  reads. `/jobs/tech-software` was **1,888KB uncompressed → 363KB** (5.2x), and
+  the DB was never the problem: every query on that page measures 5-7ms and the
+  PageStats lookup is 0ms. The client now receives `CardJob`
+  (`Omit<SeoJob, "descriptionRaw">`); the JSON-LD still gets full descriptions
+  because it is built server-side before the narrowing. **Watch this whenever a
+  server component passes DB rows to a client one — the payload is invisible
+  until you measure it.**
 - 🟡 **`/jobs/{role}` pages still fan out ~26 queries** (`buildListing`: a company
   groupBy plus one findMany per top company). Each is single-digit ms on Vercel, so
   it's fine today, but it's the next hotspot if page latency regresses — and it is

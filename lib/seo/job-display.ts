@@ -5,6 +5,14 @@
  */
 import type { SeoJob } from "./pages";
 
+/**
+ * These helpers only ever read location, salary and remote fields, so they take
+ * the row WITHOUT `descriptionRaw`. That keeps them usable from the client
+ * component, which deliberately never receives descriptions — see CardJob in
+ * app/jobs/_components/JobsInteractive.tsx. A full SeoJob still satisfies this.
+ */
+type DisplayJob = Omit<SeoJob, "descriptionRaw">;
+
 export const label = (s: string) =>
   s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
 
@@ -19,7 +27,7 @@ const REGION_LABEL: Record<string, string> = {
  * label(remoteType) rendered REMOTE_INTL as "Remote Intl" — raw enum, and on a
  * UK page it called a UK-remote job "international". Say the actual scope.
  */
-export function placeLabel(j: SeoJob): string {
+export function placeLabel(j: DisplayJob): string {
   if (!j.remoteType.startsWith("REMOTE")) {
     return j.locationState || REGION_LABEL[j.remoteScope ?? ""] || j.country || label(j.remoteType);
   }
@@ -38,7 +46,7 @@ const CUR_SYM: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", INR: 
  * and it is never FX-converted — showing a client's PKR budget as dollars
  * would invent a number nobody agreed to.
  */
-export function salaryText(j: SeoJob): string | null {
+export function salaryText(j: DisplayJob): string | null {
   if (j.salaryMin == null || j.salaryMax == null) return null;
   const sym = CUR_SYM[j.salaryCurrency] ?? `${j.salaryCurrency} `;
   const unit =
@@ -61,7 +69,7 @@ export function freshness(d: Date): string {
  * project, or in another currency is left out rather than force-converted or
  * mis-bucketed — an honest "not counted here" beats a wrong number.
  */
-export function salaryBandOf(j: SeoJob): string | null {
+export function salaryBandOf(j: DisplayJob): string | null {
   if (j.salaryPeriod !== "YEAR" || j.salaryCurrency !== "USD" || j.salaryMax == null) return null;
   const v = j.salaryMax;
   if (v >= 150000) return "$150k+";
