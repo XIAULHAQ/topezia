@@ -78,7 +78,7 @@ async function getCompany(slug: string) {
         orderBy: [{ role: "asc" }, { joinedAt: "asc" }],
         select: {
           name: true, title: true, role: true,
-          profile: { select: { fullName: true, publicSlug: true, publicVisible: true } },
+          profile: { select: { fullName: true, publicSlug: true, publicVisible: true, headlineRoleId: true } },
         },
       },
     },
@@ -86,6 +86,21 @@ async function getCompany(slug: string) {
 }
 
 type CompanyRecord = NonNullable<Awaited<ReturnType<typeof getCompany>>>;
+
+/**
+ * What each team member does, resolved from their own profile.
+ *
+ * `Profile.headlineRoleId` has no Prisma relation — it is a bare column, and
+ * the /hq members query reaches Role by raw SQL for the same reason — so this
+ * is one extra lookup rather than an include. Cheap: a team is a handful of
+ * people and the ids collapse to a couple of roles.
+ */
+async function headlineRoles(team: CompanyRecord["team"]): Promise<Map<string, string>> {
+  const ids = Array.from(new Set(team.map((m) => m.profile?.headlineRoleId).filter((x): x is string => !!x)));
+  if (!ids.length) return new Map();
+  const roles = await prisma.role.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+  return new Map(roles.map((r) => [r.id, r.name]));
+}
 
 /** One function decides indexability, so nothing else can quietly disagree. */
 function indexable(c: CompanyRecord): boolean {
@@ -142,6 +157,7 @@ export default async function CompanyPage({ params }: { params: { slug: string }
   const c = await getCompany(params.slug);
   if (!c) notFound();
   const host = c.website ? new URL(c.website).hostname.replace(/^www\./, "") : null;
+  const roleNames = await headlineRoles(c.team);
 
   return (
     <main style={{ background: "#F1F5F9", minHeight: "100vh", display: "flex", flexDirection: "column", fontFamily: "var(--font-sora), var(--font-jakarta), sans-serif", color: INK }}>
@@ -404,14 +420,21 @@ export default async function CompanyPage({ params }: { params: { slug: string }
                   {c.team.map((m, i) => {
                     const name = m.profile?.fullName?.trim() || m.name;
                     const href = m.profile?.publicVisible && m.profile.publicSlug ? `/p/${m.profile.publicSlug}` : null;
+                    // What someone DOES, in order of how well it's known: the
+                    // title the company gave them here, then the role on their
+                    // own profile. "Owner"/"Team" is the last resort — it
+                    // describes their relationship to this page, which is the
+                    // least interesting thing about them to a visitor.
+                    const role =
+                      m.title?.trim() ||
+                      (m.profile?.headlineRoleId ? roleNames.get(m.profile.headlineRoleId) : null) ||
+                      (m.role === "OWNER" ? "Owner" : "Team");
                     const body = (
                       <>
                         <span style={S.teamAvatar}>{initialsOf(name)}</span>
                         <span style={{ flex: 1, minWidth: 0 }}>
                           <b style={{ fontSize: 13, fontWeight: 700, display: "block" }}>{name}</b>
-                          <span style={{ display: "block", fontSize: 11.5, color: MUTED, marginTop: 2 }}>
-                            {m.title || (m.role === "OWNER" ? "Owner" : "Team")}
-                          </span>
+                          <span style={{ display: "block", fontSize: 11.5, color: MUTED, marginTop: 2 }}>{role}</span>
                         </span>
                       </>
                     );

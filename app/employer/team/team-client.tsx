@@ -21,7 +21,7 @@ import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { EmployerSection, EmployerGate, ES } from "../_components/EmployerTabs";
 
 type Member = {
-  id: string; name: string; title: string | null; role: "OWNER" | "MEMBER";
+  id: string; name: string; title: string | null; profileRole: string | null; role: "OWNER" | "MEMBER";
   visible: boolean; email: string | null; joinedAt: string; isYou: boolean;
   publicSlug: string | null; hasProfile: boolean;
 };
@@ -202,7 +202,12 @@ export default function TeamClient() {
                 </div>
               ) : (
                 <div style={{ fontSize: 12.5, color: "#64748B", marginTop: 4 }}>
-                  {m.title || <span style={{ color: "#CBD5E1" }}>No title yet</span>}
+                  {/* Mirrors the public page exactly: the title set here wins,
+                      otherwise their own profile's role. Saying "No title yet"
+                      while the page already shows "Marketing Manager" would
+                      send someone hunting for a problem that isn't there. */}
+                  {m.title || m.profileRole || <span style={{ color: "#CBD5E1" }}>No role yet</span>}
+                  {!m.title && m.profileRole && <span style={{ color: "#94A3B8" }}> (from their profile)</span>}
                   {m.email && <> · {m.email}</>} · joined {fmtDate(m.joinedAt)}
                 </div>
               )}

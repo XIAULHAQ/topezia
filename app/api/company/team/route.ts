@@ -31,7 +31,7 @@ export async function GET() {
       select: {
         id: true, userId: true, name: true, title: true, role: true, visible: true,
         invitedEmail: true, joinedAt: true,
-        profile: { select: { id: true, fullName: true, publicSlug: true, publicVisible: true } },
+        profile: { select: { id: true, fullName: true, publicSlug: true, publicVisible: true, headlineRoleId: true } },
       },
     }),
     prisma.companyInvite.findMany({
@@ -41,11 +41,24 @@ export async function GET() {
     }),
   ]);
 
+  // Each member's role from their OWN profile, so the dashboard shows what the
+  // public page shows. Profile.headlineRoleId has no Prisma relation (a bare
+  // column — /hq reaches Role by raw SQL for the same reason), so it is one
+  // extra lookup rather than an include.
+  const roleIds = Array.from(new Set(members.map((m) => m.profile?.headlineRoleId).filter((x): x is string => !!x)));
+  const roleNames = new Map(
+    roleIds.length
+      ? (await prisma.role.findMany({ where: { id: { in: roleIds } }, select: { id: true, name: true } })).map((r) => [r.id, r.name])
+      : []
+  );
+
   return NextResponse.json({
     members: members.map((m) => ({
       id: m.id,
       name: m.profile?.fullName?.trim() || m.name,
       title: m.title,
+      // What the public page will show if no title is set here.
+      profileRole: m.profile?.headlineRoleId ? roleNames.get(m.profile.headlineRoleId) ?? null : null,
       role: m.role,
       visible: m.visible,
       email: m.invitedEmail,
