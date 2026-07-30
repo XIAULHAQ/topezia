@@ -10,8 +10,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { ANON_COOKIE } from "@/lib/anon-session";
+import { purgeProfile } from "@/lib/account/purge";
 
 async function emailOf(): Promise<string | null> {
   try {
@@ -114,32 +114,12 @@ export async function DELETE() {
   const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
   if (!profile) return NextResponse.json({ error: "No profile." }, { status: 404 });
 
-  // JobClick/JobSave/JobDismissal don't cascade on profile delete (they're
-  // signals, kept deliberately), so remove them explicitly first. ProfileSkill
-  // and MatchScore do cascade. One transaction so a failure leaves nothing half-deleted.
-  await prisma.$transaction([
-    prisma.jobClick.deleteMany({ where: { profileId: profile.id } }),
-    prisma.jobSave.deleteMany({ where: { profileId: profile.id } }),
-    prisma.jobDismissal.deleteMany({ where: { profileId: profile.id } }),
-    prisma.profile.delete({ where: { id: profile.id } }),
-  ]);
+  // Shared with the /hq admin delete so the two can't drift — see
+  // lib/account/purge.ts for what cascades and what has to be removed by hand.
+  const { authUserDeleted } = await purgeProfile({ profileId: profile.id, userId: authed ? userId : null });
 
-  // For a signed-in user, remove the Supabase auth user too — a "delete my
-  // account" that leaves you able to sign back in isn't a real deletion. Needs
-  // the service-role key (server-only). If it isn't configured, the profile
-  // data is still gone; we just couldn't remove the login. authUserDeleted
-  // reports which happened.
-  let authUserDeleted = false;
+  // End the current session regardless, so they're signed out immediately.
   if (authed) {
-    const admin = createAdminClient();
-    if (admin) {
-      const { error } = await admin.auth.admin.deleteUser(userId);
-      if (error) console.error("auth user delete failed:", error.message);
-      else authUserDeleted = true;
-    } else {
-      console.warn("account deleted but SUPABASE_SERVICE_ROLE_KEY not set — auth user survives");
-    }
-    // End the current session regardless, so they're signed out immediately.
     try { await createClient().auth.signOut(); } catch { /* best effort */ }
   }
 

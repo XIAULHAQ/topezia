@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties } from "react";
+import HqShell from "../HqShell";
 
 type PostRow = {
   id: string;
@@ -26,20 +27,16 @@ export default function PostsList() {
   }, []);
 
   return (
-    <main style={S.page}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-        <div>
-          <a href="/hq" style={S.back}>← HQ</a>
-          <h1 style={S.h1}>Blog posts</h1>
-        </div>
-        <a href="/hq/posts/new" style={S.newBtn}>New post</a>
-      </div>
-
+    <HqShell
+      title="Blog posts"
+      subtitle="Editorial content on /blog. Drafts are invisible to the public until published."
+      actions={<a href="/hq/posts/new" style={S.newBtn}>New post</a>}
+    >
       {error && <p style={S.error}>{error}</p>}
       {!posts && !error && <p style={{ color: "#64748B", marginTop: 20 }}>Loading…</p>}
 
       {posts && (
-        <div style={{ overflowX: "auto", marginTop: 24 }}>
+        <div style={{ overflowX: "auto", }}>
           <table style={S.table}>
             <thead>
               <tr>
@@ -66,14 +63,11 @@ export default function PostsList() {
           </table>
         </div>
       )}
-    </main>
+    </HqShell>
   );
 }
 
 const S: Record<string, CSSProperties> = {
-  page: { minHeight: "100vh", background: "#F8FAFC", fontFamily: "var(--font-sora), system-ui, sans-serif", color: "#0F172A", padding: "40px 24px 80px", maxWidth: 1100, margin: "0 auto" },
-  back: { fontSize: 12.5, color: "#64748B", textDecoration: "none" },
-  h1: { fontSize: 28, fontWeight: 800, letterSpacing: "-0.7px", margin: "6px 0 0" },
   newBtn: { background: "linear-gradient(135deg,#8B5CF6,#3B82F6)", color: "#fff", borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 700, textDecoration: "none" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16 },
   th: { textAlign: "left", padding: "10px 12px", borderBottom: "2px solid #E2E8F0", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#64748B", whiteSpace: "nowrap" },

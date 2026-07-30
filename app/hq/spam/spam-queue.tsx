@@ -14,6 +14,7 @@
  * correctly rather than as proof that nothing is wrong.
  */
 import { useCallback, useEffect, useState } from "react";
+import HqShell from "../HqShell";
 import type { CSSProperties } from "react";
 
 interface ProfileRow {
@@ -76,14 +77,17 @@ export default function SpamQueue() {
     }
   }
 
-  if (err) return <main style={S.wrap}><p style={S.err}>{err}</p></main>;
-  if (!data) return <main style={S.wrap}><p style={S.mut}>Loading…</p></main>;
+  if (err) return <HqShell title="Review queue"><p style={S.err}>{err}</p></HqShell>;
+  if (!data) return <HqShell title="Review queue"><p style={S.mut}>Loading…</p></HqShell>;
 
   const nothing = !data.profiles.length && !data.works.length && !data.reports.length;
 
   return (
-    <main style={S.wrap}>
-      <h1 style={S.h1}>Review queue</h1>
+    <HqShell
+      title="Review queue"
+      subtitle="Content the scorer flagged, plus anything a visitor reported."
+      counts={{ queue: data.profiles.length + data.works.length + data.reports.length }}
+    >
       <p style={S.sub}>
         Everything scoring {data.threshold} or above on the content scorer, plus anything a visitor
         reported. A score is a routing decision about a page, never a judgement about a person —
@@ -180,7 +184,7 @@ export default function SpamQueue() {
           ))}
         </section>
       )}
-    </main>
+    </HqShell>
   );
 }
 
@@ -188,9 +192,7 @@ const LINE = "#E2E8F0";
 const MUT = "#64748B";
 
 const S: Record<string, CSSProperties> = {
-  wrap: { maxWidth: 900, margin: "0 auto", padding: "36px 22px 80px", fontFamily: "var(--font-sora), system-ui, sans-serif", color: "#0F172A" },
-  h1: { fontSize: 26, fontWeight: 800, margin: 0, letterSpacing: "-0.5px" },
-  sub: { fontSize: 13.5, color: MUT, lineHeight: 1.65, margin: "10px 0 6px", maxWidth: 640 },
+  sub: { fontSize: 13.5, color: MUT, lineHeight: 1.65, margin: "0 0 6px", maxWidth: 640 },
   scan: { fontSize: 12, color: MUT, margin: "0 0 26px" },
   empty: { fontSize: 14, color: MUT, padding: "28px 0" },
   section: { marginBottom: 34 },
