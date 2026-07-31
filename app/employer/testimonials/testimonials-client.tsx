@@ -1,17 +1,23 @@
 "use client";
 
 /**
- * Testimonials the company types in.
+ * Testimonials, from either of the two routes in.
  *
- * The page says out loud what these are — quotes the company supplied, which
- * Topezia has not verified — because the public page says the same thing, and
- * an employer should find that out here rather than after publishing.
+ * ADDED BY YOU: copy the company typed about itself. The page says so, because
+ * the public page says so, and an employer should learn that here rather than
+ * after publishing.
+ *
+ * WRITTEN BY THE CLIENT: an invitation the client answered without needing an
+ * account. Those cannot be edited or deleted by the company — only hidden —
+ * which is exactly what makes them worth more than the first kind. The UI
+ * offers the buttons that exist and not the ones that don't.
  */
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { EmployerSection, EmployerGate, ES } from "../_components/EmployerSection";
 
 type Testimonial = {
   id: string;
+  origin: "COMPANY" | "INVITED";
   quote: string;
   authorName: string;
   authorRole: string | null;
@@ -24,6 +30,8 @@ type Testimonial = {
 /** Every optional field is "" rather than null in the draft: a controlled
  *  input can't take null, and mapping at the edges beats mapping at each of
  *  the four call sites. */
+type Invite = { id: string; email: string; clientLabel: string | null; createdAt: string; expiresAt: string; expired: boolean };
+
 type Draft = {
   id: string | null;
   quote: string;
@@ -55,6 +63,11 @@ export default function TestimonialsClient() {
   const [gate, setGate] = useState<"auth" | "company" | null>(null);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteLabel, setInviteLabel] = useState("");
+  const [sending, setSending] = useState(false);
+  const [lastLink, setLastLink] = useState<{ email: string; url: string; emailed: boolean } | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/company/testimonials", { cache: "no-store" });
@@ -62,7 +75,60 @@ export default function TestimonialsClient() {
     if (res.status === 409) { setGate("company"); setItems([]); return; }
     if (!res.ok) { setError("Couldn't load your testimonials."); setItems([]); return; }
     setItems((await res.json()).testimonials);
+    const inv = await fetch("/api/company/testimonials/invite", { cache: "no-store" });
+    if (inv.ok) setInvites((await inv.json()).invites);
   }, []);
+
+  async function sendInvite(e: React.FormEvent) {
+    e.preventDefault();
+    setSending(true); setError(null); setLastLink(null);
+    try {
+      const res = await fetch("/api/company/testimonials/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: inviteEmail, clientLabel: inviteLabel }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "Couldn't send that request.");
+      setLastLink({ email: inviteEmail, url: d.url, emailed: d.emailed });
+      setInviteEmail(""); setInviteLabel("");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't send that request.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function withdraw(i: Invite) {
+    setBusyId(i.id);
+    try {
+      const res = await fetch(`/api/company/testimonials/invite?id=${encodeURIComponent(i.id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Couldn't withdraw that.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't withdraw that.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function toggleVisible(t: Testimonial) {
+    setBusyId(t.id);
+    try {
+      const res = await fetch(`/api/company/testimonials/${t.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visible: !t.visible }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Couldn't change that.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't change that.");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   useEffect(() => { load(); }, [load]);
 
@@ -109,13 +175,60 @@ export default function TestimonialsClient() {
       actions={!draft && <button type="button" style={ES.btn} onClick={() => setDraft({ ...BLANK })}>Add a testimonial</button>}
     >
       <div style={{ ...ES.notice, marginBottom: 20 }}>
-        These are quotes <b>you</b> enter, so your company page labels them as supplied by you and Topezia doesn&apos;t
-        mark them up as verified reviews. If you want something a reader can check, ask the client for a{" "}
-        <a href="/profile" style={{ color: "#075985", fontWeight: 700 }}>recommendation on a Topezia profile</a> — those
-        are written by the person themselves, signed in, through a link you can&apos;t edit.
+        A quote <b>you</b> type is labelled on your page as supplied by you, and carries no review markup — nobody has
+        checked it. A quote your <b>client</b> writes through an invitation is labelled as theirs, and you can hide it
+        but not edit it. That difference is the whole reason the second kind is worth asking for.
       </div>
 
       {error && <div style={ES.error}>{error}</div>}
+
+      <div style={{ ...ES.card, marginBottom: 22 }}>
+        <h2 style={{ margin: "0 0 6px", fontSize: 16, fontWeight: 700 }}>Ask a client to write one</h2>
+        <p style={{ margin: "0 0 16px", fontSize: 12.8, color: "#64748B", lineHeight: 1.65 }}>
+          They get an email with a link, write it in their own words, and don&apos;t need a Topezia account. You can
+          hide what comes back, but you can&apos;t change it — which is what makes it mean something.
+        </p>
+        <form onSubmit={sendInvite} style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <input style={{ ...ES.input, maxWidth: 280 }} type="email" required value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)} placeholder="client@theircompany.com" />
+          <input style={{ ...ES.input, maxWidth: 200 }} value={inviteLabel} maxLength={120}
+            onChange={(e) => setInviteLabel(e.target.value)} placeholder="Their name (for your list)" />
+          <button type="submit" style={{ ...ES.btn, opacity: sending ? 0.6 : 1 }} disabled={sending}>
+            {sending ? "Sending…" : "Send request"}
+          </button>
+        </form>
+      </div>
+
+      {lastLink && (
+        <div style={{ ...ES.notice, marginBottom: 22 }}>
+          {lastLink.emailed
+            ? <>Request sent to <b>{lastLink.email}</b>. If it doesn&apos;t arrive, send them this link directly:</>
+            : <>We couldn&apos;t deliver the email just now, but the request is live. Send <b>{lastLink.email}</b> this link yourself:</>}
+          <div style={S.linkBox}>{lastLink.url}</div>
+        </div>
+      )}
+
+      {invites.length > 0 && (
+        <div style={{ marginBottom: 26 }}>
+          <h2 style={S.h2}>Waiting on</h2>
+          <div style={{ display: "grid", gap: 10 }}>
+            {invites.map((i) => (
+              <div key={i.id} style={{ ...ES.card, display: "flex", gap: 14, alignItems: "center", padding: 13, flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <b style={{ fontSize: 13.5 }}>{i.clientLabel || i.email}</b>
+                  <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>
+                    {i.clientLabel ? `${i.email} · ` : ""}asked {fmtDate(i.createdAt)}
+                    {i.expired ? " · expired" : ` · expires ${fmtDate(i.expiresAt)}`}
+                  </div>
+                </div>
+                <button type="button" style={{ ...ES.btnGhost, opacity: busyId === i.id ? 0.6 : 1 }} disabled={busyId === i.id} onClick={() => withdraw(i)}>
+                  {i.expired ? "Clear" : "Withdraw"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {draft && (
         <div style={{ ...ES.card, marginBottom: 22 }}>
@@ -195,12 +308,24 @@ export default function TestimonialsClient() {
                 <div style={{ fontSize: 12.5, color: "#64748B", marginTop: 9 }}>
                   <b style={{ color: "#0F172A" }}>{t.authorName}</b>
                   {[t.authorRole, t.authorCompany].filter(Boolean).length > 0 && ` — ${[t.authorRole, t.authorCompany].filter(Boolean).join(", ")}`}
+                  {t.origin === "INVITED" && <span style={{ ...ES.pillLive, marginLeft: 9 }}>Written by the client</span>}
                   {!t.visible && <span style={{ ...ES.pillDraft, marginLeft: 9 }}>Hidden</span>}
                 </div>
               </div>
               <div style={{ flex: "none", display: "flex", gap: 8 }}>
-                <button type="button" style={ES.btnGhost} onClick={() => { setDraft(toDraft(t)); setError(null); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Edit</button>
-                <button type="button" style={{ ...ES.btnDanger, opacity: busyId === t.id ? 0.6 : 1 }} disabled={busyId === t.id} onClick={() => remove(t)}>Delete</button>
+                {t.origin === "INVITED" ? (
+                  // No Edit and no Delete: the API refuses both, and offering a
+                  // button that returns 403 is a worse experience than not
+                  // offering it. Hiding is the control that actually exists.
+                  <button type="button" style={{ ...ES.btnGhost, opacity: busyId === t.id ? 0.6 : 1 }} disabled={busyId === t.id} onClick={() => toggleVisible(t)}>
+                    {t.visible ? "Hide" : "Show"}
+                  </button>
+                ) : (
+                  <>
+                    <button type="button" style={ES.btnGhost} onClick={() => { setDraft(toDraft(t)); setError(null); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Edit</button>
+                    <button type="button" style={{ ...ES.btnDanger, opacity: busyId === t.id ? 0.6 : 1 }} disabled={busyId === t.id} onClick={() => remove(t)}>Delete</button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -210,6 +335,10 @@ export default function TestimonialsClient() {
   );
 }
 
+const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+
 const S: Record<string, CSSProperties> = {
+  h2: { fontSize: 15, fontWeight: 700, margin: "0 0 12px", color: "#0F172A" },
+  linkBox: { marginTop: 9, background: "#fff", border: "1px solid #BAE6FD", borderRadius: 8, padding: "8px 10px", fontSize: 12, wordBreak: "break-all", fontFamily: "ui-monospace, monospace", color: "#0F172A" },
   star: { background: "none", border: "none", fontSize: 24, cursor: "pointer", padding: 0, lineHeight: 1 },
 };

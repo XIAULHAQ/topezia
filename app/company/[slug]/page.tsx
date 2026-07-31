@@ -67,7 +67,7 @@ async function getCompany(slug: string) {
       testimonials: {
         where: { visible: true },
         orderBy: [{ position: "asc" }, { createdAt: "desc" }],
-        select: { id: true, quote: true, authorName: true, authorRole: true, authorCompany: true, authorUrl: true, rating: true },
+        select: { id: true, quote: true, authorName: true, authorRole: true, authorCompany: true, authorUrl: true, rating: true, origin: true },
       },
       articles: {
         where: { status: "PUBLISHED" },
@@ -347,7 +347,15 @@ export default async function CompanyPage({ params }: { params: { slug: string }
                   <span style={S.cardIcon}>💬</span>
                   <h2 style={S.h2}>What clients say</h2>
                 </div>
-                <p style={{ margin: "0 0 16px", fontSize: 11.5, color: "#94A3B8" }}>Provided by {c.name}. Topezia hasn&apos;t verified these.</p>
+                {/* The note describes the DEFAULT case; anything a client
+                    actually wrote carries its own badge below. Saying "provided
+                    by the company" over a quote the client wrote would be as
+                    wrong as the reverse. */}
+                <p style={{ margin: "0 0 16px", fontSize: 11.5, color: "#94A3B8" }}>
+                  {c.testimonials.every((t) => t.origin === "INVITED")
+                    ? "Written by clients through an invitation. Topezia hasn't verified who they are."
+                    : `Provided by ${c.name} unless marked otherwise. Topezia hasn't verified these.`}
+                </p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   {c.testimonials.map((t) => (
                     <figure key={t.id} style={S.quote}>
@@ -359,6 +367,14 @@ export default async function CompanyPage({ params }: { params: { slug: string }
                       <blockquote style={{ margin: 0, fontSize: 13.8, lineHeight: 1.75, color: "#334155" }}>&ldquo;{t.quote}&rdquo;</blockquote>
                       <figcaption style={{ fontSize: 12.3, color: MUTED, marginTop: 10 }}>
                         <b style={{ color: INK }}>{t.authorName}</b>
+                        {t.origin === "INVITED" && (
+                          // Precisely what the invitation proves, and no more:
+                          // they received the email and wrote this themselves.
+                          // Not identity — so the badge never says "verified".
+                          <span style={S.invitedBadge} title="Written by the client through an invitation from this company. Topezia hasn't verified their identity.">
+                            written by the client
+                          </span>
+                        )}
                         {[t.authorRole, t.authorCompany].filter(Boolean).length > 0 && ` — ${[t.authorRole, t.authorCompany].filter(Boolean).join(", ")}`}
                         {t.authorUrl && (
                           <> · <a href={t.authorUrl} target="_blank" rel={UGC_REL} style={{ color: "#4F46E5", fontWeight: 600 }}>site ↗</a></>
@@ -485,6 +501,7 @@ const S: Record<string, CSSProperties> = {
   clientCell: { display: "flex", flexDirection: "column", alignItems: "center", border: `1px solid ${LINE}`, borderRadius: 12, padding: "14px 10px", textDecoration: "none" },
   clientMark: { display: "grid", placeItems: "center", width: "100%", height: 44, padding: "0 6px" },
   quote: { margin: 0, border: `1px solid ${LINE}`, borderRadius: 14, padding: "16px 18px", background: "#FCFCFD" },
+  invitedBadge: { display: "inline-block", marginLeft: 8, background: "#F0FDF4", color: "#16A34A", border: "1px solid #BBF7D0", borderRadius: 999, padding: "2px 8px", fontSize: 10.5, fontWeight: 700 },
   articleRow: { border: `1px solid ${LINE}`, borderRadius: 14, padding: "14px 16px", display: "flex", gap: 14, alignItems: "flex-start", color: INK, textDecoration: "none" },
   teamRow: { display: "flex", gap: 11, alignItems: "center", color: INK, textDecoration: "none" },
   teamAvatar: { flex: "none", width: 34, height: 34, borderRadius: "50%", background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 11.5, fontWeight: 800 },

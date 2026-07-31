@@ -1450,3 +1450,41 @@ reading it.
 - 🟡 **The remaining ~748 are mostly "Home based - Worldwide" / "Remote - EMEA".**
   Those name no country anywhere, and Google requires at least one eligible
   country for a remote posting. There is no honest markup for them.
+
+## Testimonial invites: a client can write it themselves (2026-07-31)
+
+Migration 049. Until now a company could only TYPE a testimonial, which is
+copy about itself. It can now ask the client to write one.
+
+- 🟢 **Two origins, and the public page prints which.** `COMPANY` is what the
+  company typed; `INVITED` was written by whoever controlled the email address
+  the company sent the invitation to. The section note says "Provided by
+  {company} unless marked otherwise", and invited quotes carry a
+  "written by the client" badge. Neither ever says *verified* — see below.
+- 🔴 **The company cannot edit or delete an INVITED testimonial.** It may hide
+  it, and nothing else. That asymmetry IS the feature: a quote the subject can
+  rewrite is a quote the subject wrote, and the page claims a client wrote it.
+  Both the PATCH and DELETE routes return 403 with an explanation, and the
+  dashboard renders "Hide" instead of Edit/Delete rather than offering buttons
+  that 403. Same rule and same reasoning as lib/endorsements/doc.ts.
+  Deleting is refused specifically because hiding already gives the company
+  every legitimate outcome, while deletion would let one bin the responses it
+  disliked and leave no trace it ever asked.
+- 🟡 **No account required to answer, deliberately.** The member endorsement
+  flow requires the author to sign in; a design client has no reason to hold a
+  Topezia account, and requiring one would kill the response rate. What the
+  token proves is that they received the email — NOT identity — and the badge
+  wording claims exactly that and no more.
+- 🟢 **The invite inherits the team-invite spam posture wholesale**: owner
+  only, two rate-limit windows (15/hour, 50/day), 25 outstanding maximum,
+  disposable addresses refused, and no free-text message from the sender.
+  Delivery failure does not fail the request — the owner gets the link back.
+- 🟢 **Submissions run the same validation and spam scoring** as the owner's
+  own path (`validateTestimonial`). Being invited is not a reason to skip
+  either. Verified end to end against the live routes: a too-short quote is
+  refused with the same message, a real submission lands, and the token is
+  consumed so a second use fails. Probe rows deleted afterwards.
+- 🟡 **Still no Review/AggregateRating markup, for either origin.** An invited
+  testimonial is better evidence than a typed one, but it is still not a
+  verified review, and 1 confirmed occurrence of that markup would be one too
+  many. Verified: 0 on the rendered page.

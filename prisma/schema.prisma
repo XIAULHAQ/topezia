@@ -1096,6 +1096,7 @@ model Company {
   // scored by lib/ugc.ts on write and gated by lib/company/indexing.ts on read.
   work          CompanyWork[]
   testimonials  CompanyTestimonial[]
+  testimonialInvites CompanyTestimonialInvite[]
   clients       CompanyClient[]
   articles      CompanyArticle[]
   team          CompanyTeamMember[]
@@ -1340,10 +1341,27 @@ model CompanyWorkMedia {
 // supplied by the company and they carry no schema.org Review markup. Calling
 // them the same thing as an Endorsement would launder unverified copy through
 // a word that means something stricter.
+ // Where a testimonial came from. The public page prints this, because the two
+ // are not the same claim: COMPANY is copy the company typed about itself,
+ // INVITED was written by whoever controlled the email address the company sent
+ // the invitation to.
+ //
+ // INVITED is not "verified" in any strong sense and the UI never says it is —
+ // it means one specific thing, and the label says exactly that thing.
+enum TestimonialOrigin {
+  COMPANY
+  INVITED
+}
+
 model CompanyTestimonial {
   id            String  @id @default(uuid())
   companyId     String
   company       Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  origin        TestimonialOrigin @default(COMPANY)
+  /// INVITED only: when the client submitted it.
+  submittedAt   DateTime?
+  invite        CompanyTestimonialInvite?
 
   quote         String
   authorName    String
@@ -1360,6 +1378,46 @@ model CompanyTestimonial {
   updatedAt     DateTime @updatedAt
 
   @@index([companyId, position])
+}
+
+ // An outstanding request for a client to write a testimonial themselves.
+ //
+ // A SEPARATE table rather than a half-filled CompanyTestimonial: a pending
+ // invite has no quote and no author, and making those columns nullable to
+ // accommodate it would mean every read path has to cope with a testimonial
+ // that isn't one. Same shape as CompanyInvite for the team, for the same
+ // reason.
+ //
+ // The client does NOT need a Topezia account. Requiring one would kill the
+ // response rate — a design client has no reason to hold an account here — and
+ // it would not buy much: the meaningful check is that they received the email,
+ // which the token already proves. What it is NOT is proof of identity, and the
+ // public label is worded accordingly.
+model CompanyTestimonialInvite {
+  id            String              @id @default(uuid())
+  companyId     String
+  company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  email         String
+  /// What the company calls them, for their own list. Never shown publicly —
+  /// the client types their own name when they answer.
+  clientLabel   String?
+  /// The secret in /t/{token}. Consumed once on submit.
+  token         String              @unique
+  status        CompanyInviteStatus @default(PENDING)
+
+  expiresAt     DateTime
+  submittedAt   DateTime?
+  /// The testimonial it produced, once answered.
+  testimonialId String?             @unique
+  testimonial   CompanyTestimonial? @relation(fields: [testimonialId], references: [id], onDelete: SetNull)
+
+  createdAt     DateTime @default(now())
+
+  // One outstanding request per address per company. Revoking deletes the row,
+  // so this can never strand anyone.
+  @@unique([companyId, email])
+  @@index([companyId, status])
 }
 
 // A client logo with a link to that client's site. The link is the whole point
