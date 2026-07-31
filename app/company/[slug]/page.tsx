@@ -260,9 +260,12 @@ export default async function CompanyPage({ params }: { params: { slug: string }
               </section>
             )}
 
-            {/* ── Work ── */}
+            {/* ── Work ──
+                id="work" is the destination for "← All work by {company}" on
+                a case-study page, so that link lands on the grid rather than
+                at the top of a page the reader has already seen. */}
             {c.work.length > 0 && (
-              <section style={S.card}>
+              <section id="work" style={S.card}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
                   <span style={S.cardIcon}>🎨</span>
                   <h2 style={S.h2}>Our work</h2>
