@@ -1236,7 +1236,7 @@ model CompanyWork {
   status      PortfolioStatus @default(DRAFT)
   position    Int             @default(0)
 
-  images      CompanyWorkImage[]
+  media       CompanyWorkMedia[]
 
   publishedAt DateTime?
   createdAt   DateTime @default(now())
@@ -1246,19 +1246,37 @@ model CompanyWork {
   @@index([companyId, status, position])
 }
 
-model CompanyWorkImage {
-  id        String      @id @default(uuid())
-  workId    String
-  work      CompanyWork @relation(fields: [workId], references: [id], onDelete: Cascade)
+// Images and embedded videos on one piece of work. Deliberately the same shape
+// as PortfolioMedia, and it reuses PortfolioMediaKind/VideoProvider and the
+// whole of lib/portfolio/video.ts rather than growing a second parser: a
+// YouTube URL means the same thing whoever pasted it.
+//
+// Was CompanyWorkImage until migration 046, when videos arrived and the name
+// stopped being true. Renamed while the table still held zero rows.
+model CompanyWorkMedia {
+  id            String             @id @default(uuid())
+  workId        String
+  work          CompanyWork        @relation(fields: [workId], references: [id], onDelete: Cascade)
 
-  // Storage path inside the `company` bucket, never a full URL.
-  path      String
-  width     Int?
-  height    Int?
-  caption   String?
-  position  Int         @default(0)
+  kind          PortfolioMediaKind @default(IMAGE)
 
-  createdAt DateTime @default(now())
+  // IMAGE: storage path inside the `company` bucket, never a full URL.
+  // VIDEO: the extracted provider id (same value as videoId).
+  path          String
+  // VIDEO only: provider + id, so the embed is built by us rather than by
+  // interpolating a user-supplied URL into an iframe src.
+  videoId       String?
+  videoProvider VideoProvider?
+  // VIDEO only: Vimeo's unlisted-video hash, which the embed needs to play.
+  // Always null for YouTube.
+  videoHash     String?
+
+  width         Int?
+  height        Int?
+  caption       String?
+  position      Int                @default(0)
+
+  createdAt     DateTime @default(now())
 
   @@index([workId, position])
 }

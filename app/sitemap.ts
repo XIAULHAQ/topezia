@@ -145,7 +145,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           where: { status: "PUBLISHED" },
           select: {
             slug: true, title: true, summary: true, description: true, clientName: true, tags: true, updatedAt: true,
-            images: { select: { caption: true } },
+            media: { select: { caption: true } },
           },
         },
         articles: {
@@ -183,7 +183,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       });
 
       for (const w of c.work) {
-        if (!companyWorkIndexable({ ...w, captions: w.images.map((i) => i.caption) }, c.spamCleared)) continue;
+        if (!companyWorkIndexable({ ...w, captions: w.media.map((m) => m.caption) }, c.spamCleared)) continue;
         companyPages.push({
           url: `${base}/company/${c.slug}/work/${w.slug}`,
           lastModified: w.updatedAt,

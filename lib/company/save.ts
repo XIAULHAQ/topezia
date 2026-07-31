@@ -19,6 +19,9 @@
  */
 import crypto from "crypto";
 import { scoreUgcFields, isSpam, spamMessage } from "@/lib/ugc";
+// Shared with the member portfolio on purpose — a YouTube URL means the same
+// thing whoever pasted it, and a second parser would be a second set of bugs.
+import { parseVideo, type VideoProvider } from "@/lib/portfolio/video";
 
 export const LIMITS = {
   title: 140,
@@ -119,10 +122,20 @@ export type WorkInput = {
   coverWidth?: unknown;
   coverHeight?: unknown;
   status?: unknown;
-  images?: unknown;
+  media?: unknown;
 };
 
-export type CleanWorkImage = { path: string; width: number | null; height: number | null; caption: string | null; position: number };
+export type CleanWorkMedia = {
+  kind: "IMAGE" | "VIDEO";
+  path: string;
+  videoId: string | null;
+  videoProvider: VideoProvider | null;
+  videoHash: string | null;
+  width: number | null;
+  height: number | null;
+  caption: string | null;
+  position: number;
+};
 
 export type CleanWork = {
   title: string;
@@ -135,7 +148,7 @@ export type CleanWork = {
   coverWidth: number | null;
   coverHeight: number | null;
   status: "DRAFT" | "PUBLISHED";
-  images: CleanWorkImage[];
+  media: CleanWorkMedia[];
 };
 
 const int = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : null);
@@ -155,29 +168,55 @@ export function validateWork(input: WorkInput, companyId: string): Result<CleanW
     return { ok: false, error: "That cover image isn't one of your uploads." };
   }
 
-  const images: CleanWorkImage[] = [];
-  if (Array.isArray(input.images)) {
-    for (const raw of input.images.slice(0, 12)) {
+  const media: CleanWorkMedia[] = [];
+  if (Array.isArray(input.media)) {
+    for (const raw of input.media.slice(0, 16)) {
       if (!raw || typeof raw !== "object") continue;
       const m = raw as Record<string, unknown>;
+      const caption = str(m.caption, LIMITS.caption) || null;
+
+      if (m.kind === "VIDEO") {
+        // The URL is parsed to a provider + id and never stored raw. What ends
+        // up in an iframe src is built by us from those two values, so a
+        // crafted "YouTube link" can't become an arbitrary embed.
+        const ref = parseVideo(typeof m.url === "string" ? m.url : typeof m.videoId === "string" ? m.videoId : "");
+        if (!ref) return { ok: false, error: "That doesn't look like a YouTube or Vimeo link." };
+        media.push({
+          kind: "VIDEO",
+          path: ref.id,
+          videoId: ref.id,
+          videoProvider: ref.provider,
+          videoHash: ref.hash,
+          width: null,
+          height: null,
+          caption,
+          position: media.length,
+        });
+        continue;
+      }
+
       const path = typeof m.path === "string" ? m.path : "";
-      // Silently dropping a bad path would leave the employer staring at an
-      // image that vanished on save with no explanation.
+      // Refusing loudly rather than skipping: silently dropping a bad path
+      // leaves the employer staring at an image that vanished on save.
       if (!path) continue;
       if (!isOwnedPath(path, companyId)) return { ok: false, error: "One of those images isn't one of your uploads." };
-      images.push({
+      media.push({
+        kind: "IMAGE",
         path,
+        videoId: null,
+        videoProvider: null,
+        videoHash: null,
         width: int(m.width),
         height: int(m.height),
-        caption: str(m.caption, LIMITS.caption) || null,
-        position: images.length,
+        caption,
+        position: media.length,
       });
     }
   }
 
   const status = input.status === "PUBLISHED" ? "PUBLISHED" : "DRAFT";
-  if (status === "PUBLISHED" && !coverRaw && images.length === 0) {
-    return { ok: false, error: "Add at least one image before publishing this work." };
+  if (status === "PUBLISHED" && !coverRaw && media.length === 0) {
+    return { ok: false, error: "Add at least one image or video before publishing this work." };
   }
 
   // Scored as one document — title, summary, body, client and tags together.
@@ -196,7 +235,7 @@ export function validateWork(input: WorkInput, companyId: string): Result<CleanW
       coverWidth: int(input.coverWidth),
       coverHeight: int(input.coverHeight),
       status,
-      images,
+      media,
     },
   };
 }

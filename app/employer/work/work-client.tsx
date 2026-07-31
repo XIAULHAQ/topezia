@@ -14,8 +14,21 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { EmployerSection, EmployerGate, ES } from "../_components/EmployerTabs";
+// Same parser the member portfolio uses — one definition of "is this a
+// YouTube link", shared rather than re-implemented.
+import { parseVideo } from "@/lib/portfolio/video";
 
-type WorkImage = { id?: string; path: string; width: number | null; height: number | null; caption: string | null };
+type WorkMedia = {
+  kind: "IMAGE" | "VIDEO";
+  /** IMAGE: the storage path. VIDEO: the provider id — never a URL. */
+  path: string;
+  videoId: string | null;
+  videoProvider: "YOUTUBE" | "VIMEO" | null;
+  videoHash: string | null;
+  width: number | null;
+  height: number | null;
+  caption: string | null;
+};
 type Work = {
   id: string;
   slug: string;
@@ -29,7 +42,7 @@ type Work = {
   coverWidth: number | null;
   coverHeight: number | null;
   status: "DRAFT" | "PUBLISHED";
-  images: WorkImage[];
+  media: WorkMedia[];
 };
 
 type Draft = {
@@ -43,13 +56,13 @@ type Draft = {
   coverPath: string | null;
   coverWidth: number | null;
   coverHeight: number | null;
-  images: WorkImage[];
+  media: WorkMedia[];
   status: "DRAFT" | "PUBLISHED";
 };
 
 const BLANK: Draft = {
   id: null, title: "", summary: "", description: "", clientName: "", projectUrl: "",
-  tagsText: "", coverPath: null, coverWidth: null, coverHeight: null, images: [], status: "DRAFT",
+  tagsText: "", coverPath: null, coverWidth: null, coverHeight: null, media: [], status: "DRAFT",
 };
 
 const toDraft = (w: Work): Draft => ({
@@ -63,7 +76,10 @@ const toDraft = (w: Work): Draft => ({
   coverPath: w.coverPath,
   coverWidth: w.coverWidth,
   coverHeight: w.coverHeight,
-  images: w.images.map((i) => ({ path: i.path, width: i.width, height: i.height, caption: i.caption })),
+  media: w.media.map((m) => ({
+    kind: m.kind, path: m.path, videoId: m.videoId, videoProvider: m.videoProvider,
+    videoHash: m.videoHash, width: m.width, height: m.height, caption: m.caption,
+  })),
   status: w.status,
 });
 
@@ -91,6 +107,7 @@ export default function WorkClient() {
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [videoInput, setVideoInput] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch("/api/company/work", { cache: "no-store" });
@@ -118,7 +135,7 @@ export default function WorkClient() {
         coverPath: draft.coverPath,
         coverWidth: draft.coverWidth,
         coverHeight: draft.coverHeight,
-        images: draft.images,
+        media: draft.media,
         status: draft.status,
       };
       const res = await fetch(draft.id ? `/api/company/work/${draft.id}` : "/api/company/work", {
@@ -138,7 +155,7 @@ export default function WorkClient() {
   }
 
   async function remove(w: Work) {
-    if (!window.confirm(`Delete "${w.title}"? Its images go too, and this can't be undone.`)) return;
+    if (!window.confirm(`Delete "${w.title}"? Its images and videos go too, and this can't be undone.`)) return;
     setBusyId(w.id); setError(null);
     try {
       const res = await fetch(`/api/company/work/${w.id}`, { method: "DELETE" });
@@ -163,13 +180,21 @@ export default function WorkClient() {
     }
   }
 
-  async function addGallery(files: FileList) {
+  async function addGallery(files: File[]) {
     setUploading(true); setError(null);
     try {
-      for (const file of Array.from(files).slice(0, 12)) {
+      for (const file of files.slice(0, 12)) {
         const up = await uploadImage(file, "work");
         setDraft((d) =>
-          d ? { ...d, images: [...d.images, { path: up.path, width: up.width, height: up.height, caption: null }] } : d
+          d
+            ? {
+                ...d,
+                media: [
+                  ...d.media,
+                  { kind: "IMAGE", path: up.path, videoId: null, videoProvider: null, videoHash: null, width: up.width, height: up.height, caption: null },
+                ],
+              }
+            : d
         );
       }
     } catch (e) {
@@ -177,6 +202,32 @@ export default function WorkClient() {
     } finally {
       setUploading(false);
     }
+  }
+
+  /**
+   * A pasted link becomes a provider + id HERE as well as on the server.
+   * Client-side so a typo is caught while the paste is still on screen, and
+   * again server-side because a client check is a convenience, never a gate
+   * (lib/company/save.ts re-parses it).
+   */
+  function addVideo() {
+    const raw = videoInput.trim();
+    if (!raw || !draft) return;
+    const ref = parseVideo(raw);
+    if (!ref) { setError("That doesn't look like a YouTube or Vimeo link."); return; }
+    if (draft.media.some((m) => m.kind === "VIDEO" && m.videoId === ref.id)) {
+      setError("That video is already on this piece of work.");
+      return;
+    }
+    setError(null);
+    setVideoInput("");
+    setDraft({
+      ...draft,
+      media: [
+        ...draft.media,
+        { kind: "VIDEO", path: ref.id, videoId: ref.id, videoProvider: ref.provider, videoHash: ref.hash, width: null, height: null, caption: null },
+      ],
+    });
   }
 
   if (gate) return <EmployerGate title="Our work" reason={gate} what="your work" />;
@@ -269,21 +320,49 @@ export default function WorkClient() {
             </div>
 
             <div>
-              <label style={ES.label}>More images</label>
+              <label style={ES.label}>Images &amp; videos</label>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-                {draft.images.map((img, i) => (
-                  <div key={img.path} style={{ position: "relative" }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={imgUrl(img.path)} alt="" style={S.thumb} />
-                    <button type="button" aria-label="Remove image" style={S.thumbX}
-                      onClick={() => setDraft({ ...draft, images: draft.images.filter((_, j) => j !== i) })}>×</button>
+                {draft.media.map((m, i) => (
+                  <div key={`${m.kind}-${m.path}-${i}`} style={{ position: "relative" }}>
+                    {m.kind === "VIDEO" ? (
+                      // No thumbnail here on purpose: the poster comes from the
+                      // provider through our proxy, and fetching it just to
+                      // decorate the editor would slow the panel for nothing.
+                      <div style={S.videoChip}>
+                        <span style={{ fontSize: 16 }}>▶</span>
+                        <span>{m.videoProvider === "VIMEO" ? "Vimeo" : "YouTube"}</span>
+                      </div>
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={imgUrl(m.path)} alt="" style={S.thumb} />
+                    )}
+                    <button type="button" aria-label="Remove" style={S.thumbX}
+                      onClick={() => setDraft({ ...draft, media: draft.media.filter((_, j) => j !== i) })}>×</button>
                   </div>
                 ))}
               </div>
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                <input style={{ ...ES.input, flex: "1 1 260px" }} value={videoInput}
+                  onChange={(e) => setVideoInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addVideo(); } }}
+                  placeholder="Paste a YouTube or Vimeo link" />
+                <button type="button" style={ES.btnGhost} onClick={addVideo}>Add video</button>
+              </div>
+
               <label style={{ ...ES.btnGhost, display: "inline-block" }}>
                 Add images
                 <input type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif" style={{ display: "none" }}
-                  onChange={(e) => { const f = e.target.files; e.target.value = ""; if (f?.length) addGallery(f); }} />
+                  onChange={(e) => {
+                    // Array.from FIRST. `e.target.files` is a LIVE FileList —
+                    // clearing the input's value empties it, so reading it
+                    // after the reset yields nothing and the upload silently
+                    // never happens. The cover input survived the same bug
+                    // only because `?.[0]` copies a real File out first.
+                    const picked = Array.from(e.target.files ?? []);
+                    e.target.value = "";
+                    if (picked.length) addGallery(picked);
+                  }} />
               </label>
               {uploading && <span style={{ ...S.hint, marginLeft: 10 }}>Uploading…</span>}
             </div>
@@ -357,4 +436,5 @@ const S: Record<string, React.CSSProperties> = {
   thumb: { width: 84, height: 62, objectFit: "cover", borderRadius: 10, border: "1px solid #E2E8F0", display: "block" },
   thumbX: { position: "absolute", top: -7, right: -7, width: 22, height: 22, borderRadius: "50%", border: "1px solid #E2E8F0", background: "#fff", color: "#475569", fontSize: 14, lineHeight: 1, cursor: "pointer" },
   rowThumb: { flex: "none", width: 64, height: 48, borderRadius: 10, overflow: "hidden", background: "#F1F5F9", display: "grid", placeItems: "center" },
+  videoChip: { width: 84, height: 62, borderRadius: 10, border: "1px solid #E2E8F0", background: "#0F172A", color: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, fontSize: 10.5, fontWeight: 700 },
 };

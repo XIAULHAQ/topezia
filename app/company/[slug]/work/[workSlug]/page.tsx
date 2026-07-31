@@ -20,6 +20,11 @@ import { SiteFooter } from "@/app/_components/SiteChrome";
 import { companyImageUrl, companyLogoUrl } from "@/lib/company/storage";
 import { companyIndexable, companyWorkIndexable } from "@/lib/company/indexing";
 import { UGC_REL } from "@/lib/ugc";
+// Shared with the member portfolio: same parser, same poster proxy, same
+// click-to-play embed. The module still lives under lib/portfolio because
+// that is where it was written; nothing in it is portfolio-specific.
+import { videoEmbedUrl, videoPosterUrl } from "@/lib/portfolio/video";
+import VideoEmbed from "@/app/portfolio/[slug]/video-embed";
 
 export const revalidate = 900;
 
@@ -34,7 +39,13 @@ async function load(companySlug: string, workSlug: string) {
     select: {
       slug: true, title: true, summary: true, description: true, clientName: true,
       projectUrl: true, tags: true, coverPath: true, publishedAt: true,
-      images: { orderBy: { position: "asc" }, select: { path: true, caption: true, width: true, height: true } },
+      media: {
+        orderBy: { position: "asc" },
+        select: {
+          kind: true, path: true, caption: true, width: true, height: true,
+          videoId: true, videoProvider: true, videoHash: true,
+        },
+      },
       company: {
         select: {
           name: true, slug: true, tagline: true, about: true, website: true, logoPath: true, spamCleared: true,
@@ -66,7 +77,7 @@ function indexable(w: WorkRecord): boolean {
       description: w.description,
       clientName: w.clientName,
       tags: w.tags,
-      captions: w.images.map((i) => i.caption),
+      captions: w.media.map((m) => m.caption),
     },
     w.company.spamCleared
   );
@@ -141,15 +152,33 @@ export default async function CompanyWorkPage({ params }: { params: { slug: stri
               </div>
             )}
 
-            {w.images.length > 0 && (
+            {w.media.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 26 }}>
-                {w.images.map((img) => (
-                  <figure key={img.path} style={{ margin: 0 }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={companyImageUrl(img.path)!} alt={img.caption ?? ""} style={{ width: "100%", height: "auto", borderRadius: 12, display: "block", border: `1px solid ${LINE}` }} />
-                    {img.caption && <figcaption style={{ fontSize: 12, color: MUTED, marginTop: 8 }}>{img.caption}</figcaption>}
-                  </figure>
-                ))}
+                {w.media.map((m, i) => {
+                  if (m.kind === "VIDEO") {
+                    if (!m.videoId || !m.videoProvider) return null;
+                    const ref = { provider: m.videoProvider, id: m.videoId, hash: m.videoHash };
+                    // autoplay is safe: VideoEmbed only mounts the iframe on
+                    // click, so the click IS the user gesture that allows it.
+                    const embed = videoEmbedUrl(ref, { autoplay: true });
+                    if (!embed) return null;
+                    return (
+                      <figure key={`v-${i}`} style={{ margin: 0 }}>
+                        <VideoEmbed embedUrl={embed} posterUrl={videoPosterUrl(ref)} title={m.caption ?? `${w.title} — video ${i + 1}`} />
+                        {m.caption && <figcaption style={{ fontSize: 12, color: MUTED, marginTop: 8 }}>{m.caption}</figcaption>}
+                      </figure>
+                    );
+                  }
+                  const url = companyImageUrl(m.path);
+                  if (!url) return null;
+                  return (
+                    <figure key={m.path} style={{ margin: 0 }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt={m.caption ?? ""} loading="lazy" decoding="async" style={{ width: "100%", height: "auto", borderRadius: 12, display: "block", border: `1px solid ${LINE}` }} />
+                      {m.caption && <figcaption style={{ fontSize: 12, color: MUTED, marginTop: 8 }}>{m.caption}</figcaption>}
+                    </figure>
+                  );
+                })}
               </div>
             )}
           </div>

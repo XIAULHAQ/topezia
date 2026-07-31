@@ -28,7 +28,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const existing = await prisma.companyWork.findFirst({
     where: { id: params.id, companyId },
-    select: { id: true, slug: true, status: true, publishedAt: true, coverPath: true, images: { select: { path: true } } },
+    select: { id: true, slug: true, status: true, publishedAt: true, coverPath: true, media: { select: { path: true, kind: true } } },
   });
   if (!existing) return NextResponse.json({ error: "That work no longer exists." }, { status: 404 });
 
@@ -41,18 +41,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const result = validateWork(body, companyId);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
-  const { images, ...v } = result.value;
+  const { media, ...v } = result.value;
 
-  // Images are replaced wholesale rather than diffed — simpler, and the
-  // editor always sends the full list. Whatever is no longer referenced gets
-  // deleted from the bucket afterwards.
-  const kept = new Set([...images.map((i) => i.path), ...(v.coverPath ? [v.coverPath] : [])]);
-  const orphaned = [existing.coverPath, ...existing.images.map((i) => i.path)].filter(
-    (p): p is string => !!p && !kept.has(p)
-  );
+  // Media is replaced wholesale rather than diffed — simpler, and the editor
+  // always sends the full list. Whatever is no longer referenced gets deleted
+  // from the bucket afterwards.
+  //
+  // Only IMAGE rows carry a storage path. A VIDEO row's `path` is the provider
+  // id, so including one here would ask Supabase to delete an object called
+  // "dQw4w9WgXcQ" — harmless, but it is not a file and never was.
+  const kept = new Set([
+    ...media.filter((m) => m.kind === "IMAGE").map((m) => m.path),
+    ...(v.coverPath ? [v.coverPath] : []),
+  ]);
+  const orphaned = [
+    existing.coverPath,
+    ...existing.media.filter((m) => m.kind === "IMAGE").map((m) => m.path),
+  ].filter((p): p is string => !!p && !kept.has(p));
 
   const work = await prisma.$transaction(async (tx) => {
-    await tx.companyWorkImage.deleteMany({ where: { workId: existing.id } });
+    await tx.companyWorkMedia.deleteMany({ where: { workId: existing.id } });
     return tx.companyWork.update({
       where: { id: existing.id },
       data: {
@@ -60,9 +68,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         // First publish stamps the date; re-publishing something already live
         // must not backdate or bump it.
         publishedAt: v.status === "PUBLISHED" ? existing.publishedAt ?? new Date() : null,
-        images: images.length ? { createMany: { data: images } } : undefined,
+        media: media.length ? { createMany: { data: media } } : undefined,
       },
-      include: { images: { orderBy: { position: "asc" } } },
+      include: { media: { orderBy: { position: "asc" } } },
     });
   });
 
@@ -80,15 +88,16 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   const existing = await prisma.companyWork.findFirst({
     where: { id: params.id, companyId },
-    select: { id: true, slug: true, coverPath: true, images: { select: { path: true } } },
+    select: { id: true, slug: true, coverPath: true, media: { select: { path: true, kind: true } } },
   });
   if (!existing) return NextResponse.json({ error: "That work no longer exists." }, { status: 404 });
 
   // Collect the paths first: once the rows are gone we no longer know which
   // objects belonged to this work, and they would sit in the bucket forever.
-  const paths = [existing.coverPath, ...existing.images.map((i) => i.path)];
+  // IMAGE rows only — a VIDEO row's path is a provider id, not a file.
+  const paths = [existing.coverPath, ...existing.media.filter((m) => m.kind === "IMAGE").map((m) => m.path)];
 
-  await prisma.companyWork.delete({ where: { id: existing.id } }); // images cascade
+  await prisma.companyWork.delete({ where: { id: existing.id } }); // media cascades
   await removeObjects(COMPANY_BUCKET, paths);
 
   revalidatePath(`/company/${companySlug}`);

@@ -28,7 +28,7 @@ export async function GET() {
   const work = await prisma.companyWork.findMany({
     where: { companyId: auth.owner.companyId },
     orderBy: [{ position: "asc" }, { createdAt: "desc" }],
-    include: { images: { orderBy: { position: "asc" } } },
+    include: { media: { orderBy: { position: "asc" } } },
   });
 
   return NextResponse.json({ work, companySlug: auth.owner.slug });
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 
   const result = validateWork(body, companyId);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
-  const { images, ...v } = result.value;
+  const { media, ...v } = result.value;
 
   const work = await prisma.companyWork.create({
     data: {
@@ -66,9 +66,9 @@ export async function POST(req: NextRequest) {
       slug: makeSlug(v.title, "work"),
       position: count,
       publishedAt: v.status === "PUBLISHED" ? new Date() : null,
-      images: images.length ? { createMany: { data: images } } : undefined,
+      media: media.length ? { createMany: { data: media } } : undefined,
     },
-    include: { images: { orderBy: { position: "asc" } } },
+    include: { media: { orderBy: { position: "asc" } } },
   });
 
   // The company page is cached (revalidate 900); without this the new work

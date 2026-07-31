@@ -1252,3 +1252,42 @@ about features.
   Every upload route in the project degrades the same way ("Uploads are
   temporarily unavailable", HTTP 500). The image paths in this feature were
   verified by validation and by rendering, **not** by a real upload.
+
+## Company work: gallery upload + video embeds (added 2026-07-31)
+
+- 🔴 **Gallery upload silently did nothing.** The multi-file input read
+  `e.target.files` into a variable and *then* did `e.target.value = ""` to
+  reset the control. `FileList` is LIVE — clearing the input empties the list
+  the variable points at, so the length check that followed saw zero and the
+  upload never started. No error, no network request, nothing in the console.
+  The cover input was written a line differently (`e.target.files?.[0]`, which
+  copies a real `File` out first) and was unaffected, which is exactly why the
+  symptom was "cover works, gallery doesn't". Fixed by `Array.from(...)`
+  before the reset — the same order `app/portfolio/new/portfolio-editor.tsx`
+  already used. **Reproduced and re-verified in a browser**, not reasoned
+  about: old path 0 files, fixed path 2.
+- 🟢 **Videos on company work (migration 046).** YouTube and Vimeo embeds were
+  never built for companies — only the member portfolio had them — so this was
+  a missing feature reported as a bug, which is a fair reading when the two
+  surfaces otherwise mirror each other. It now reuses
+  `lib/portfolio/video.ts`, the `/api/portfolio/video-poster` proxy and the
+  `VideoEmbed` component wholesale rather than growing a second parser.
+  Verified: 7 real link shapes parse (watch, youtu.be, timestamped, shorts,
+  vimeo, vimeo unlisted, player.vimeo), junk and `javascript:` are refused,
+  the embed resolves to `youtube-nocookie` (already in the CSP `frame-src`),
+  the poster is proxied through our own origin, and **zero iframes exist
+  before a click** — click-to-play is what keeps a megabyte of player JS off
+  the page and the provider's branding out of the still frame.
+- 🟡 **A pasted link is never stored raw.** It is parsed to a provider + id,
+  and the iframe `src` is rebuilt by us from those two values. A "YouTube
+  link" that is really something else cannot become an arbitrary embed on a
+  page we host.
+- 🟡 **`CompanyWorkImage` became `CompanyWorkMedia`** because it now holds
+  videos and the old name stopped being true. The table was dropped and
+  recreated rather than altered — it was one day old and held **zero rows,
+  verified before writing the migration**, and the migration carries a guard
+  that raises rather than dropping if that is ever untrue.
+- 🟡 **Only `kind: IMAGE` rows carry a storage path.** A VIDEO row's `path` is
+  the provider id, so both the edit and delete paths filter on kind before
+  handing anything to storage cleanup — otherwise we would ask Supabase to
+  delete an object named `dQw4w9WgXcQ`.
