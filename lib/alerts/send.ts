@@ -28,6 +28,10 @@ export async function sendEmail(opts: {
   html: string;
   /** Bulk mail only: enables RFC 8058 one-click unsubscribe. */
   listUnsubscribeUrl?: string;
+  /** Sender identity. Defaults to the job-alerts address; anything on the
+   *  verified mail. subdomain works without touching Resend. Pass one when
+   *  "Topezia Job Alerts" would be the wrong name on the envelope. */
+  from?: string;
 }): Promise<void> {
   const key = process.env.RESEND_API_KEY;
   if (!key) throw new Error("RESEND_API_KEY is not set");
@@ -42,7 +46,7 @@ export async function sendEmail(opts: {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({
-      from: process.env.ALERT_FROM_EMAIL ?? "Topezia Job Alerts <alerts@mail.topezia.com>",
+      from: opts.from ?? process.env.ALERT_FROM_EMAIL ?? "Topezia Job Alerts <alerts@mail.topezia.com>",
       to: opts.to,
       subject: opts.subject,
       html: opts.html,

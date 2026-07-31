@@ -26,6 +26,7 @@ import { sendEmail } from "@/lib/alerts/send";
 import {
   validateSubmission,
   renderNewInquiryEmail,
+  INQUIRY_FROM,
   SPAM_MARK_LOCKOUT,
   RESUBMIT_COOLDOWN_DAYS,
 } from "@/lib/company/inquiries";
@@ -152,7 +153,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
         reason,
         message,
       });
-      await sendEmail({ to, subject, html });
+      await sendEmail({ to, subject, html, from: INQUIRY_FROM });
       emailed = true;
     }
   } catch (err) {

@@ -15,7 +15,7 @@ import { requireCompanyOwner, userEmail } from "@/lib/company/owner";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 import { scoreUgc, isSpam, spamMessage } from "@/lib/ugc";
 import { sendEmail } from "@/lib/alerts/send";
-import { INQUIRY_LIMITS, renderCompanyReplyEmail } from "@/lib/company/inquiries";
+import { INQUIRY_LIMITS, INQUIRY_FROM, renderCompanyReplyEmail } from "@/lib/company/inquiries";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -116,7 +116,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const to = await userEmail(inquiry.profile.userId);
     if (to) {
       const { subject, html } = renderCompanyReplyEmail({ companyName, body: text });
-      await sendEmail({ to, subject, html });
+      await sendEmail({ to, subject, html, from: INQUIRY_FROM });
       emailed = true;
     }
   } catch (err) {

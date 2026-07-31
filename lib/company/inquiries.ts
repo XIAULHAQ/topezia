@@ -118,6 +118,12 @@ export function validateSubmission(
  * email is not.
  */
 
+/** Sender for inquiry mail. NOT the job-alerts identity: "Topezia Job Alerts"
+ *  on a "so-and-so replied to you" envelope reads like a broadcast and gets
+ *  the open rate of one. The domain is Resend-verified, so no dashboard work
+ *  is needed for a second address on it. */
+export const INQUIRY_FROM = process.env.INQUIRY_FROM_EMAIL ?? "Topezia <messages@mail.topezia.com>";
+
 const snippet = (s: string) => escapeHtml(s.length > 180 ? `${s.slice(0, 180)}…` : s);
 
 const emailShell = (inner: string, footer: string) => `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f7f7fb;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">

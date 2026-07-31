@@ -13,7 +13,7 @@ import { userEmail } from "@/lib/company/owner";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 import { scoreUgc, isSpam, spamMessage } from "@/lib/ugc";
 import { sendEmail } from "@/lib/alerts/send";
-import { INQUIRY_LIMITS, renderCandidateReplyEmail } from "@/lib/company/inquiries";
+import { INQUIRY_LIMITS, INQUIRY_FROM, renderCandidateReplyEmail } from "@/lib/company/inquiries";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         senderName: profile.fullName?.trim() || "A Topezia member",
         body: text,
       });
-      await sendEmail({ to, subject, html });
+      await sendEmail({ to, subject, html, from: INQUIRY_FROM });
       emailed = true;
     }
   } catch (err) {
