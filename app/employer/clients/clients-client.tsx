@@ -8,7 +8,7 @@
  * text" is the exact shape of a link farm.
  */
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
-import { EmployerSection, EmployerGate, ES } from "../_components/EmployerTabs";
+import { EmployerSection, EmployerGate, ES } from "../_components/EmployerSection";
 
 type ClientRow = { id: string; name: string; websiteUrl: string | null; logoPath: string | null };
 type Draft = { id: string | null; name: string; websiteUrl: string; logoPath: string | null };

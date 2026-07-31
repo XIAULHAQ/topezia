@@ -13,7 +13,7 @@
  * trust the page.
  */
 import { useCallback, useEffect, useState } from "react";
-import { EmployerSection, EmployerGate, ES } from "../_components/EmployerTabs";
+import { EmployerSection, EmployerGate, ES } from "../_components/EmployerSection";
 // Same parser the member portfolio uses — one definition of "is this a
 // YouTube link", shared rather than re-implemented.
 import { parseVideo } from "@/lib/portfolio/video";

@@ -4,15 +4,15 @@
  * API re-checks that independently on every write.
  */
 import type { Metadata } from "next";
-import AppShell from "@/app/_components/AppShell";
+import EmployerShell from "@/app/employer/_components/EmployerShell";
 import WorkClient from "./work-client";
 
 export const metadata: Metadata = { title: "Our work — Topezia", robots: { index: false } };
 
 export default function EmployerWorkPage() {
   return (
-    <AppShell>
+    <EmployerShell>
       <WorkClient />
-    </AppShell>
+    </EmployerShell>
   );
 }

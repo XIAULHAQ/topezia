@@ -1,55 +1,16 @@
 "use client";
 
 /**
- * The employer area's section nav.
- *
- * A horizontal strip rather than a sidebar on purpose: /employer already sits
- * inside AppShell, which owns the left rail. A second vertical nav nested in
- * the first reads as two competing hierarchies and halves the width the
- * content gets on a laptop.
- *
- * Every entry is a real page. Nothing here is a "Soon" placeholder — the
- * employer dashboard already carries enough not-yet-real surface in the
- * design it was built from (see employer-client.tsx), and a nav that lies
- * about what exists is worse than a shorter nav.
- */
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import type { CSSProperties } from "react";
-
-const TABS: { href: string; label: string }[] = [
-  { href: "/employer", label: "Overview" },
-  { href: "/employer/work", label: "Work" },
-  { href: "/employer/testimonials", label: "Testimonials" },
-  { href: "/employer/clients", label: "Clients" },
-  { href: "/employer/articles", label: "Articles" },
-  { href: "/employer/team", label: "Team" },
-];
-
-export default function EmployerTabs() {
-  const pathname = usePathname() ?? "";
-
-  return (
-    <nav style={S.bar} aria-label="Company sections">
-      {TABS.map((t) => {
-        // "/employer" must not light up for every child route, so the overview
-        // matches exactly and everything else matches its subtree (the article
-        // editor lives under /employer/articles/{id}).
-        const active = t.href === "/employer" ? pathname === "/employer" : pathname.startsWith(t.href);
-        return (
-          <Link key={t.href} href={t.href} style={{ ...S.tab, ...(active ? S.on : {}) }} aria-current={active ? "page" : undefined}>
-            {t.label}
-          </Link>
-        );
-      })}
-    </nav>
-  );
-}
-
-/**
  * Shared page furniture for the company sections, so six pages can't drift
  * into six slightly different headers.
+ *
+ * The horizontal tab strip that used to live here is gone: /employer has its
+ * own sidebar now (EmployerShell), and a second nav under it was two navs
+ * competing to say the same thing.
  */
+
+import type { CSSProperties } from "react";
+
 export function EmployerSection({
   title,
   subtitle,
@@ -63,7 +24,6 @@ export function EmployerSection({
 }) {
   return (
     <div style={S.wrap}>
-      <EmployerTabs />
       <header style={S.head}>
         <div style={{ minWidth: 0 }}>
           <h1 style={S.h1}>{title}</h1>
@@ -121,10 +81,7 @@ export const ES: Record<string, CSSProperties> = {
 };
 
 const S: Record<string, CSSProperties> = {
-  wrap: { maxWidth: 1080, margin: "0 auto", width: "100%" },
-  bar: { display: "flex", gap: 6, flexWrap: "wrap", borderBottom: "1px solid #E2E8F0", paddingBottom: 12, marginBottom: 22 },
-  tab: { fontSize: 13, fontWeight: 600, color: "#64748B", textDecoration: "none", padding: "7px 13px", borderRadius: 999, border: "1px solid transparent" },
-  on: { background: "#EEF2FF", color: "#4F46E5", borderColor: "#C7D2FE", fontWeight: 700 },
+  wrap: { width: "100%" },
   head: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 20, flexWrap: "wrap" },
   h1: { margin: 0, fontSize: 24, fontWeight: 800, letterSpacing: "-0.5px", color: "#0F172A" },
   sub: { margin: "7px 0 0", fontSize: 13.5, color: "#64748B", lineHeight: 1.6, maxWidth: 620 },

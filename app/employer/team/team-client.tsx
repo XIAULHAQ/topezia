@@ -18,7 +18,7 @@
  * fail the request.
  */
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
-import { EmployerSection, EmployerGate, ES } from "../_components/EmployerTabs";
+import { EmployerSection, EmployerGate, ES } from "../_components/EmployerSection";
 
 type Member = {
   id: string; name: string; title: string | null; profileRole: string | null; role: "OWNER" | "MEMBER";

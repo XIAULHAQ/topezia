@@ -19,7 +19,7 @@ import { slugify } from "@/lib/blog/slugify";
 import { analyzeSeo } from "@/lib/blog/seo-analysis";
 import TiptapEditor from "@/app/_components/editor/TiptapEditor";
 import SeoPanel from "@/app/_components/editor/SeoPanel";
-import { EmployerSection, ES } from "../../_components/EmployerTabs";
+import { EmployerSection, ES } from "../../_components/EmployerSection";
 
 type Article = {
   id: string;

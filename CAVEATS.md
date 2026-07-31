@@ -1322,3 +1322,40 @@ about features.
   a company page, which shows a company, its work and its articles at once, so
   `ReportButton` now carries a per-kind default: "Report this company",
   "Report this work", "Report this article".
+
+## Company is its own entity, not part of a member's profile (2026-07-31)
+
+Stated by Brandon as a standing principle: "company is a separate person/user
+owned by a different user… it should not be mixed with my profile/content
+database". Recording what that means concretely, because most of it was
+already true and the exceptions are the interesting part.
+
+- 🟢 **Content was already fully separate, by construction.** `CompanyWork`,
+  `CompanyArticle`, `CompanyTestimonial`, `CompanyClient`, `CompanyTeamMember`
+  and `CompanyInvite` are their own tables keyed to `companyId` — never to a
+  `Profile`. Verified by query, not assumption: the six files that read
+  `prisma.portfolio` never touch company work, and the four that read
+  `prisma.post` never touch company articles. Company work cannot surface in
+  `/portfolio`, company articles cannot surface in `/blog`, and nothing about a
+  company appears on `/p/{slug}`. Separate storage bucket, separate spam score,
+  separate `spamCleared`, separate indexing decision.
+- 🟢 **The employer area now has its own shell** (`EmployerShell`). It used to
+  render inside `AppShell` — the job-seeker sidebar with My Profile, Resume
+  Builder, Saved Jobs, My Work — so managing a company happened inside a
+  personal job hunt. The company shell shows the COMPANY's logo, name and
+  sections, with exactly one clearly-named route back ("My job search").
+  Verified signed-out: no member nav string appears anywhere on the page.
+- 🟡 **The team roster still reads member profiles, and that is intended.**
+  Brandon's call when asked directly: "Company should show the staff profiles
+  anyway." A team is made of real people who have Topezia profiles, so the
+  roster shows their name, their profile role and a link to `/p/{slug}`. That
+  is a RELATIONSHIP between two entities, not company content stored on a
+  profile — the distinction that keeps it consistent with the principle above.
+- 🟡 **Applicants and sourcing show member profiles too**, and must. That is
+  the hiring product working, not leakage.
+- 🔴 **There is no separate company login.** `Company.ownerUserId` is a
+  personal Supabase account id, and one company per account is
+  schema-enforced. "Log in as Rodeo Graphics", or two people administering one
+  company, is an auth change — not a small one — and nothing in the current
+  design assumes it will never happen. `requireCompanyOwner()` is the single
+  gate, so the blast radius of changing it later is one file.

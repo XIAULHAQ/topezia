@@ -8,7 +8,7 @@
  * an employer should find that out here rather than after publishing.
  */
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
-import { EmployerSection, EmployerGate, ES } from "../_components/EmployerTabs";
+import { EmployerSection, EmployerGate, ES } from "../_components/EmployerSection";
 
 type Testimonial = {
   id: string;

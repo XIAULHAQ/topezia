@@ -5,7 +5,7 @@
  * different table and a different author.
  */
 import { useEffect, useState, type CSSProperties } from "react";
-import { EmployerSection, EmployerGate, ES } from "../_components/EmployerTabs";
+import { EmployerSection, EmployerGate, ES } from "../_components/EmployerSection";
 
 type Row = {
   id: string;
