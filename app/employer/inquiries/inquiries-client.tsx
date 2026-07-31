@@ -36,6 +36,7 @@ type Inquiry = {
   messages: Msg[];
 };
 type Config = { contactEnabled: boolean; contactReasons: string[]; contactQuestions: string[] };
+type Suggested = { reasons: string[]; questions: string[] };
 
 const TABS = ["New", "Replied", "Archived", "Spam"] as const;
 type Tab = (typeof TABS)[number];
@@ -45,6 +46,7 @@ export default function InquiriesClient() {
   const [gate, setGate] = useState<"auth" | "company" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
+  const [suggested, setSuggested] = useState<Suggested | null>(null);
   const [items, setItems] = useState<Inquiry[] | null>(null);
   const [tab, setTab] = useState<Tab>("New");
 
@@ -66,11 +68,12 @@ export default function InquiriesClient() {
         if (res.status === 401) { setGate("auth"); return null; }
         if (res.status === 409) { setGate("company"); return null; }
         if (!res.ok) throw new Error();
-        return res.json() as Promise<{ config: Config; inquiries: Inquiry[] }>;
+        return res.json() as Promise<{ config: Config; inquiries: Inquiry[]; suggested: Suggested }>;
       })
       .then((d) => {
         if (!d) return;
         setConfig(d.config);
+        setSuggested(d.suggested ?? null);
         setItems(d.inquiries);
       })
       .catch(() => setError("Couldn't load your inbox."));
@@ -134,6 +137,18 @@ export default function InquiriesClient() {
     }
   }
 
+  /** The editor's starting point: the saved config, except when it's still
+   *  blank — then the suggestions derived from the company's own page (live
+   *  roles → hiring reason; shown work/clients/project bids → services
+   *  reasons + budget/timing questions). Nothing is written until Save. */
+  function draftFrom(cfg: Config): Config {
+    const blank = cfg.contactReasons.length === 0 && cfg.contactQuestions.length === 0;
+    if (blank && suggested) {
+      return { ...cfg, contactReasons: suggested.reasons, contactQuestions: suggested.questions };
+    }
+    return { ...cfg };
+  }
+
   if (gate) return <EmployerGate title="Inbox" reason={gate} what="your inbox" />;
   if (error && items === null) {
     return (
@@ -175,14 +190,17 @@ export default function InquiriesClient() {
             <button
               type="button"
               style={ES.btnGhost}
-              onClick={() => { setDraft({ ...config }); setEditingForm(true); setSaveError(null); }}
+              onClick={() => { setDraft(draftFrom(config)); setEditingForm(true); setSaveError(null); }}
             >
               {config.contactEnabled ? "Edit form" : "Set up"}
             </button>
             <button
               type="button"
               style={config.contactEnabled ? ES.btnDanger : ES.btn}
-              onClick={() => saveConfig({ ...config, contactEnabled: !config.contactEnabled })}
+              // Turning ON a never-configured form ships the suggested
+              // defaults rather than a bare message box; turning off leaves
+              // the saved fields alone for when it comes back on.
+              onClick={() => saveConfig(config.contactEnabled ? { ...config, contactEnabled: false } : { ...draftFrom(config), contactEnabled: true })}
               disabled={saving}
             >
               {config.contactEnabled ? "Turn off" : "Turn on"}
@@ -205,12 +223,26 @@ export default function InquiriesClient() {
               onChange={(e) => setDraft({ ...draft, contactQuestions: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, INQUIRY_LIMITS.questions) })}
             />
             {saveError && <p style={ES.error}>{saveError}</p>}
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <button type="button" style={ES.btn} disabled={saving} onClick={() => saveConfig({ ...draft, contactEnabled: true })}>
                 {saving ? "Saving…" : config.contactEnabled ? "Save" : "Save and turn on"}
               </button>
               <button type="button" style={ES.btnGhost} onClick={() => setEditingForm(false)}>Cancel</button>
+              {suggested && (suggested.reasons.length > 0 || suggested.questions.length > 0) && (
+                <button
+                  type="button"
+                  style={{ ...ES.btnGhost, marginLeft: "auto" }}
+                  onClick={() => setDraft({ ...draft, contactReasons: suggested.reasons, contactQuestions: suggested.questions })}
+                >
+                  Reset to suggested
+                </button>
+              )}
             </div>
+            <p style={{ margin: "12px 0 0", fontSize: 11.5, lineHeight: 1.6, color: "#94A3B8" }}>
+              Suggestions come from your page — live roles add a hiring reason; shown work,
+              clients or project posts add quote and budget fields. Edit anything; senders
+              answering an older version of a question keep their original wording.
+            </p>
           </div>
         )}
       </div>

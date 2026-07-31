@@ -11,7 +11,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireCompanyOwner } from "@/lib/company/owner";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
-import { validateContactConfig } from "@/lib/company/inquiries";
+import { validateContactConfig, suggestContactConfig } from "@/lib/company/inquiries";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ export async function GET() {
   if (!auth.ok) return auth.response;
   const { companyId } = auth.owner;
 
-  const [config, inquiries] = await Promise.all([
+  const [config, inquiries, liveJobs, liveProjects, work, clients] = await Promise.all([
     prisma.company.findUnique({
       where: { id: companyId },
       select: { contactEnabled: true, contactReasons: true, contactQuestions: true },
@@ -49,9 +49,17 @@ export async function GET() {
         },
       },
     }),
+    prisma.job.count({ where: { companyId, status: "LIVE", kind: "JOB" } }),
+    prisma.job.count({ where: { companyId, status: "LIVE", kind: "PROJECT" } }),
+    prisma.companyWork.count({ where: { companyId, status: "PUBLISHED" } }),
+    prisma.companyClient.count({ where: { companyId } }),
   ]);
 
-  return NextResponse.json({ config, inquiries });
+  // What the setup editor seeds from when the config is still blank — derived
+  // from the company's own page, never written until the owner saves.
+  const suggested = suggestContactConfig({ liveJobs, liveProjects, work, clients });
+
+  return NextResponse.json({ config, inquiries, suggested });
 }
 
 export async function PATCH(req: NextRequest) {

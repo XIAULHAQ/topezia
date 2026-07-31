@@ -110,6 +110,47 @@ export function validateSubmission(
   return { ok: true, value: { reason, message, answers } };
 }
 
+/* ── Suggested defaults ───────────────────────────────────────────────────
+ * A blank config box asks the owner to invent form design on the spot; these
+ * seed it from what their page already says about them. Deliberately
+ * DETERMINISTIC — an LLM call to draft three dropdown options would be spend
+ * without judgement, and the signals are unambiguous: showing client work or
+ * taking project bids means services; live job postings mean hiring.
+ *
+ * Only ever a SUGGESTION: the API returns it alongside the config, the
+ * editor seeds from it while the config is untouched, and nothing is written
+ * until the owner saves. Saved-then-cleared fields stay cleared.
+ */
+export type ContactSignals = {
+  liveJobs: number; // kind JOB, status LIVE
+  liveProjects: number; // kind PROJECT, status LIVE
+  work: number; // published case studies
+  clients: number;
+};
+
+export function suggestContactConfig(s: ContactSignals): { reasons: string[]; questions: string[] } {
+  // Showing work, listing clients, or taking bids = a services business.
+  const services = s.work > 0 || s.clients > 0 || s.liveProjects > 0;
+  const hiring = s.liveJobs > 0;
+
+  const reasons: string[] = [];
+  if (services) reasons.push("New project inquiry", "Request a quote");
+  if (hiring) reasons.push("About a role you're hiring for");
+  reasons.push("Partnership", "Press", "Something else");
+
+  // Questions only where the answers change how the company responds. For a
+  // services shop, budget and timing decide whether a lead is real; for
+  // everyone else, the message field already asks the only question there is.
+  const questions: string[] = services
+    ? ["What do you need, in a sentence?", "Rough budget, if you have one?", "When would you want to start?"]
+    : [];
+
+  return {
+    reasons: reasons.slice(0, INQUIRY_LIMITS.reasons),
+    questions: questions.slice(0, INQUIRY_LIMITS.questions),
+  };
+}
+
 /* ── Notification emails ──────────────────────────────────────────────────
  * Same posture as the invite family (lib/company/invites.ts): the row is the
  * artifact, the email is a convenience — callers catch delivery failures and
