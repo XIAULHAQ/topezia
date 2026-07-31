@@ -270,9 +270,19 @@ export function extractLocationState(locationRaw: string | null): string | null 
   for (let i = parts.length - 1; i >= 0; i--) {
     const part = parts[i];
 
-    // "CA", "CA 94301", "CA USA"
+    // "CA", "CA 94301", "CA USA" — uppercase may lead a longer component,
+    // because a real code is written in caps.
     const abbr = part.match(/^([A-Z]{2})\b/);
     if (abbr && US_STATE_ABBR.includes(abbr[1])) return abbr[1];
+
+    // "Odessa, Tx" — boards do type it lower-case, but a mixed-case match may
+    // NOT lead a longer component. Relaxing that was tried and reverted the
+    // same hour: "Abu Dhabi - Al Maqam Tower" became Alabama and
+    // "Canada - Remote (ON, AB, BC, or NS Only)" became Oregon, because "Al"
+    // and "or" lead those components. The component must BE the code, with at
+    // most a ZIP after it.
+    const loose = part.match(/^([A-Za-z]{2})(?:\s+\d{5}(?:-\d{4})?)?$/);
+    if (loose && US_STATE_ABBR.includes(loose[1].toUpperCase())) return loose[1].toUpperCase();
 
     // The component must BE the state name, never merely contain it.
     const named = STATE_NAME_TO_ABBR[part.toLowerCase()];
@@ -321,6 +331,69 @@ function trailingStateAbbr(s: string): string | null {
 }
 
 /**
+ * Strings an ATS puts in the LOCATION field that are not locations.
+ *
+ * These are working arrangements ("Hybrid", "Distributed"), placeholders
+ * ("N/A", "LOCATION", "Add ALL locations here") or bare region words. They are
+ * the ONLY case in which we fall back to a secondary location field from the
+ * source — see resolveLocation. Anything we merely failed to PARSE is left
+ * alone, because "we don't recognise Aveiro" and "this says Hybrid" are
+ * different problems and only the second one is safe to route around.
+ */
+const NOT_A_LOCATION = new Set([
+  "hybrid", "in-office", "in office", "on-site", "onsite", "remote", "distributed",
+  "n/a", "na", "none", "tbd", "various", "multiple", "multiple locations",
+  "location", "locations", "add all locations here", "flexible", "anywhere",
+  "field", "field-based", "home based", "home-based", "nationwide", "global", "worldwide",
+]);
+
+/** Is this location string one we know carries no place at all? */
+export function isNonLocation(locationRaw: string | null): boolean {
+  if (!locationRaw) return true;
+  return NOT_A_LOCATION.has(locationRaw.trim().toLowerCase());
+}
+
+/**
+ * Which location string to normalize from, given what the source gave us.
+ *
+ * `primary` is the ATS location field. `secondary` is whatever else the source
+ * exposes (Greenhouse's `offices[]`). The secondary is used ONLY when the
+ * primary is a known non-location AND the job is not remote — on a remote job
+ * the office is the employer's HQ, not where the work happens, and stamping it
+ * on the posting would relocate a remote role to a city nobody works in.
+ *
+ * Verified against live Greenhouse data before this rule was written:
+ *   "Hybrid"                 + offices ["Austin, TX"]      -> Austin, TX   ✓
+ *   "Remote"                 + offices ["Bethesda"]        -> unchanged    ✓ (HQ of a remote job)
+ *   "Alberta; British Col…"  + offices ["New York City"]   -> unchanged    ✓ (contradicts the posting)
+ *   "Home based - Worldwide" + offices ["London, UK"]      -> unchanged    ✓ (not worldwide)
+ */
+export function resolveLocation(
+  primary: string | null,
+  secondary: string[] | null | undefined,
+  opts: { isRemote: boolean }
+): string | null {
+  if (!isNonLocation(primary) || opts.isRemote) return primary;
+  const usable = (secondary ?? []).find((name) => extractCountry(name) || extractLocationState(name));
+  return usable ?? primary;
+}
+
+/**
+ * Canadian provinces and territories.
+ *
+ * Country-only on purpose: `locationState` is a US concept that drives the
+ * /jobs/{role}/{state} lattice, and putting "ON" in it would mint pages for a
+ * lattice that has no Canadian branch. This answers "which country" and stops
+ * there — a posting listing "Alberta; British Columbia; Ontario" was resolving
+ * to no country at all, which is how it ended up with no structured data.
+ */
+const CA_PROVINCE = new Set([
+  "alberta", "british columbia", "manitoba", "new brunswick", "newfoundland and labrador",
+  "northwest territories", "nova scotia", "nunavut", "ontario", "prince edward island",
+  "quebec", "québec", "saskatchewan", "yukon",
+]);
+
+/**
  * ISO-3166 alpha-2 country for a job location. null = we genuinely don't know
  * (e.g. a bare "Remote"), which callers must treat as unknown rather than US.
  */
@@ -339,6 +412,9 @@ export function extractCountry(locationRaw: string | null): string | null {
     const iso = COUNTRY_NAME_TO_ISO[parts[i].toLowerCase()];
     if (iso) return iso;
   }
+
+  // A Canadian province names its country as surely as a US state does.
+  for (const part of parts) if (CA_PROVINCE.has(part.toLowerCase())) return "CA";
 
   // Then a known city. Left-to-right: boards write "AU - Sydney" and
   // "London - The River Building HQ", so the place leads and the office suffix
@@ -504,6 +580,10 @@ export function applyRulesPass(input: {
   titleRaw: string;
   descriptionRaw: string;
   locationRaw: string | null;
+  /** A secondary location the source exposes — Greenhouse's `offices[]`. Used
+   *  only when locationRaw is a known non-location and the job isn't remote;
+   *  see resolveLocation for why that gate is narrow. */
+  officeRaw?: string[] | null;
   leverCommitment?: string;
 }) {
   const descriptionText = stripHtml(input.descriptionRaw);
@@ -515,10 +595,16 @@ export function applyRulesPass(input: {
   const remoteType = extractRemoteType(input.locationRaw, descriptionText);
   const isRemote = remoteType === RemoteType.REMOTE_US || remoteType === RemoteType.REMOTE_GLOBAL || remoteType === RemoteType.REMOTE_INTL;
 
+  // Geography reads from the resolved string; everything else keeps reading the
+  // ORIGINAL. "Hybrid" has to stay the remote signal even once we know the
+  // office is in Austin — swapping locationRaw wholesale would reclassify a
+  // hybrid role as onsite.
+  const geo = resolveLocation(input.locationRaw, input.officeRaw, { isRemote });
+
   return {
     descriptionText,
-    locationState: extractLocationState(input.locationRaw),
-    country: extractCountry(input.locationRaw),
+    locationState: extractLocationState(geo),
+    country: extractCountry(geo),
     remoteScope: isRemote ? extractRemoteScope(input.locationRaw, descriptionText) : null,
     remoteType,
     employmentType: extractEmploymentType(input.titleRaw, descriptionText, input.leverCommitment),

@@ -32,6 +32,10 @@ export interface CrawledJob {
   descriptionRaw: string; // HTML stripped to text by the caller's normalize step
   sourceUrl: string;
   locationRaw: string | null;
+  /** Greenhouse's `offices[]`. The board's location field is often a working
+   *  arrangement ("Hybrid", "Distributed") while the real city sits here —
+   *  see resolveLocation for the narrow rule that decides when to use it. */
+  officeRaw?: string[] | null;
   postedAt: Date | null;
   companyName?: string | null; // real company name when the ATS exposes it
   raw: unknown; // kept for debugging / re-processing without re-fetching
@@ -77,6 +81,7 @@ export async function crawlGreenhouseBoard(companySlug: string): Promise<Crawled
     descriptionRaw: j.content, // HTML — normalize-rules.ts strips tags
     sourceUrl: j.absolute_url,
     locationRaw: j.location?.name || null,
+    officeRaw: (j.offices ?? []).map((o) => o?.name).filter((n): n is string => !!n),
     postedAt: j.updated_at ? new Date(j.updated_at) : null,
     companyName,
     raw: j,

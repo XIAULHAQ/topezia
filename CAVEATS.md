@@ -1404,3 +1404,49 @@ JobPosting items — rather than reasoned about from the code.
   used by the job detail page AND the SEO listing pages' ItemList, so neither
   can drift into its own idea of a valid posting — the failure mode that
   caused the earlier `applicantLocationRequirements` breakage.
+
+## Job location: read the field the source already gives us (2026-07-31)
+
+Follow-up to the JobPosting fix above. Dropping markup for postings with no
+location was safe but lazy — the location mostly wasn't missing, we weren't
+reading it.
+
+- 🔴 **Greenhouse returns two location fields and we used one.** `location.name`
+  is often a working ARRANGEMENT ("Hybrid", "Distributed", "N/A") while the real
+  city sits in `offices[]`, which the adapter already fetched and discarded.
+  All 479 affected postings were Greenhouse; Cloudflare alone accounts for 196
+  "Hybrid" rows whose office is "Austin, TX".
+- 🟡 **A blanket "use offices instead" would have been WORSE, and was tested
+  before being rejected.** Against 45 live postings: ZoomInfo "Remote" → offices
+  "Bethesda" (the HQ of a remote job), MongoDB "Alberta; British Columbia; …" →
+  offices "New York City" (contradicts the posting), Canonical "Home based -
+  Worldwide" → offices "Office Based - London, UK". So `resolveLocation` fires
+  ONLY when the primary string is a KNOWN non-location (an allow-list:
+  Hybrid/Distributed/N/A/LOCATION/…) **and** the job isn't remote. Anything we
+  merely failed to PARSE is left alone — "we don't recognise Aveiro" and "this
+  says Hybrid" are different problems, and only the second is safe to route
+  around.
+- 🟢 **Geography reads the resolved string; everything else keeps the original.**
+  "Hybrid" must stay the remote signal even once we know the office is in
+  Austin — swapping `locationRaw` wholesale would reclassify a hybrid role as
+  onsite.
+- 🟢 **Canadian provinces now resolve a country** (country only — `locationState`
+  is a US concept that drives the /jobs/{role}/{state} lattice, and putting "ON"
+  in it would mint pages for a branch that doesn't exist). A posting listing
+  "Alberta; British Columbia; Ontario" resolved to no country at all, and note
+  this now correctly beats that posting's misleading "New York City" office.
+- 🔴 **A regression check caught my own fix breaking two cases.** Making the US
+  state abbreviation match case-insensitive turned "Abu Dhabi - Al Maqam Tower"
+  into Alabama and "Canada - Remote (ON, AB, BC, or NS Only)" into Oregon,
+  because "Al" and "or" LEAD those components. A mixed-case code may now only
+  match when the component IS the code (optionally plus a ZIP); uppercase may
+  still lead a longer component, because a real code is written in caps.
+  Re-verified: 5,999 of 6,000 already-resolved jobs unchanged, the 1 difference
+  a correction of a stale stored value.
+- 🟡 **Impact, job-weighted: 330 of the 1,078 live jobs with no country.** 17
+  resolve from the parser alone; 313 resolve on the NEXT INGESTION RUN, because
+  `offices[]` is not stored on the row and has to come back from the source.
+  Nothing changes for existing rows until then.
+- 🟡 **The remaining ~748 are mostly "Home based - Worldwide" / "Remote - EMEA".**
+  Those name no country anywhere, and Google requires at least one eligible
+  country for a remote posting. There is no honest markup for them.

@@ -67,6 +67,7 @@ async function processJob(
     titleRaw: job.titleRaw,
     descriptionRaw: job.descriptionRaw,
     locationRaw: job.locationRaw,
+    officeRaw: job.officeRaw,
   });
 
   const descriptionHash = hashDescription(`${job.titleRaw}\n${rules.descriptionText}`);
