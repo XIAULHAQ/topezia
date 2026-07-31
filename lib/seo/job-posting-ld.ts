@@ -33,7 +33,21 @@ const FIRST_LOCATION = /\s*[•|]\s*/;
 /** Unanchored on purpose: boards write "Remote US" and "Remote - Poland", and
  *  neither is a city. Anchoring this to the whole string let "Remote US"
  *  through as an addressLocality. */
-const NON_PLACE = /\b(remote|anywhere|worldwide|global|hybrid|on-?site|distributed|flexible|multiple|various|virtual)\b/i;
+const NON_PLACE = /\b(remote|anywhere|worldwide|global|hybrid|on-?site|distributed|flexible|multiple|various|virtual|home[\s-]?based|in[\s-]?office|field[\s-]?based|nationwide)\b/i;
+
+/** Continent and sales-region acronyms boards use where a city belongs.
+ *  "NAMER" is not a city, and publishing it as addressLocality told Google the
+ *  role was in a town called NAMER. */
+const REGION_CODE = /^(emea|apac|namer|latam|amer|americas|anz|meta|dach|benelux|nordics|mena|ssa|row)$/i;
+
+/** Continents and super-regions, written where a city belongs. "Europe" as an
+ *  addressLocality tells Google the office is in a town called Europe. */
+const CONTINENT = /^(europe|asia|africa|oceania|antarctica|north america|south america|central america|latin america|middle east|caribbean|scandinavia|balkans)$/i;
+
+/** Structured ATS junk: "CAN: VAN (333 Seymour St)", "US-NY-New York". A colon
+ *  or a bracketed street address means the string is a location CODE, not a
+ *  city name — the country prefix is recovered separately by inferCountry. */
+const LOCATION_CODE = /[:()]/;
 
 /**
  * The city, when the location string actually names one.
@@ -53,6 +67,9 @@ export function addressLocality(locationRaw: string | null): string | null {
   const candidate = first.split(/[,;\/]|\s+-\s+/)[0]?.trim();
   if (!candidate || candidate.length < 2 || candidate.length > 80) return null;
   if (NON_PLACE.test(candidate)) return null;
+  if (REGION_CODE.test(candidate)) return null;
+  if (CONTINENT.test(candidate)) return null;
+  if (LOCATION_CODE.test(candidate)) return null;
   // "Japan" is a country and "CA" is a region — neither is a locality, and
   // publishing them as one would be wrong rather than merely incomplete.
   // Note this uses isUsStateName, NOT extractLocationState: the latter maps
@@ -60,6 +77,78 @@ export function addressLocality(locationRaw: string | null): string | null {
   if (isCountryName(candidate)) return null;
   if (isUsStateName(candidate)) return null;
   return candidate;
+}
+
+/** ISO-3 codes boards use in location prefixes, mapped to the ISO-2 the rest
+ *  of this codebase (and schema.org) uses. Only the ones actually seen in the
+ *  feed — a full table would be a list of codes we have never met. */
+const ISO3_TO_ISO2: Record<string, string> = {
+  USA: "US", CAN: "CA", GBR: "GB", IRL: "IE", AUS: "AU", NZL: "NZ", DEU: "DE", FRA: "FR",
+  ESP: "ES", PRT: "PT", ITA: "IT", NLD: "NL", BEL: "BE", CHE: "CH", AUT: "AT", SWE: "SE",
+  NOR: "NO", DNK: "DK", FIN: "FI", POL: "PL", IND: "IN", JPN: "JP", SGP: "SG", BRA: "BR",
+  MEX: "MX", ZAF: "ZA", ARE: "AE", ISR: "IL", PHL: "PH", MYS: "MY",
+};
+
+/**
+ * Every ISO-3166 country name → its code, built from the table already inside
+ * the JS runtime rather than from a data file.
+ *
+ * Deliberately NOT built from COUNTRY_NAMES: that list is the product's
+ * MARKETS (it feeds the work-eligibility picker), and growing it so a job in
+ * Skopje parses would silently add North Macedonia to a form that means
+ * something else entirely. Parsing needs every country; the picker needs the
+ * ones we serve. Two different lists.
+ */
+const COUNTRY_BY_NAME: Map<string, string> = (() => {
+  const map = new Map<string, string>();
+  // Curated names first so our own spellings win on any collision.
+  for (const [code, name] of Object.entries(COUNTRY_NAMES)) map.set(name.toLowerCase(), code);
+  try {
+    const display = new Intl.DisplayNames(["en"], { type: "region" });
+    const A = 65;
+    for (let i = 0; i < 26; i++) {
+      for (let j = 0; j < 26; j++) {
+        const code = String.fromCharCode(A + i, A + j);
+        const name = display.of(code);
+        // Intl echoes the code back for regions it doesn't know.
+        if (!name || name === code) continue;
+        if (!map.has(name.toLowerCase())) map.set(name.toLowerCase(), code);
+      }
+    }
+  } catch {
+    // No Intl region data (very old runtime) — the curated names still work.
+  }
+  return map;
+})();
+
+/**
+ * The country, when the raw location string names one and the `country` column
+ * doesn't. Two real conventions, both common in ATS feeds:
+ *
+ *   "CAN: VAN (333 Seymour St)" -> CA   (leading ISO-2/ISO-3 prefix)
+ *   "Tokyo, Japan"              -> JP   (trailing country name)
+ *
+ * This is inference from text the employer wrote, not geocoding: it reads a
+ * country that is already IN the string. A city with no country attached —
+ * "San Mateo", "Viareggio" — stays unknown, because resolving those means a
+ * geocoder and guessing would put a wrong country in front of Google.
+ */
+export function inferCountry(locationRaw: string | null): string | null {
+  if (!locationRaw) return null;
+
+  const prefix = locationRaw.match(/^\s*([A-Za-z]{2,3})\s*:/);
+  if (prefix) {
+    const code = prefix[1].toUpperCase();
+    if (COUNTRY_NAMES[code]) return code;
+    if (ISO3_TO_ISO2[code]) return ISO3_TO_ISO2[code];
+  }
+
+  // Right to left: the country is the last part of "Tokyo, Japan".
+  for (const part of locationRaw.split(/[,;•|]/).map((x) => x.trim()).reverse()) {
+    const hit = COUNTRY_BY_NAME.get(part.toLowerCase());
+    if (hit) return hit;
+  }
+  return null;
 }
 
 export interface JobLdInput {
@@ -130,7 +219,12 @@ export function jobPostingLd(job: JobLdInput): Record<string, unknown> | null {
   const locality = addressLocality(job.locationRaw);
   if (locality) address.addressLocality = locality;
   if (job.locationState) address.addressRegion = job.locationState;
-  if (job.country) address.addressCountry = job.country;
+  // The column first, then whatever the employer wrote into the location
+  // string. Search Console reports a PostalAddress with no addressCountry as
+  // a (non-critical) issue, and a country we can read out of the text is not
+  // a guess — see inferCountry.
+  const country = job.country ?? inferCountry(job.locationRaw);
+  if (country) address.addressCountry = country;
 
   const ld: Record<string, unknown> = {
     "@context": "https://schema.org",
@@ -156,6 +250,18 @@ export function jobPostingLd(job: JobLdInput): Record<string, unknown> | null {
     if (!where) return null;
     ld.jobLocationType = "TELECOMMUTE";
     ld.applicantLocationRequirements = { "@type": "Country", name: where };
+
+    // Google's docs say jobLocation is optional once jobLocationType is
+    // TELECOMMUTE. Search Console disagrees in practice and reports "Missing
+    // field jobLocation" as a CRITICAL issue on exactly these items, which is
+    // what arrived on 2026-07-31 for 30 of them.
+    //
+    // The country is the honest answer: the work IS performed there, remotely,
+    // and it is the same country already asserted in applicantLocationRequirements
+    // rather than a second claim that could disagree with the first.
+    if (!ld.jobLocation) {
+      ld.jobLocation = { "@type": "Place", address: { "@type": "PostalAddress", addressCountry: where } };
+    }
   } else if (!ld.jobLocation) {
     // Non-remote and no address at all: Google needs jobLocation on a posting
     // that isn't marked remote, so this would be invalid for the mirror-image

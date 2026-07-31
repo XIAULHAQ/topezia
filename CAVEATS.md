@@ -1359,3 +1359,48 @@ already true and the exceptions are the interesting part.
   company, is an auth change — not a small one — and nothing in the current
   design assumes it will never happen. `requireCompanyOwner()` is the single
   gate, so the blast radius of changing it later is one file.
+
+## JobPosting: jobLocation and addressCountry (Search Console, 2026-07-31)
+
+Two new issues reported the same day the previous fix
+(`applicantLocationRequirements`) was validated as fixed. Both were measured
+against the LIVE site before touching anything — 438 indexed URLs, 4,824
+JobPosting items — rather than reasoned about from the code.
+
+- 🔴 **"Missing field jobLocation" (critical) — fixed, 0 remaining.** Every
+  affected item was a fully-remote posting: `jobLocationType: TELECOMMUTE` with
+  `applicantLocationRequirements` set and no `jobLocation`. Google's docs say
+  jobLocation is optional once jobLocationType is TELECOMMUTE; **Search Console
+  disagrees in practice** and reports it as critical. We now emit
+  `jobLocation` with the same country already asserted in
+  `applicantLocationRequirements` — the honest answer (the work IS performed
+  there, remotely) and, by construction, one that cannot contradict the field
+  beside it. Verified across all 13,655 emitted postings: **0 without
+  jobLocation.**
+- 🟡 **"Missing addressCountry" (non-critical) — 542 at-risk rows down to 116
+  emitted items (0.85%).** Recovered by reading a country that is already IN
+  the location string, two real ATS conventions: a leading code
+  (`"CAN: VAN (333 Seymour St)"` → CA) and a trailing name (`"Tokyo, Japan"`
+  → JP). The remainder are real cities with no country anywhere in the text —
+  "Aberdeen", "Bergamo", "Monza". Resolving those needs a geocoder; guessing
+  would put a wrong country in front of Google, which is worse than an
+  incomplete one.
+- 🟢 **The name→code table is built from `Intl.DisplayNames`, NOT from
+  `COUNTRY_NAMES`.** That constant is the product's MARKET list and feeds the
+  work-eligibility picker — growing it so a job in Skopje parses would have
+  silently added North Macedonia to a form that means something else. Parsing
+  needs every country; the picker needs the ones we serve.
+- 🔴 **We were publishing non-places as cities, and that cost 377 postings to
+  stop.** `addressLocality` accepted "Home based", "In-Office", "N/A",
+  "Europe", "North America" and "NAMER", so the markup claimed an office in a
+  town called Home based. Those strings are now rejected, and a non-remote
+  posting with no usable address emits no JobPosting at all — emitted items
+  went 14,032 → 13,655. That is a deliberate trade: 377 items lose rich-result
+  eligibility, and none of them had a location to publish. They still appear
+  on the site and in the feed; they just no longer assert a workplace we don't
+  know. Top offenders were "Home based - Worldwide" (92), "Home based - EMEA"
+  (81), "In-Office" (48).
+- 🟡 **Both emitters share one definition.** `lib/seo/job-posting-ld.ts` is
+  used by the job detail page AND the SEO listing pages' ItemList, so neither
+  can drift into its own idea of a valid posting — the failure mode that
+  caused the earlier `applicantLocationRequirements` breakage.
