@@ -446,6 +446,8 @@ model Profile {
   applications      Application[]
   // Companies this person was invited onto and accepted (migration 045).
   companyTeams      CompanyTeamMember[]
+  companyWorkSaves  CompanyWorkSave[]
+  companyWorkLikes  CompanyWorkLike[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -1248,6 +1250,8 @@ model CompanyWork {
   position    Int             @default(0)
 
   media       CompanyWorkMedia[]
+  saves       CompanyWorkSave[]
+  likes       CompanyWorkLike[]
 
   publishedAt DateTime?
   createdAt   DateTime @default(now())
@@ -1264,6 +1268,41 @@ model CompanyWork {
 //
 // Was CompanyWorkImage until migration 046, when videos arrived and the name
 // stopped being true. Renamed while the table still held zero rows.
+// A private bookmark on a company's work, and a public "like".
+//
+// Exact mirrors of PortfolioSave and PortfolioLike, including the rule that
+// matters most: the like COUNT lives on the work's own page and nowhere else.
+// It never orders the company page, never feeds matching, and never appears on
+// a profile — the line that keeps it appreciation rather than a leaderboard.
+//
+// Keyed by Profile, not by auth user: liking needs a real account, and Profile
+// is what every other "this member did something" row in this schema points at.
+model CompanyWorkSave {
+  id        String      @id @default(uuid())
+  profileId String
+  profile   Profile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  workId    String
+  work      CompanyWork @relation(fields: [workId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  @@unique([profileId, workId])
+  @@index([profileId, createdAt])
+}
+
+model CompanyWorkLike {
+  id        String      @id @default(uuid())
+  profileId String
+  profile   Profile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  workId    String
+  work      CompanyWork @relation(fields: [workId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  // One like per person per piece — enforced by the DB, so a double-click or
+  // a retried request can never inflate a count.
+  @@unique([profileId, workId])
+  @@index([workId, createdAt])
+}
+
 model CompanyWorkMedia {
   id            String             @id @default(uuid())
   workId        String

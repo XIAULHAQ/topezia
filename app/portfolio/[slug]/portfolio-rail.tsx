@@ -24,6 +24,7 @@ import ShareMenu from "@/app/_components/ShareMenu";
 
 export default function PortfolioRail({
   portfolioId,
+  apiBase,
   initialSaved,
   initialLiked,
   initialLikes,
@@ -32,6 +33,11 @@ export default function PortfolioRail({
   title,
 }: {
   portfolioId: string;
+  /** Where save/like live. Defaults to the member portfolio; company work
+   *  passes /api/company/work/{id}, whose routes are byte-for-byte the same
+   *  shape. One rail, two surfaces — a second copy would be the thing that
+   *  drifts the first time either behaviour changes. */
+  apiBase?: string;
   initialSaved: boolean;
   initialLiked: boolean;
   initialLikes: number;
@@ -44,6 +50,7 @@ export default function PortfolioRail({
   const [liked, setLiked] = useState(initialLiked);
   const [likes, setLikes] = useState(initialLikes);
   const [busy, setBusy] = useState(false);
+  const base = apiBase ?? `/api/portfolio/${portfolioId}`;
 
   const signIn = () => {
     window.location.href = `/login?next=${encodeURIComponent(new URL(shareUrl).pathname)}`;
@@ -55,7 +62,7 @@ export default function PortfolioRail({
     setSaved(next); // optimistic
     setBusy(true);
     try {
-      const res = await fetch(`/api/portfolio/${portfolioId}/save`, { method: next ? "POST" : "DELETE" });
+      const res = await fetch(`${base}/save`, { method: next ? "POST" : "DELETE" });
       if (!res.ok) throw new Error();
     } catch {
       setSaved(!next); // revert
@@ -71,7 +78,7 @@ export default function PortfolioRail({
     setLikes((n) => Math.max(0, n + (next ? 1 : -1))); // optimistic
     setBusy(true);
     try {
-      const res = await fetch(`/api/portfolio/${portfolioId}/like`, { method: next ? "POST" : "DELETE" });
+      const res = await fetch(`${base}/like`, { method: next ? "POST" : "DELETE" });
       if (!res.ok) throw new Error();
       // The server's total wins: someone else may have liked it since the
       // page was rendered, and an optimistic ±1 would then be quietly wrong.

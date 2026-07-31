@@ -107,8 +107,22 @@ function ToolBtn({ active, onClick, children }: { active: boolean; onClick: () =
 }
 
 const S: Record<string, CSSProperties> = {
-  wrap: { border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", background: "#fff" },
-  toolbar: { display: "flex", flexWrap: "wrap", gap: 4, padding: 8, borderBottom: "1px solid #E2E8F0", background: "#F8FAFC" },
+  // NOTE: no `overflow: hidden` here, and it must stay that way. It was here
+  // for the rounded corners, and it silently disabled `position: sticky` on
+  // the toolbar — an overflow-hidden ancestor makes a sticky descendant
+  // scroll away like any other element. The corners are done on the children
+  // instead, which costs nothing.
+  wrap: { border: "1px solid #E2E8F0", borderRadius: 14, background: "#fff" },
+  // Sticky so formatting is reachable from anywhere in a long article. Before
+  // this, bolding a word near the end meant scrolling to the top of the page
+  // and back. `top: 0` is right because neither /hq/posts nor
+  // /employer/articles renders a fixed header above the editor.
+  toolbar: {
+    display: "flex", flexWrap: "wrap", gap: 4, padding: 8,
+    borderBottom: "1px solid #E2E8F0", background: "#F8FAFC",
+    borderRadius: "13px 13px 0 0",
+    position: "sticky", top: 0, zIndex: 5,
+  },
   tool: { background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, fontWeight: 700, color: "#334155", cursor: "pointer", fontFamily: "inherit" },
   toolOn: { background: "#EEF2FF", borderColor: "#C7D2FE", color: "#4F46E5" },
   content: { padding: "16px 18px", fontSize: 15, lineHeight: 1.75, color: "#0F172A" },

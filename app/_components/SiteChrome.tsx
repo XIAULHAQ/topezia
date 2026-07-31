@@ -37,7 +37,11 @@ const NAV_LINKS = [
   // /coach is auth-gated: anonymous visitors get bounced to /login, which
   // carries the "join by uploading your resume" path to /onboard.
   { label: "AI Career Coach", href: "/coach" },
-  { label: "Blog", href: "/blog" },
+  // Blog is deliberately NOT here. Primary navigation is for the things
+  // someone came to do — find work, hire — and the blog was taking a slot
+  // from them. It stays fully reachable: the footer's Company column, the
+  // sitemap, and every direct link keep working, so nothing is deindexed or
+  // orphaned. Removing a nav entry is not the same as removing a section.
   { label: "For employers", href: "/waitlist" },
 ];
 

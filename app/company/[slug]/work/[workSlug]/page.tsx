@@ -13,8 +13,8 @@
  *  - Tags are plain chips, not links. Portfolio chips filter /portfolio; there
  *    is no equivalent grid for company work, and a chip that looks like a link
  *    and goes nowhere is worse than a chip that doesn't.
- *  - The rail carries Share and the facts. No Like or Save: neither exists for
- *    company work in the schema, and a button that does nothing is a lie.
+ *  - The rail is the portfolio's own PortfolioRail, pointed at the company
+ *    endpoints, so Like and Save behave identically on both surfaces.
  *
  * A draft simply doesn't exist here. The owner previews from /employer/work,
  * so this route stays a straight 404 for anything unpublished.
@@ -28,9 +28,9 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 import { prisma } from "@/lib/prisma";
+import { currentIdentity } from "@/lib/identity";
 import { SiteHeader, SiteFooter } from "@/app/_components/SiteChrome";
-import ShareMenu from "@/app/_components/ShareMenu";
-import { Icon } from "@/app/_components/ui";
+import PortfolioRail from "@/app/portfolio/[slug]/portfolio-rail";
 import { companyImageUrl, companyLogoUrl } from "@/lib/company/storage";
 import { companyIndexable, companyWorkIndexable } from "@/lib/company/indexing";
 import { UGC_REL } from "@/lib/ugc";
@@ -41,7 +41,14 @@ import { videoEmbedUrl, videoPosterUrl } from "@/lib/portfolio/video";
 import VideoEmbed from "@/app/portfolio/[slug]/video-embed";
 import ReportButton from "@/app/_components/ReportButton";
 
-export const revalidate = 900;
+/**
+ * force-dynamic, NOT `revalidate`. This page renders per-viewer state — whether
+ * YOU liked or saved it — and a cached copy would hand one visitor's Liked
+ * button to the next one. The member portfolio page is force-dynamic for
+ * exactly this reason; the moment a page stops being the same for everyone,
+ * caching it stops being a performance decision and becomes a correctness one.
+ */
+export const dynamic = "force-dynamic";
 
 const C = { c1: "#8B5CF6", ink: "#0F172A", slate: "#334155", mut: "#64748B", line: "#E2E8F0" };
 const FONT = "var(--font-sora), system-ui, sans-serif";
@@ -67,8 +74,27 @@ async function load(companySlug: string, workSlug: string) {
           _count: { select: { jobs: { where: { status: "LIVE" } } } },
         },
       },
+      _count: { select: { saves: true, likes: true } },
     },
   });
+}
+
+/**
+ * Has THIS viewer already liked or saved it?
+ *
+ * Separate from load() because it depends on who is asking, and load() is the
+ * cacheable half. Signed-out visitors skip both queries entirely.
+ */
+async function viewerState(workId: string) {
+  const { userId, authed } = await currentIdentity();
+  if (!userId || !authed) return { canAct: false, liked: false, saved: false };
+  const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
+  if (!profile) return { canAct: false, liked: false, saved: false };
+  const [liked, saved] = await Promise.all([
+    prisma.companyWorkLike.findUnique({ where: { profileId_workId: { profileId: profile.id, workId } }, select: { id: true } }),
+    prisma.companyWorkSave.findUnique({ where: { profileId_workId: { profileId: profile.id, workId } }, select: { id: true } }),
+  ]);
+  return { canAct: true, liked: Boolean(liked), saved: Boolean(saved) };
 }
 
 type WorkRecord = NonNullable<Awaited<ReturnType<typeof load>>>;
@@ -116,6 +142,7 @@ export async function generateMetadata({ params }: { params: { slug: string; wor
 export default async function CompanyWorkPage({ params }: { params: { slug: string; workSlug: string } }) {
   const w = await load(params.slug, params.workSlug);
   if (!w) notFound();
+  const viewer = await viewerState(w.id);
 
   const cover = companyImageUrl(w.coverPath);
   const logo = companyLogoUrl(w.company.logoPath);
@@ -232,18 +259,32 @@ export default async function CompanyWorkPage({ params }: { params: { slug: stri
               align-items:start that box is exactly the rail's own height — so
               sticking the inner element would look right and move nothing. */}
           <aside className="pd-rail" style={S.railCol}>
-            <div style={S.rail}>
-              <ShareMenu url={shareUrl} title={w.title} buttonStyle={S.railBtn} wrapperStyle={{ display: "block", width: "100%" }}>
-                <Icon name="share" size={16} />
-                Share
-              </ShareMenu>
+            {/* The SAME rail the member portfolio uses, pointed at the company
+                endpoints. Like and Save mean exactly what they mean there —
+                public appreciation and a private bookmark — so a second
+                component would only be the thing that drifts. */}
+            <PortfolioRail
+              portfolioId={w.id}
+              apiBase={`/api/company/work/${w.id}`}
+              initialSaved={viewer.saved}
+              initialLiked={viewer.liked}
+              initialLikes={w._count.likes}
+              canAct={viewer.canAct}
+              shareUrl={shareUrl}
+              title={w.title}
+            />
 
-              {projectHost && (
-                <a href={w.projectUrl!} target="_blank" rel={UGC_REL} style={S.railBtn}>
-                  {projectHost} ↗
-                </a>
-              )}
-            </div>
+            {projectHost && (
+              <a href={w.projectUrl!} target="_blank" rel={UGC_REL} style={{ ...S.railBtn, marginTop: 10 }}>
+                {projectHost} ↗
+              </a>
+            )}
+
+            {w._count.saves > 0 && (
+              <div style={S.savesNote}>
+                {w._count.saves} {w._count.saves === 1 ? "person has" : "people have"} saved this
+              </div>
+            )}
 
             {facts.length > 0 && (
               <dl style={S.facts}>
@@ -304,6 +345,7 @@ const S: Record<string, CSSProperties> = {
     cursor: "pointer", fontFamily: "inherit", width: "100%", boxSizing: "border-box",
     border: `1px solid ${C.line}`, background: "#fff", color: C.slate, textDecoration: "none",
   },
+  savesNote: { fontSize: 12, color: C.mut, marginTop: 14, lineHeight: 1.5 },
   facts: { margin: "18px 0 0", display: "flex", flexDirection: "column", gap: 12 },
   factRow: { display: "flex", flexDirection: "column", gap: 3 },
   factKey: { fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: ".6px" },
