@@ -1488,3 +1488,49 @@ copy about itself. It can now ask the client to write one.
   testimonial is better evidence than a typed one, but it is still not a
   verified review, and 1 confirmed occurrence of that markup would be one too
   many. Verified: 0 on the rendered page.
+
+## Company contact form + inquiry inbox (added 2026-08-01)
+
+Migration 050. A company can turn on a contact form on its public page;
+submissions land in an inbox at /employer/inquiries; members see theirs at
+/messages. The design in one sentence: the form is the only way in, a
+submission is an inbox item rather than a chat, and a thread exists only once
+the company replies.
+
+- 🔴 **The sender is never told what happened to an unanswered message.**
+  NEW, ARCHIVED and SPAM all read as "Sent" on /messages — the status enum is
+  mapped down server-side in /api/inquiries and never crosses the boundary.
+  This is deliberate and load-bearing: telling someone they were marked spam
+  turns a quiet judgement into a confrontation, and companies would stop
+  using the mark. Do not "improve" the member view with delivery states.
+- 🔴 **A reply is the only thing that opens a thread.** PATCH on an inquiry
+  can never set REPLIED; only the reply POST does, transactionally with the
+  first message. Restoring an archived-after-reply inquiry goes back to
+  REPLIED (repliedAt is the durable record), never to NEW.
+- 🟢 **Spam economics**: one open inquiry per member per company (partial
+  unique index `CompanyInquiry_open_one_per_sender`, so races lose), 3
+  submissions per member per day + 10 per IP per day (in-process windows,
+  same honest limitation as every rateLimit call), a 30-day per-company
+  cooldown after any non-replied outcome, scoreUgc with links NOT expected on
+  the submission, and a platform-wide lockout once 3+ DISTINCT companies have
+  marked a sender spam — computed from the rows at submit time, no counter,
+  and reported as a plain 429 so the lockout is indistinguishable from rate
+  limiting.
+- 🟡 **Emails ride the existing Resend path** (owner on new inquiry, member
+  on company reply, owner on member reply). Delivery failure never fails the
+  request — `emailed: false` and the row is the artifact. All content is an
+  escaped 180-char snippet plus a link.
+- 🟡 **The authed loop is verified at the API-guard and page-render level
+  only** (401s, gates, DB objects, tsc): submit→inbox→reply→reply needs two
+  real signed-in accounts clicking through on prod, same standing gap as the
+  post→apply→shortlist loop. Migration 050 was applied to the live DB by
+  hand BEFORE the push (additive only), the safe order from 045.
+- 🟡 **Config lives on Company** (contactEnabled/contactReasons/
+  contactQuestions) and the inbox page is also the settings page — three
+  fields did not earn a settings route. Answers are snapshotted onto the
+  inquiry as [{question, answer}], so editing questions later cannot corrupt
+  history. The reply box caps a thread at 60 messages: past that, the two
+  parties have each other's attention and email.
+- 🟡 **Team members do not see the inbox.** requireCompanyOwner() gates every
+  inquiry route, same as all /api/company writes — the team is a listing, not
+  a permission (see "Company presence" above). Widening it is one file.

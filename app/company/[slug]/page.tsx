@@ -30,6 +30,7 @@ import { companyLogoUrl, companyImageUrl } from "@/lib/company/storage";
 import { companyIndexable } from "@/lib/company/indexing";
 import { UGC_REL } from "@/lib/ugc";
 import ReportButton from "@/app/_components/ReportButton";
+import ContactCard from "./contact-card";
 
 export const revalidate = 900;
 
@@ -47,6 +48,7 @@ async function getCompany(slug: string) {
       id: true,
       name: true, slug: true, tagline: true, about: true, website: true, location: true,
       logoPath: true, createdAt: true, spamCleared: true,
+      contactEnabled: true, contactReasons: true, contactQuestions: true,
       jobs: {
         where: { status: "LIVE" },
         orderBy: { createdAt: "desc" },
@@ -467,6 +469,18 @@ export default async function CompanyPage({ params }: { params: { slug: string }
                   })}
                 </div>
               </section>
+            )}
+
+            {/* ── Contact ── only when the company turned it on. The form is
+                the sole way in: no open messaging, and a thread exists only
+                once the company replies — see lib/company/inquiries.ts. */}
+            {c.contactEnabled && (
+              <ContactCard
+                companySlug={c.slug}
+                companyName={c.name}
+                reasons={c.contactReasons}
+                questions={c.contactQuestions}
+              />
             )}
 
             <section style={{ border: "1px solid #C7D2FE", background: "linear-gradient(150deg,#EEF2FF,#F5F3FF)", borderRadius: 16, padding: "20px 22px" }}>

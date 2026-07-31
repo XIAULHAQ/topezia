@@ -448,6 +448,7 @@ model Profile {
   companyTeams      CompanyTeamMember[]
   companyWorkSaves  CompanyWorkSave[]
   companyWorkLikes  CompanyWorkLike[]
+  companyInquiries  CompanyInquiry[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -1102,6 +1103,20 @@ model Company {
   team          CompanyTeamMember[]
   invites       CompanyInvite[]
 
+  // Contact form (migration 050). The form is the ONLY way a member can start
+  // contact with a company — there is deliberately no open "message this
+  // company" channel, so a conversation exists only when the company replies
+  // to a submission (see CompanyInquiry). Off by default: presence without an
+  // inbox is a valid choice.
+  contactEnabled   Boolean  @default(false)
+  // Company-chosen "reason for contact" options ("Hiring inquiry",
+  // "Partnership", …). Empty = the form shows no reason dropdown.
+  contactReasons   String[] @default([])
+  // Up to 3 extra free-text questions (labels only; answers are snapshotted
+  // on the inquiry, so editing these never corrupts old submissions).
+  contactQuestions String[] @default([])
+  inquiries        CompanyInquiry[]
+
   // /hq override for the spam scorer, exactly as Profile.spamCleared: the
   // scorer has known false positives and the only other remedy would be
   // weakening it for everyone. Never set by the employer.
@@ -1109,6 +1124,78 @@ model Company {
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// NEW = sitting in the company inbox, nothing has happened. REPLIED = the
+// company answered, which is the one and only thing that opens a thread.
+// ARCHIVED = the company closed it (or it aged out). SPAM = the company's
+// judgement of the sender — it feeds the platform-wide throttle below and is
+// never shown to the sender (they just see "Sent").
+enum InquiryStatus {
+  NEW
+  REPLIED
+  ARCHIVED
+  SPAM
+}
+
+enum InquirySender {
+  COMPANY
+  CANDIDATE
+}
+
+// One member's contact-form submission to one company. This is an inbox ITEM,
+// not a conversation: the sender cannot follow up, bump, or re-send while it
+// sits unanswered. Only a company reply turns it into a thread
+// (InquiryMessage). That asymmetry is the whole anti-spam design — the
+// LinkedIn-InMail failure mode is candidate-initiated open messaging.
+//
+// Spam throttle: a member whose inquiries have been marked SPAM by 3+
+// DISTINCT companies is refused new submissions platform-wide. The count is
+// computed at submit time from these rows — no separate counter to drift.
+model CompanyInquiry {
+  id        String  @id @default(uuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  // One of Company.contactReasons at submit time; null when the company
+  // configured no reasons.
+  reason    String?
+  message   String
+  // Snapshot of [{ question, answer }] for the company's contactQuestions at
+  // submit time — the config can change later without corrupting history.
+  answers   Json?
+
+  status    InquiryStatus @default(NEW)
+  repliedAt DateTime?
+
+  messages  InquiryMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // The open-inquiry rule (one NEW inquiry per member per company) is a
+  // partial unique index in raw SQL — Prisma can't express WHERE clauses:
+  //   CREATE UNIQUE INDEX "CompanyInquiry_open_one_per_sender"
+  //     ON "CompanyInquiry"("companyId", "profileId") WHERE status = 'NEW';
+  @@index([companyId, status, createdAt])
+  @@index([profileId, createdAt])
+}
+
+// A message inside an opened thread. The first row is always the company's
+// reply (sender COMPANY) — enforced in code, since the thread only exists
+// once the company answers. The original submission text stays on
+// CompanyInquiry.message, not here.
+model InquiryMessage {
+  id        String         @id @default(uuid())
+  inquiryId String
+  inquiry   CompanyInquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  sender    InquirySender
+  body      String
+  createdAt DateTime       @default(now())
+
+  @@index([inquiryId, createdAt])
 }
 
 // APPLIED → SHORTLISTED → INTERVIEW → SELECTED is the employer's pipeline;
