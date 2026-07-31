@@ -32,7 +32,7 @@ interface ReportRow {
 }
 interface CompanyRow {
   id: string; slug: string; name: string; createdAt: string; spamCleared: boolean;
-  score: number; reasons: string[]; wouldReject: boolean;
+  score: number; reasons: string[]; wouldReject: boolean; reported: boolean;
   work: { id: string; slug: string; title: string }[];
   articles: { id: string; slug: string; title: string }[];
 }
@@ -40,6 +40,15 @@ interface Payload {
   profiles: ProfileRow[]; works: WorkRow[]; companies: CompanyRow[]; reports: ReportRow[];
   threshold: number; scanned: { profiles: number; works: number; companies: number; limit: number };
 }
+
+/** What the reporter was looking at. Must stay in step with ReportKind. */
+const KIND_LABELS: Record<string, string> = {
+  PROFILE: "profile",
+  PORTFOLIO: "portfolio work",
+  COMPANY: "company page",
+  COMPANY_WORK: "company work",
+  COMPANY_ARTICLE: "company article",
+};
 
 const REASON_LABELS: Record<string, string> = {
   SPAM: "Spam or advertising",
@@ -117,7 +126,7 @@ export default function SpamQueue() {
             <div key={r.id} style={S.card}>
               <div style={S.cardHead}>
                 <strong>{REASON_LABELS[r.reason] ?? r.reason}</strong>
-                <span style={S.badge}>{r.kind === "PROFILE" ? "profile" : "work"}</span>
+                <span style={S.badge}>{KIND_LABELS[r.kind] ?? r.kind.toLowerCase()}</span>
                 <span style={S.mutSm}>{r.reporterUserId ? "signed-in reporter" : "anonymous"}</span>
                 <span style={S.mutSm}>{new Date(r.createdAt).toLocaleString("en-GB")}</span>
               </div>
@@ -199,6 +208,7 @@ export default function SpamQueue() {
               <div style={S.cardHead}>
                 <strong>{c.name}</strong>
                 <span style={c.score >= 60 ? S.scoreHi : S.score}>score {c.score}</span>
+                {c.reported && <span style={S.badgeWarn}>reported</span>}
                 {c.spamCleared && <span style={S.badgeOk}>cleared</span>}
                 <a style={S.link} href={`/company/${c.slug}`} target="_blank" rel="noopener noreferrer">
                   /company/{c.slug} ↗

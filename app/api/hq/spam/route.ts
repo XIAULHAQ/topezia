@@ -87,6 +87,24 @@ export async function GET(req: NextRequest) {
   const reportedProfiles = new Set(reports.filter((r) => r.kind === "PROFILE").map((r) => r.targetId));
   const reportedWorks = new Set(reports.filter((r) => r.kind === "PORTFOLIO").map((r) => r.targetId));
 
+  // A report about a company, or about one of its work items or articles, has
+  // to surface THE COMPANY — otherwise a reported page that scores clean shows
+  // up as a lone line in the Reports list with nothing to act on.
+  const reportedCompanyIds = new Set(reports.filter((r) => r.kind === "COMPANY").map((r) => r.targetId));
+  const reportedWorkIds = reports.filter((r) => r.kind === "COMPANY_WORK").map((r) => r.targetId);
+  const reportedArticleIds = reports.filter((r) => r.kind === "COMPANY_ARTICLE").map((r) => r.targetId);
+  if (reportedWorkIds.length || reportedArticleIds.length) {
+    const [works, articles] = await Promise.all([
+      reportedWorkIds.length
+        ? prisma.companyWork.findMany({ where: { id: { in: reportedWorkIds } }, select: { companyId: true } })
+        : Promise.resolve([]),
+      reportedArticleIds.length
+        ? prisma.companyArticle.findMany({ where: { id: { in: reportedArticleIds } }, select: { companyId: true } })
+        : Promise.resolve([]),
+    ]);
+    for (const r of [...works, ...articles]) reportedCompanyIds.add(r.companyId);
+  }
+
   const profiles = profileRows
     .map((p) => {
       const wh = Array.isArray(p.workHistory) ? (p.workHistory as { title?: string; company?: string; bullets?: string[] }[]) : [];
@@ -164,12 +182,13 @@ export async function GET(req: NextRequest) {
         score: verdict.score,
         reasons: verdict.reasons,
         wouldReject: isSpam(verdict),
+        reported: reportedCompanyIds.has(c.id),
         // Listed so a reviewer can pull one piece rather than the whole page.
         work: c.work.map((w) => ({ id: w.id, slug: w.slug, title: w.title })),
         articles: c.articles.map((a) => ({ id: a.id, slug: a.slug, title: a.title })),
       };
     })
-    .filter((c) => isSuspect({ score: c.score, reasons: c.reasons }))
+    .filter((c) => isSuspect({ score: c.score, reasons: c.reasons }) || c.reported)
     .sort((a, b) => b.score - a.score);
 
   return NextResponse.json({

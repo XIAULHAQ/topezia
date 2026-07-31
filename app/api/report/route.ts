@@ -26,7 +26,7 @@ import { rateLimit, clientIp, RATE_LIMITED } from "@/lib/rate-limit";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const KINDS = ["PROFILE", "PORTFOLIO"] as const;
+const KINDS = ["PROFILE", "PORTFOLIO", "COMPANY", "COMPANY_WORK", "COMPANY_ARTICLE"] as const;
 const REASONS = ["SPAM", "IMPERSONATION", "OFFENSIVE", "NOT_THEIR_WORK", "OTHER"] as const;
 type Kind = (typeof KINDS)[number];
 type Reason = (typeof REASONS)[number];
@@ -54,11 +54,21 @@ export async function POST(req: NextRequest) {
 
   // The target must actually exist, or this is a way to fill the queue with
   // rows about nothing. Checked before the write, not after.
-  const exists =
-    kind === "PROFILE"
-      ? await prisma.profile.count({ where: { id: targetId } })
-      : await prisma.portfolio.count({ where: { id: targetId } });
-  if (!exists) return NextResponse.json({ error: "Not found." }, { status: 404 });
+  //
+  // A map rather than a chain of ternaries: adding a reportable kind and
+  // forgetting to teach this how to look it up is the sort of omission that
+  // fails open, and TypeScript can't catch it in a ternary that already has an
+  // else branch.
+  const EXISTS: Record<Kind, () => Promise<number>> = {
+    PROFILE: () => prisma.profile.count({ where: { id: targetId } }),
+    PORTFOLIO: () => prisma.portfolio.count({ where: { id: targetId } }),
+    COMPANY: () => prisma.company.count({ where: { id: targetId } }),
+    // Published only. An unpublished draft isn't visible to the person
+    // reporting it, so a report naming one didn't come from reading the page.
+    COMPANY_WORK: () => prisma.companyWork.count({ where: { id: targetId, status: "PUBLISHED" } }),
+    COMPANY_ARTICLE: () => prisma.companyArticle.count({ where: { id: targetId, status: "PUBLISHED" } }),
+  };
+  if (!(await EXISTS[kind]())) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
   const { userId, authed } = await currentIdentity();
 

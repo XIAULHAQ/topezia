@@ -1140,9 +1140,20 @@ model Application {
   @@index([jobId, stage])
 }
 
+// What a visitor is pointing at. Every value here must correspond to a page
+// that is PUBLIC — a report is a signal about something a stranger can see, so
+// there is nothing to report about a draft or a dashboard.
+//
+// The three COMPANY_* values arrived with migration 047. Company pages carry
+// testimonial copy and outbound client links, which is exactly the surface a
+// visitor is best placed to notice going wrong; before this they were the only
+// public UGC on the site with no way to flag them.
 enum ReportKind {
   PROFILE
   PORTFOLIO
+  COMPANY
+  COMPANY_WORK
+  COMPANY_ARTICLE
 }
 
 enum ReportReason {

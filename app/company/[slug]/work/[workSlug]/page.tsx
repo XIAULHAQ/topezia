@@ -15,8 +15,6 @@
  *    and goes nowhere is worse than a chip that doesn't.
  *  - The rail carries Share and the facts. No Like or Save: neither exists for
  *    company work in the schema, and a button that does nothing is a lie.
- *  - No Report control. ReportKind is PROFILE | PORTFOLIO — reporting company
- *    work needs a migration, not a button that posts an invalid kind.
  *
  * A draft simply doesn't exist here. The owner previews from /employer/work,
  * so this route stays a straight 404 for anything unpublished.
@@ -41,6 +39,7 @@ import { UGC_REL } from "@/lib/ugc";
 // that is where it was written; nothing in it is portfolio-specific.
 import { videoEmbedUrl, videoPosterUrl } from "@/lib/portfolio/video";
 import VideoEmbed from "@/app/portfolio/[slug]/video-embed";
+import ReportButton from "@/app/_components/ReportButton";
 
 export const revalidate = 900;
 
@@ -53,6 +52,7 @@ async function load(companySlug: string, workSlug: string) {
     where: { slug: workSlug, status: "PUBLISHED", company: { slug: companySlug } },
     select: {
       slug: true, title: true, summary: true, description: true, clientName: true,
+      id: true,
       projectUrl: true, tags: true, coverPath: true, coverWidth: true, coverHeight: true, publishedAt: true,
       media: {
         orderBy: { position: "asc" },
@@ -260,6 +260,12 @@ export default async function CompanyWorkPage({ params }: { params: { slug: stri
 
         <div style={S.backRow}>
           <Link href={`/company/${w.company.slug}#work`} style={S.backLink}>← All work by {w.company.name}</Link>
+        </div>
+
+        {/* Quiet, and at the bottom — same placement and same reasoning as the
+            portfolio page. See ReportButton for why it isn't louder. */}
+        <div style={{ marginTop: 22 }}>
+          <ReportButton kind="COMPANY_WORK" targetId={w.id} />
         </div>
       </main>
 

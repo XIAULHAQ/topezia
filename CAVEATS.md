@@ -1291,3 +1291,34 @@ about features.
   the provider id, so both the edit and delete paths filter on kind before
   handing anything to storage cleanup — otherwise we would ask Supabase to
   delete an object named `dQw4w9WgXcQ`.
+
+## Reporting company pages, work and articles (added 2026-07-31)
+
+- 🟢 **Migration 047 adds `COMPANY`, `COMPANY_WORK` and `COMPANY_ARTICLE` to
+  `ReportKind`.** Company pages carry testimonial copy and outbound client
+  links — the surface a visitor is best placed to notice going wrong — and
+  until now they were the only public UGC on the site with no way to flag them.
+  Purely additive: three enum values, no row changes.
+- 🟢 **The existence check is a map keyed by kind, not a ternary.** Adding a
+  reportable kind and forgetting to teach the route how to look it up is an
+  omission that fails OPEN (a report about nothing lands in the queue), and
+  TypeScript cannot catch that in a ternary that already has an else branch.
+  A `Record<Kind, () => Promise<number>>` makes the compiler catch it.
+- 🟢 **Work and articles are only reportable when PUBLISHED.** A draft isn't
+  visible to whoever is reporting it, so a report naming one did not come from
+  reading the page.
+- 🟢 **A report about a company's work or article surfaces THE COMPANY** in
+  /hq/spam, even when the company scores clean. Without that mapping a reported
+  page would appear as a lone line in the Reports list with nothing to act on.
+  Verified end to end: a real report filed through the live route against the
+  Rodeo Graphics case study surfaced "Rodeo Graphics" through the same mapping
+  the queue uses; probe rows deleted afterwards (0 unresolved reports remain).
+- 🟡 **Anonymous reports still do not collapse.** The unique index is
+  `[kind, targetId, reporterUserId]` and NULLs are DISTINCT in Postgres, so two
+  signed-out reports about the same page create two rows — bounded by the
+  route's rate limit, not by the index. Unchanged from migration 044 and
+  deliberate; noted here because it surprises on first sight in the queue.
+- 🟡 **The control names what it reports.** "Report this page" is ambiguous on
+  a company page, which shows a company, its work and its articles at once, so
+  `ReportButton` now carries a per-kind default: "Report this company",
+  "Report this work", "Report this article".

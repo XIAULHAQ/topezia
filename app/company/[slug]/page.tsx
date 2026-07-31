@@ -29,6 +29,7 @@ import { jobPath } from "@/lib/seo/job-slug";
 import { companyLogoUrl, companyImageUrl } from "@/lib/company/storage";
 import { companyIndexable } from "@/lib/company/indexing";
 import { UGC_REL } from "@/lib/ugc";
+import ReportButton from "@/app/_components/ReportButton";
 
 export const revalidate = 900;
 
@@ -43,6 +44,7 @@ async function getCompany(slug: string) {
   return prisma.company.findUnique({
     where: { slug },
     select: {
+      id: true,
       name: true, slug: true, tagline: true, about: true, website: true, location: true,
       logoPath: true, createdAt: true, spamCleared: true,
       jobs: {
@@ -459,6 +461,12 @@ export default async function CompanyPage({ params }: { params: { slug: string }
               <Link href="/onboard" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14, background: GRAD, color: "#fff", borderRadius: 11, padding: "11px 16px", fontSize: 13, fontWeight: 600, textDecoration: "none", boxShadow: "0 8px 20px rgba(99,102,241,.28)" }}>See your matches</Link>
             </section>
           </aside>
+        </div>
+
+        {/* Quiet, and at the bottom. Same placement and same reasoning as the
+            profile and portfolio pages — see ReportButton. */}
+        <div style={{ marginTop: 26 }}>
+          <ReportButton kind="COMPANY" targetId={c.id} />
         </div>
       </div>
       <SiteFooter />

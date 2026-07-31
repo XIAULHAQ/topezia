@@ -26,7 +26,31 @@ const REASONS = [
   { id: "OTHER", label: "Something else" },
 ] as const;
 
-export default function ReportButton({ kind, targetId }: { kind: "PROFILE" | "PORTFOLIO"; targetId: string }) {
+/** Must stay in step with KINDS in app/api/report/route.ts. */
+export type ReportKind = "PROFILE" | "PORTFOLIO" | "COMPANY" | "COMPANY_WORK" | "COMPANY_ARTICLE";
+
+/** Name the thing, not "this page" — on a company page the reader can see a
+ *  company, its work and its articles, and "this page" would be ambiguous. */
+const DEFAULT_LABEL: Record<ReportKind, string> = {
+  PROFILE: "Report this profile",
+  PORTFOLIO: "Report this page",
+  COMPANY: "Report this company",
+  COMPANY_WORK: "Report this work",
+  COMPANY_ARTICLE: "Report this article",
+};
+
+export default function ReportButton({
+  kind,
+  targetId,
+  label,
+}: {
+  kind: ReportKind;
+  targetId: string;
+  /** Overrides the default wording. Rarely needed — the defaults below already
+   *  name the thing being reported, which matters on a company page that
+   *  carries several reportable things at once. */
+  label?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<string>("SPAM");
   const [note, setNote] = useState("");
@@ -53,7 +77,7 @@ export default function ReportButton({ kind, targetId }: { kind: "PROFILE" | "PO
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} style={S.link}>
-        Report this {kind === "PROFILE" ? "profile" : "page"}
+        {label ?? DEFAULT_LABEL[kind]}
       </button>
     );
   }

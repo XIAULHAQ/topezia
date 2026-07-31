@@ -22,6 +22,7 @@ import { companyIndexable, companyArticleIndexable } from "@/lib/company/indexin
 import { htmlToText } from "@/lib/company/article";
 import { readingTime } from "@/lib/blog/reading-time";
 import { safeJsonLd } from "@/lib/seo/json-ld";
+import ReportButton from "@/app/_components/ReportButton";
 
 export const revalidate = 900;
 
@@ -34,6 +35,7 @@ async function load(companySlug: string, articleSlug: string) {
   return prisma.companyArticle.findFirst({
     where: { slug: articleSlug, status: "PUBLISHED", company: { slug: companySlug } },
     select: {
+      id: true,
       slug: true, title: true, excerpt: true, contentHtml: true, coverPath: true, coverAlt: true,
       metaTitle: true, metaDescription: true, tags: true, publishedAt: true, updatedAt: true,
       company: {
@@ -172,6 +174,10 @@ export default async function CompanyArticlePage({ params }: { params: { slug: s
             View {a.company.name}
           </Link>
         </section>
+
+        <div style={{ marginTop: 22 }}>
+          <ReportButton kind="COMPANY_ARTICLE" targetId={a.id} />
+        </div>
       </div>
       <SiteFooter />
     </main>
