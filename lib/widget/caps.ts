@@ -12,7 +12,10 @@ import { prisma } from "@/lib/prisma";
 
 export const FREE_LIMITS = {
   sites: 1, // enforced by WidgetSite.companyId being unique
-  pages: 40, // per crawl
+  // Per crawl. 60, not 40: a store's product pages are thin and numerous —
+  // on the pilot they'd have eaten most of a 40-page budget and starved the
+  // service/about pages the Q&A answers actually come from.
+  pages: 60,
   aiRepliesPerMonth: 200,
 };
 

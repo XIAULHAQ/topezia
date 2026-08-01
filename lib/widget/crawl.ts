@@ -101,7 +101,15 @@ async function discoverUrls(host: string): Promise<string[]> {
 
   const sitemap = await fetchPage(`${base}/sitemap.xml`);
   if (sitemap) {
-    const locs = Array.from(sitemap.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi), (m) => m[1].trim());
+    // Child sitemaps in useful-first order: a WP index lists post-sitemap
+    // (the blog) before page- and product-sitemaps, and a page cap filled
+    // with blog posts never reaches the products or the service pages —
+    // exactly what happened on the pilot. Products first (they feed the
+    // shelf), then pages (services/about), the blog last.
+    const rank = (u: string) =>
+      /product[^/]*-sitemap/i.test(u) ? 0 : /page-sitemap/i.test(u) ? 1 : /post-sitemap/i.test(u) ? 3 : 2;
+    const locs = Array.from(sitemap.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi), (m) => m[1].trim())
+      .sort((a, b) => rank(a) - rank(b));
     // A sitemap index points at more sitemaps; follow one level of those.
     const pages: string[] = [];
     for (const loc of locs) {
@@ -167,7 +175,13 @@ const MAX_PRODUCTS = 100;
  */
 export function extractProducts(html: string, pageUrl: string): CrawledProduct[] {
   const out: CrawledProduct[] = [];
-  const asText = (v: unknown): string => (typeof v === "string" ? decodeHtmlEntities(v).trim() : "");
+  // Numbers too: WooCommerce emits "price":249 as a JSON number, not a
+  // string — verified on rodeo.graphics, where string-only parsing silently
+  // dropped every price. Decode TWICE: Woo double-encodes ("&amp;amp;"), and
+  // these strings render through React (never innerHTML), so resurrection of
+  // markup is cosmetic-safe here in a way it is not in lib/sanitize.
+  const asText = (v: unknown): string =>
+    typeof v === "string" ? decodeHtmlEntities(decodeHtmlEntities(v)).trim() : typeof v === "number" ? String(v) : "";
   const firstStr = (v: unknown): string => {
     if (typeof v === "string") return v;
     if (Array.isArray(v)) return firstStr(v[0]);
