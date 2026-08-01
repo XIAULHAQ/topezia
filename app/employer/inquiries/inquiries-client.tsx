@@ -1,20 +1,23 @@
 "use client";
 
 /**
- * The company inbox, and the switch that creates it.
+ * The company inbox as a messenger: conversation list on the left, thread on
+ * the right — Brandon's design (Topezia Messages.dc.html), implemented over
+ * the same data and routes as before.
  *
- * Two things on one page on purpose: the form config IS the inbox's front
- * door, and a separate settings page for three fields would be a second place
- * to look for one idea. Layout: config card on top (collapsed to a status
- * line once enabled), then the inbox.
+ * What the mockup shows that this deliberately does NOT: online dots, read
+ * receipts, a typing indicator, "Draft with AI", "Create brief". Every one
+ * of those would be a fake signal today — there is no presence system, no
+ * read tracking, no AI-draft endpoint — and this product doesn't render
+ * lights that aren't wired to anything. When those systems exist, the spots
+ * for them are obvious.
  *
- * The three actions on an item are the whole model: Reply opens a thread,
- * Archive closes the item, Spam is a private judgement that also feeds the
- * sender's platform-wide lockout (3+ distinct companies — lib/company/
- * inquiries.ts). The sender is never told which of the three happened.
+ * The three actions are still the whole model: Reply opens a thread, Archive
+ * closes, Spam is a private judgement feeding the sender lockout. The sender
+ * never learns which happened.
  */
-import { useEffect, useState, type CSSProperties } from "react";
-import { EmployerSection, EmployerGate, ES } from "../_components/EmployerSection";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { EmployerGate, ES } from "../_components/EmployerSection";
 import { INQUIRY_LIMITS } from "@/lib/company/inquiries";
 
 type Msg = { id: string; sender: "COMPANY" | "CANDIDATE"; body: string; createdAt: string };
@@ -26,7 +29,6 @@ type Inquiry = {
   status: "NEW" | "REPLIED" | "ARCHIVED" | "SPAM";
   repliedAt: string | null;
   createdAt: string;
-  // FORM inquiries carry a profile; WIDGET ones carry the visitor fields.
   source: "FORM" | "WIDGET";
   visitorEmail: string | null;
   visitorName: string | null;
@@ -43,9 +45,36 @@ type Inquiry = {
 type Config = { contactEnabled: boolean; contactReasons: string[]; contactQuestions: string[] };
 type Suggested = { reasons: string[]; questions: string[] };
 
-const TABS = ["New", "Replied", "Archived", "Spam"] as const;
-type Tab = (typeof TABS)[number];
-const TAB_STATUS: Record<Tab, Inquiry["status"]> = { New: "NEW", Replied: "REPLIED", Archived: "ARCHIVED", Spam: "SPAM" };
+const GRAD = "linear-gradient(135deg,#8B5CF6,#3B82F6)";
+const FILTERS = ["All", "New", "Replied", "Archived", "Spam"] as const;
+type Filter = (typeof FILTERS)[number];
+
+const AV_GRADS = [
+  "linear-gradient(140deg,#7C3AED,#2563EB)",
+  "linear-gradient(140deg,#0E7490,#2563EB)",
+  "linear-gradient(140deg,#059669,#0E7490)",
+  "linear-gradient(140deg,#B45309,#DC2626)",
+  "linear-gradient(140deg,#4F46E5,#7C3AED)",
+];
+const avatarBg = (seed: string) => AV_GRADS[[...seed].reduce((n, ch) => n + ch.charCodeAt(0), 0) % AV_GRADS.length];
+
+const senderName = (inq: Inquiry) =>
+  inq.source === "WIDGET"
+    ? inq.visitorName?.trim() || inq.visitorEmail || "Website visitor"
+    : inq.profile?.fullName?.trim() || "Topezia member";
+const senderEmail = (inq: Inquiry) => (inq.source === "WIDGET" ? inq.visitorEmail : null);
+const initialsOf = (name: string) =>
+  name.split(/\s+/).map((w) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
+
+function when(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const days = Math.floor((now.setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 86_400_000);
+  if (days <= 0) return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (days === 1) return "Yesterday";
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+const lastActivity = (inq: Inquiry) => inq.messages.at(-1)?.createdAt ?? inq.createdAt;
 
 export default function InquiriesClient() {
   const [gate, setGate] = useState<"auth" | "company" | null>(null);
@@ -53,26 +82,21 @@ export default function InquiriesClient() {
   const [config, setConfig] = useState<Config | null>(null);
   const [suggested, setSuggested] = useState<Suggested | null>(null);
   const [items, setItems] = useState<Inquiry[] | null>(null);
-  const [tab, setTab] = useState<Tab>("New");
+  const [filter, setFilter] = useState<Filter>("All");
+  const [query, setQuery] = useState("");
+  const [sel, setSel] = useState<string | null>(null);
+  const [showConfig, setShowConfig] = useState(false);
 
-  // Config editor state
-  const [editingForm, setEditingForm] = useState(false);
-  const [draft, setDraft] = useState<Config | null>(null);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  const [confDraft, setConfDraft] = useState<Config | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Reply composer state — one open at a time is plenty.
-  const [replyFor, setReplyFor] = useState<string | null>(null);
-  const [replyText, setReplyText] = useState("");
-  const [replyBusy, setReplyBusy] = useState(false);
-  const [replyError, setReplyError] = useState<string | null>(null);
+  const scroller = useRef<HTMLDivElement>(null);
 
-  // Load, then KEEP loading: an inbox that fetches once goes quietly stale
-  // the moment the other side writes — the visitor's replies exist on the
-  // server while the open dashboard still shows yesterday. Poll while
-  // visible, refetch on focus. Server state replaces items wholesale (our
-  // own optimistic appends carry real ids, so replacement never duplicates);
-  // the config draft and reply composer live in separate state and survive.
   useEffect(() => {
     let stop = false;
     async function load(first: boolean) {
@@ -84,11 +108,11 @@ export default function InquiriesClient() {
         if (!res.ok) throw new Error();
         const d = (await res.json()) as { config: Config; inquiries: Inquiry[]; suggested: Suggested };
         if (stop) return;
-        setConfig((cur) => (first || !cur ? d.config : cur)); // don't clobber an unsaved toggle
+        setConfig((cur) => (first || !cur ? d.config : cur));
         setSuggested(d.suggested ?? null);
         setItems(d.inquiries);
       } catch {
-        if (first) setError("Couldn't load your inbox.");
+        if (first) setError("Couldn't load your messages.");
       }
     }
     load(true);
@@ -97,6 +121,68 @@ export default function InquiriesClient() {
     window.addEventListener("focus", onFocus);
     return () => { stop = true; clearInterval(timer); window.removeEventListener("focus", onFocus); };
   }, []);
+
+  const list = useMemo(() => {
+    if (!items) return [];
+    const q = query.trim().toLowerCase();
+    return items
+      .filter((i) =>
+        filter === "All" ? i.status === "NEW" || i.status === "REPLIED" :
+        i.status === ({ New: "NEW", Replied: "REPLIED", Archived: "ARCHIVED", Spam: "SPAM" } as const)[filter as Exclude<Filter, "All">]
+      )
+      .filter((i) => !q || `${senderName(i)} ${senderEmail(i) ?? ""} ${i.reason ?? ""} ${i.message}`.toLowerCase().includes(q))
+      .sort((a, b) => lastActivity(b).localeCompare(lastActivity(a)));
+  }, [items, filter, query]);
+
+  const active = useMemo(() => (sel ? items?.find((i) => i.id === sel) ?? null : null), [items, sel]);
+  const newCount = items?.filter((i) => i.status === "NEW").length ?? 0;
+
+  // Desktop: auto-open the newest conversation so the pane is never blank.
+  useEffect(() => {
+    if (!sel && list.length && typeof window !== "undefined" && window.innerWidth > 900) setSel(list[0].id);
+  }, [list, sel]);
+
+  useEffect(() => {
+    scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
+  }, [active?.id, active?.messages.length]);
+
+  async function setStatus(inq: Inquiry, status: "NEW" | "ARCHIVED" | "SPAM") {
+    const res = await fetch(`/api/company/inquiries/${inq.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { inquiry?: { status: Inquiry["status"] }; error?: string };
+    if (!res.ok) { setError(data.error ?? "That didn't work — try again."); return; }
+    setItems((cur) => (cur ?? []).map((i) => (i.id === inq.id ? { ...i, status: data.inquiry?.status ?? status } : i)));
+  }
+
+  async function sendReply() {
+    if (!active || sending || !draft.trim()) return;
+    setSending(true); setSendError(null);
+    try {
+      const res = await fetch(`/api/company/inquiries/${active.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: draft }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { message?: Msg; error?: string };
+      if (!res.ok || !data.message) { setSendError(data.error ?? "Couldn't send that."); return; }
+      const msg = data.message;
+      setItems((cur) =>
+        (cur ?? []).map((i) =>
+          i.id === active.id
+            ? { ...i, status: "REPLIED", repliedAt: i.repliedAt ?? msg.createdAt, messages: [...i.messages, msg] }
+            : i
+        )
+      );
+      setDraft("");
+    } catch {
+      setSendError("Couldn't send that.");
+    } finally {
+      setSending(false);
+    }
+  }
 
   async function saveConfig(next: Config) {
     setSaving(true); setSaveError(null);
@@ -109,7 +195,7 @@ export default function InquiriesClient() {
       const data = (await res.json().catch(() => ({}))) as { config?: Config; error?: string };
       if (!res.ok) { setSaveError(data.error ?? "Couldn't save."); return; }
       setConfig(data.config ?? next);
-      setEditingForm(false);
+      setConfDraft(null);
     } catch {
       setSaveError("Couldn't save.");
     } finally {
@@ -117,305 +203,338 @@ export default function InquiriesClient() {
     }
   }
 
-  async function setStatus(inq: Inquiry, status: "NEW" | "ARCHIVED" | "SPAM") {
-    const res = await fetch(`/api/company/inquiries/${inq.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    const data = (await res.json().catch(() => ({}))) as { inquiry?: { status: Inquiry["status"] }; error?: string };
-    if (!res.ok) { setError(data.error ?? "That didn't work — reload and try again."); return; }
-    setItems((cur) => (cur ?? []).map((i) => (i.id === inq.id ? { ...i, status: data.inquiry?.status ?? status } : i)));
+  function openConfig() {
+    if (!config) return;
+    const blank = config.contactReasons.length === 0 && config.contactQuestions.length === 0;
+    setConfDraft(blank && suggested ? { ...config, contactReasons: suggested.reasons, contactQuestions: suggested.questions } : { ...config });
+    setShowConfig(true);
   }
 
-  async function sendReply(inq: Inquiry) {
-    if (replyBusy || !replyText.trim()) return;
-    setReplyBusy(true); setReplyError(null);
-    try {
-      const res = await fetch(`/api/company/inquiries/${inq.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: replyText }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { message?: Msg; error?: string };
-      if (!res.ok || !data.message) { setReplyError(data.error ?? "Couldn't send that."); return; }
-      const msg = data.message;
-      setItems((cur) =>
-        (cur ?? []).map((i) =>
-          i.id === inq.id
-            ? { ...i, status: "REPLIED", repliedAt: i.repliedAt ?? msg.createdAt, messages: [...i.messages, msg] }
-            : i
-        )
-      );
-      setReplyFor(null); setReplyText("");
-      if (inq.status === "NEW") setTab("Replied");
-    } catch {
-      setReplyError("Couldn't send that.");
-    } finally {
-      setReplyBusy(false);
-    }
-  }
+  if (gate) return <EmployerGate title="Messages" reason={gate} what="your messages" />;
+  if (error && items === null) return <div style={{ ...ES.card }}><p style={ES.empty}>{error}</p></div>;
+  if (config === null || items === null) return <div style={{ ...ES.card }}><p style={ES.empty}>Loading…</p></div>;
 
-  /** The editor's starting point: the saved config, except when it's still
-   *  blank — then the suggestions derived from the company's own page (live
-   *  roles → hiring reason; shown work/clients/project bids → services
-   *  reasons + budget/timing questions). Nothing is written until Save. */
-  function draftFrom(cfg: Config): Config {
-    const blank = cfg.contactReasons.length === 0 && cfg.contactQuestions.length === 0;
-    if (blank && suggested) {
-      return { ...cfg, contactReasons: suggested.reasons, contactQuestions: suggested.questions };
-    }
-    return { ...cfg };
-  }
-
-  if (gate) return <EmployerGate title="Inbox" reason={gate} what="your inbox" />;
-  if (error && items === null) {
-    return (
-      <EmployerSection title="Inbox">
-        <div style={ES.card}><p style={ES.empty}>{error}</p></div>
-      </EmployerSection>
-    );
-  }
-  if (config === null || items === null) {
-    return (
-      <EmployerSection title="Inbox">
-        <div style={ES.card}><p style={ES.empty}>Loading…</p></div>
-      </EmployerSection>
-    );
-  }
-
-  const counts = Object.fromEntries(TABS.map((t) => [t, items.filter((i) => i.status === TAB_STATUS[t]).length])) as Record<Tab, number>;
-  const visible = items.filter((i) => i.status === TAB_STATUS[tab]);
+  const quickReplies = ["Happy to walk through this — what time works for a quick call?", "Thanks for reaching out — could you share a bit more about scope and timing?", "If you were happy with how this turned out, would you mind leaving a short review on our Topezia page?"];
 
   return (
-    <EmployerSection
-      title="Inbox"
-      subtitle="Messages people send through your contact form. Replying opens a conversation; until you reply, they can't follow up."
-    >
-      {error && <p style={ES.error}>{error}</p>}
+    <div style={S.frame} className={active || showConfig ? "tzm-thread-open" : ""}>
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
 
-      {/* ── Contact form config ── */}
-      <div style={{ ...ES.card, marginBottom: 18 }}>
-        {!editingForm ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-            <span style={config.contactEnabled ? ES.pillLive : ES.pillDraft}>
-              {config.contactEnabled ? "Contact form is on" : "Contact form is off"}
-            </span>
-            <span style={{ ...ES.empty, flex: 1, minWidth: 200 }}>
-              {config.contactEnabled
-                ? `Visitors can write to you from your public page${config.contactReasons.length ? ` and pick from ${config.contactReasons.length} reasons` : ""}.`
-                : "Your public page shows no way to message you until you turn this on."}
-            </span>
-            <button
-              type="button"
-              style={ES.btnGhost}
-              onClick={() => { setDraft(draftFrom(config)); setEditingForm(true); setSaveError(null); }}
-            >
-              {config.contactEnabled ? "Edit form" : "Set up"}
-            </button>
-            <button
-              type="button"
-              style={config.contactEnabled ? ES.btnDanger : ES.btn}
-              // Turning ON a never-configured form ships the suggested
-              // defaults rather than a bare message box; turning off leaves
-              // the saved fields alone for when it comes back on.
-              onClick={() => saveConfig(config.contactEnabled ? { ...config, contactEnabled: false } : { ...draftFrom(config), contactEnabled: true })}
-              disabled={saving}
-            >
-              {config.contactEnabled ? "Turn off" : "Turn on"}
-            </button>
+      {/* ── Conversation list ── */}
+      <section style={S.listPane} className="tzm-list">
+        <div style={S.listHead}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <h1 style={S.h1}>Messages</h1>
+            {newCount > 0 && <span style={S.newChip}>{newCount} new</span>}
+            <div style={{ flex: 1 }} />
+            <button type="button" title="Contact form settings" onClick={openConfig} style={S.gearBtn} aria-label="Contact form settings">⚙</button>
           </div>
-        ) : draft && (
-          <div>
-            <label style={ES.label}>Reasons people can pick (up to {INQUIRY_LIMITS.reasons}, one per line)</label>
-            <textarea
-              style={{ ...ES.input, minHeight: 92, resize: "vertical", marginBottom: 14 }}
-              value={draft.contactReasons.join("\n")}
-              placeholder={"Hiring inquiry\nPartnership\nPress"}
-              onChange={(e) => setDraft({ ...draft, contactReasons: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, INQUIRY_LIMITS.reasons) })}
+          <label style={S.search}>
+            <span style={{ color: "#94A3B8" }}>⌕</span>
+            <input
+              placeholder="Search people, messages"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              style={S.searchInput}
             />
-            <label style={ES.label}>Extra questions (up to {INQUIRY_LIMITS.questions}, one per line, all optional for the sender)</label>
-            <textarea
-              style={{ ...ES.input, minHeight: 74, resize: "vertical", marginBottom: 14 }}
-              value={draft.contactQuestions.join("\n")}
-              placeholder={"What's your budget?\nWhen would you want to start?"}
-              onChange={(e) => setDraft({ ...draft, contactQuestions: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, INQUIRY_LIMITS.questions) })}
-            />
-            {saveError && <p style={ES.error}>{saveError}</p>}
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button type="button" style={ES.btn} disabled={saving} onClick={() => saveConfig({ ...draft, contactEnabled: true })}>
-                {saving ? "Saving…" : config.contactEnabled ? "Save" : "Save and turn on"}
-              </button>
-              <button type="button" style={ES.btnGhost} onClick={() => setEditingForm(false)}>Cancel</button>
-              {suggested && (suggested.reasons.length > 0 || suggested.questions.length > 0) && (
-                <button
-                  type="button"
-                  style={{ ...ES.btnGhost, marginLeft: "auto" }}
-                  onClick={() => setDraft({ ...draft, contactReasons: suggested.reasons, contactQuestions: suggested.questions })}
-                >
-                  Reset to suggested
+          </label>
+          <div style={S.filterRow}>
+            {FILTERS.map((f) => {
+              const on = filter === f;
+              return (
+                <button key={f} type="button" onClick={() => setFilter(f)}
+                  style={{ ...S.filterChip, background: on ? "#EEF2FF" : "#fff", color: on ? "#4F46E5" : "#475569", borderColor: on ? "#C7D2FE" : "#E2E8F0" }}>
+                  {f}{f === "New" && newCount ? ` · ${newCount}` : ""}
                 </button>
-              )}
-            </div>
-            <p style={{ margin: "12px 0 0", fontSize: 11.5, lineHeight: 1.6, color: "#94A3B8" }}>
-              Suggestions come from your page — live roles add a hiring reason; shown work,
-              clients or project posts add quote and budget fields. Edit anything; senders
-              answering an older version of a question keep their original wording.
-            </p>
+              );
+            })}
           </div>
-        )}
-      </div>
-
-      {/* ── Tabs ── */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-        {TABS.map((t) => (
-          <button key={t} type="button" onClick={() => setTab(t)} style={{ ...S.tab, ...(tab === t ? S.tabOn : {}) }}>
-            {t}{counts[t] ? ` · ${counts[t]}` : ""}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Inbox ── */}
-      {visible.length === 0 ? (
-        <div style={ES.card}>
-          <p style={ES.empty}>
-            {tab === "New"
-              ? config.contactEnabled
-                ? "Nothing waiting. New messages land here — you'll also get an email."
-                : "Nothing here — and nothing can arrive while the form is off."
-              : `Nothing ${tab.toLowerCase()} yet.`}
-          </p>
         </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {visible.map((inq) => {
-            const isWidget = inq.source === "WIDGET";
-            const name = isWidget
-              ? inq.visitorName?.trim() || inq.visitorEmail || "A website visitor"
-              : inq.profile?.fullName?.trim() || "A Topezia member";
-            const profileHref = inq.profile?.publicVisible && inq.profile.publicSlug ? `/p/${inq.profile.publicSlug}` : null;
+        <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+          {list.map((c) => {
+            const name = senderName(c);
+            const on = c.id === sel;
+            const isNew = c.status === "NEW";
+            const preview = c.messages.at(-1)?.body ?? c.message;
             return (
-              <div key={inq.id} style={ES.card}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-                  {profileHref ? (
-                    <a href={profileHref} target="_blank" rel="noreferrer" style={S.sender}>{name} ↗</a>
-                  ) : (
-                    <span style={S.sender}>{name}</span>
-                  )}
-                  {isWidget && <span style={S.widgetPill}>Website chat</span>}
-                  {isWidget && inq.visitorName && inq.visitorEmail && <span style={S.meta2}>{inq.visitorEmail}</span>}
-                  {inq.reason && <span style={S.reasonPill}>{inq.reason}</span>}
-                  {inq.profile?.openToWork && <span style={ES.pillLive}>Open to work</span>}
-                  <span style={S.meta}>
-                    {inq.profile?.currentLocation ? `${inq.profile.currentLocation} · ` : ""}
-                    {new Date(inq.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
+              <div key={c.id} onClick={() => { setSel(c.id); setShowConfig(false); setDraft(""); setSendError(null); }}
+                style={{ ...S.row, background: on ? "#F5F3FF" : "#fff", borderLeft: `3px solid ${on ? "#8B5CF6" : "transparent"}` }}>
+                <span style={{ ...S.avatar, background: avatarBg(name) }}>{initialsOf(name)}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <b style={{ ...S.rowName, fontWeight: isNew ? 800 : 600 }}>{name}</b>
+                    <span style={S.rowTime}>{when(lastActivity(c))}</span>
                   </span>
-                </div>
-
-                {isWidget && (inq.transcript?.length ?? 0) > 0 && (
-                  <details style={S.transcript}>
-                    <summary style={S.transcriptHead}>
-                      Chat before this message ({inq.transcript!.length} turns)
-                    </summary>
-                    {inq.transcript!.map((t, i) => (
-                      <p key={i} style={S.transcriptTurn}>
-                        <b style={{ color: t.role === "bot" ? "#8B5CF6" : "#475569" }}>{t.role === "bot" ? "Bot" : "Visitor"}</b> — {t.text}
-                      </p>
-                    ))}
-                  </details>
-                )}
-
-                <p style={S.body}>{inq.message}</p>
-                {(inq.answers ?? []).map((a) => (
-                  <p key={a.question} style={S.answer}>
-                    <b style={{ color: "#475569" }}>{a.question}</b> — {a.answer}
-                  </p>
-                ))}
-
-                {inq.messages.length > 0 && (
-                  <div style={S.thread}>
-                    {inq.messages.map((m) => (
-                      <div key={m.id} style={{ ...S.msg, ...(m.sender === "COMPANY" ? S.msgOurs : {}) }}>
-                        <span style={S.msgWho}>{m.sender === "COMPANY" ? "You" : name}</span>
-                        {m.body}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {replyFor === inq.id ? (
-                  <div style={{ marginTop: 12 }}>
-                    <textarea
-                      style={{ ...ES.input, minHeight: 80, resize: "vertical" }}
-                      value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
-                      maxLength={INQUIRY_LIMITS.reply}
-                      placeholder={`Reply to ${name}…`}
-                      autoFocus
-                    />
-                    {replyError && <p style={{ ...ES.error, marginTop: 10, marginBottom: 0 }}>{replyError}</p>}
-                    <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-                      <button type="button" style={ES.btn} disabled={replyBusy} onClick={() => sendReply(inq)}>
-                        {replyBusy ? "Sending…" : "Send reply"}
-                      </button>
-                      <button type="button" style={ES.btnGhost} onClick={() => { setReplyFor(null); setReplyError(null); }}>Cancel</button>
-                    </div>
-                    {inq.messages.length === 0 && (
-                      <p style={S.fine}>Replying opens a conversation and emails them. This is the step they can't take — only you can.</p>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
-                    {(inq.status === "NEW" || inq.status === "REPLIED") && (
-                      <button type="button" style={ES.btn} onClick={() => { setReplyFor(inq.id); setReplyText(""); setReplyError(null); }}>
-                        Reply
-                      </button>
-                    )}
-                    {(inq.status === "NEW" || inq.status === "REPLIED") && (
-                      <button type="button" style={ES.btnGhost} onClick={() => setStatus(inq, "ARCHIVED")}>Archive</button>
-                    )}
-                    {inq.status === "NEW" && (
-                      <button type="button" style={ES.btnDanger} onClick={() => setStatus(inq, "SPAM")}>Mark as spam</button>
-                    )}
-                    {(inq.status === "ARCHIVED" || inq.status === "SPAM") && (
-                      <button type="button" style={ES.btnGhost} onClick={() => setStatus(inq, "NEW")}>
-                        {inq.repliedAt ? "Reopen conversation" : "Move back to New"}
-                      </button>
-                    )}
-                  </div>
-                )}
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5 }}>
+                    <span style={{ ...S.chanTag, background: c.source === "WIDGET" ? "#F5F3FF" : "#ECFDF5", color: c.source === "WIDGET" ? "#6D28D9" : "#047857" }}>
+                      {c.source === "WIDGET" ? "Website chat" : "Contact form"}
+                    </span>
+                    <span style={{ ...S.preview, color: isNew ? "#334155" : "#94A3B8" }}>{preview}</span>
+                    {isNew && <span style={S.unreadDot} />}
+                  </span>
+                </span>
               </div>
             );
           })}
+          {list.length === 0 && (
+            <div style={S.emptyList}>
+              <b style={{ display: "block", fontSize: 13, color: "#334155" }}>Nothing here</b>
+              <span style={{ display: "block", fontSize: 11.8, marginTop: 5, lineHeight: 1.6 }}>
+                {filter === "All" && !query
+                  ? config.contactEnabled
+                    ? "Messages from your contact form and site chat land here."
+                    : "Turn on your contact form or site chat and messages land here."
+                  : "Try another filter or clear your search."}
+              </span>
+            </div>
+          )}
         </div>
-      )}
+      </section>
 
-      {tab === "Spam" && counts.Spam > 0 && (
-        <p style={{ ...S.fine, marginTop: 14 }}>
-          Spam marks are never shown to the sender — to them it just looks unanswered. Someone
-          marked spam by several companies loses the ability to send messages at all.
-        </p>
-      )}
-    </EmployerSection>
+      {/* ── Thread / config pane ── */}
+      <section style={S.threadPane} className="tzm-thread">
+        {showConfig && confDraft ? (
+          <div style={{ padding: "22px 24px", overflowY: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <button type="button" style={S.backBtn} onClick={() => setShowConfig(false)}>←</button>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Contact form</h2>
+              <span style={config.contactEnabled ? ES.pillLive : ES.pillDraft}>{config.contactEnabled ? "On" : "Off"}</span>
+            </div>
+            <div style={{ ...ES.card, maxWidth: 640 }}>
+              <label style={ES.label}>Reasons people can pick (up to {INQUIRY_LIMITS.reasons}, one per line)</label>
+              <textarea style={{ ...ES.input, minHeight: 92, resize: "vertical", marginBottom: 14 }}
+                value={confDraft.contactReasons.join("\n")}
+                placeholder={"Hiring inquiry\nPartnership\nPress"}
+                onChange={(e) => setConfDraft({ ...confDraft, contactReasons: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, INQUIRY_LIMITS.reasons) })} />
+              <label style={ES.label}>Extra questions (up to {INQUIRY_LIMITS.questions}, one per line, optional for the sender)</label>
+              <textarea style={{ ...ES.input, minHeight: 74, resize: "vertical", marginBottom: 14 }}
+                value={confDraft.contactQuestions.join("\n")}
+                placeholder={"What's your budget?\nWhen would you want to start?"}
+                onChange={(e) => setConfDraft({ ...confDraft, contactQuestions: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, INQUIRY_LIMITS.questions) })} />
+              {saveError && <p style={ES.error}>{saveError}</p>}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button type="button" style={ES.btn} disabled={saving} onClick={() => saveConfig({ ...confDraft, contactEnabled: true })}>
+                  {saving ? "Saving…" : config.contactEnabled ? "Save" : "Save and turn on"}
+                </button>
+                {config.contactEnabled && (
+                  <button type="button" style={ES.btnDanger} disabled={saving} onClick={() => saveConfig({ ...config, contactEnabled: false })}>Turn off</button>
+                )}
+                {suggested && (suggested.reasons.length > 0 || suggested.questions.length > 0) && (
+                  <button type="button" style={{ ...ES.btnGhost, marginLeft: "auto" }}
+                    onClick={() => setConfDraft({ ...confDraft, contactReasons: suggested.reasons, contactQuestions: suggested.questions })}>
+                    Reset to suggested
+                  </button>
+                )}
+              </div>
+              <p style={{ margin: "12px 0 0", fontSize: 11.5, lineHeight: 1.6, color: "#94A3B8" }}>
+                Suggestions come from your page — live roles add a hiring reason; shown work, clients or project posts add quote and budget fields.
+              </p>
+            </div>
+          </div>
+        ) : !active ? (
+          <div style={S.noThread}>
+            <b style={{ fontSize: 14, color: "#334155" }}>Pick a conversation</b>
+            <span style={{ fontSize: 12, color: "#94A3B8", marginTop: 6, lineHeight: 1.6 }}>
+              Everything from your contact form and website chat, in one place.
+            </span>
+          </div>
+        ) : (
+          <>
+            {(() => {
+              const name = senderName(active);
+              const profileHref = active.profile?.publicVisible && active.profile.publicSlug ? `/p/${active.profile.publicSlug}` : null;
+              const sub = [senderEmail(active), active.profile?.currentLocation, active.reason].filter(Boolean).join(" · ");
+              const closed = active.status === "ARCHIVED" || active.status === "SPAM";
+              return (
+                <>
+                  <header style={S.threadHead}>
+                    <button type="button" style={S.backBtn} className="tzm-back" onClick={() => setSel(null)}>←</button>
+                    <span style={{ ...S.avatar, width: 40, height: 40, background: avatarBg(name) }}>{initialsOf(name)}</span>
+                    <span style={{ flex: 1, minWidth: 140 }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <b style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.2px" }}>{name}</b>
+                        <span style={{ ...S.chanTag, background: active.source === "WIDGET" ? "#F5F3FF" : "#ECFDF5", color: active.source === "WIDGET" ? "#6D28D9" : "#047857" }}>
+                          {active.source === "WIDGET" ? "Website chat" : "Contact form"}
+                        </span>
+                        {active.profile?.openToWork && <span style={ES.pillLive}>Open to work</span>}
+                      </span>
+                      <span style={{ display: "block", fontSize: 11.5, color: "#64748B", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub || when(active.createdAt)}</span>
+                    </span>
+                    <span style={{ display: "flex", gap: 7, flex: "none" }}>
+                      {profileHref && (
+                        <a href={profileHref} target="_blank" rel="noreferrer" title="Open Topezia profile" style={S.iconBtn}>↗</a>
+                      )}
+                      {!closed && (
+                        <button type="button" title="Archive" style={S.iconBtn} onClick={() => setStatus(active, "ARCHIVED")}>🗄</button>
+                      )}
+                      {active.status === "NEW" && (
+                        <button type="button" title="Mark as spam" style={{ ...S.iconBtn, color: "#B91C1C" }} onClick={() => setStatus(active, "SPAM")}>⚑</button>
+                      )}
+                      {closed && (
+                        <button type="button" style={{ ...ES.btnGhost }} onClick={() => setStatus(active, "NEW")}>
+                          {active.repliedAt ? "Reopen" : "Move to New"}
+                        </button>
+                      )}
+                    </span>
+                  </header>
+
+                  {active.status === "NEW" && (
+                    <div style={S.banner}>
+                      <span style={{ flex: 1 }}>New enquiry — they can&apos;t follow up until you reply.</span>
+                    </div>
+                  )}
+                  {active.status === "SPAM" && (
+                    <div style={{ ...S.banner, background: "#F8FAFC", borderColor: "#E2E8F0", color: "#64748B" }}>
+                      <span style={{ flex: 1 }}>Marked as spam. To them it just looks unanswered. Several marks from different companies block a sender everywhere.</span>
+                    </div>
+                  )}
+
+                  <div ref={scroller} style={S.threadScroll}>
+                    <div style={S.threadCol}>
+                      <div style={S.dayRow}>
+                        <span style={S.dayLine} />
+                        <span style={S.dayLabel}>{new Date(active.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</span>
+                        <span style={S.dayLine} />
+                      </div>
+
+                      {(active.transcript?.length ?? 0) > 0 && (
+                        <>
+                          <span style={S.sysPill}>Chat with the AI assistant, before they left this message</span>
+                          {active.transcript!.map((t, i) => (
+                            <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: t.role === "visitor" ? "flex-end" : "flex-start", gap: 4 }}>
+                              <span style={{ ...S.bubble, ...(t.role === "visitor" ? S.bubbleDimOut : S.bubbleDimIn) }}>{t.text}</span>
+                            </div>
+                          ))}
+                          <span style={S.sysPill}>They left their message ↓</span>
+                        </>
+                      )}
+
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 5 }}>
+                        <span style={{ ...S.bubble, ...S.bubbleIn }}>
+                          {active.message}
+                          {(active.answers ?? []).map((a) => (
+                            <span key={a.question} style={S.answerLine}>
+                              <b style={{ color: "#475569" }}>{a.question}</b> — {a.answer}
+                            </span>
+                          ))}
+                        </span>
+                        <span style={S.msgMeta}>{name} · {when(active.createdAt)}</span>
+                      </div>
+
+                      {active.messages.map((m) => {
+                        const out = m.sender === "COMPANY";
+                        return (
+                          <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: out ? "flex-end" : "flex-start", gap: 5 }}>
+                            <span style={{ ...S.bubble, ...(out ? S.bubbleOut : S.bubbleIn) }}>{m.body}</span>
+                            <span style={S.msgMeta}>{out ? "You" : name} · {when(m.createdAt)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {!closed ? (
+                    <div style={{ padding: "0 24px 18px" }}>
+                      <div style={{ maxWidth: 760, margin: "0 auto" }}>
+                        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 10 }}>
+                          {quickReplies.map((qr) => (
+                            <button key={qr} type="button" style={S.quickChip} onClick={() => setDraft(qr)}>
+                              {qr.length > 42 ? `${qr.slice(0, 42)}…` : qr}
+                            </button>
+                          ))}
+                        </div>
+                        <form style={S.composer} onSubmit={(e: FormEvent) => { e.preventDefault(); sendReply(); }}>
+                          <textarea
+                            placeholder={`Reply to ${name}…  ⌘↵ to send`}
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendReply(); } }}
+                            rows={2}
+                            maxLength={INQUIRY_LIMITS.reply}
+                            style={S.composerInput}
+                          />
+                          {sendError && <p style={{ ...ES.error, margin: "8px 0 0" }}>{sendError}</p>}
+                          <div style={S.composerBar}>
+                            {active.messages.length === 0 && (
+                              <span style={{ fontSize: 11, color: "#94A3B8" }}>Replying opens the conversation and emails them.</span>
+                            )}
+                            <span style={{ flex: 1 }} />
+                            <button type="submit" disabled={sending || !draft.trim()}
+                              style={{ ...S.sendBtn, background: draft.trim() ? GRAD : "#E2E8F0", color: draft.trim() ? "#fff" : "#94A3B8", cursor: draft.trim() ? "pointer" : "not-allowed" }}>
+                              {sending ? "Sending…" : "Send →"}
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ padding: "0 24px 18px" }}>
+                      <div style={{ maxWidth: 760, margin: "0 auto", fontSize: 12, color: "#94A3B8" }}>
+                        This conversation is {active.status === "SPAM" ? "in spam" : "archived"} — reopen it to reply.
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </>
+        )}
+      </section>
+    </div>
   );
 }
 
+const CSS = `
+.tzm-back{display:none}
+@media (max-width:900px){
+  .tzm-back{display:grid}
+  .tzm-thread{display:none !important}
+  .tzm-thread-open .tzm-thread{display:flex !important}
+  .tzm-thread-open .tzm-list{display:none !important}
+}
+`;
+
 const S: Record<string, CSSProperties> = {
-  tab: { background: "#fff", border: "1px solid #E2E8F0", borderRadius: 999, padding: "7px 15px", fontSize: 12.5, fontWeight: 700, color: "#64748B", cursor: "pointer", fontFamily: "inherit" },
-  tabOn: { background: "#EEF2FF", borderColor: "#C7D2FE", color: "#4F46E5" },
-  sender: { fontSize: 14, fontWeight: 800, color: "#0F172A", textDecoration: "none" },
-  widgetPill: { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#F5F3FF", color: "#7C3AED", border: "1px solid #DDD6FE" },
-  meta2: { fontSize: 11.5, color: "#94A3B8" },
-  transcript: { marginTop: 10, border: "1px solid #F1F5F9", borderRadius: 10, padding: "8px 12px", background: "#F8FAFC" },
-  transcriptHead: { fontSize: 11.5, fontWeight: 700, color: "#64748B", cursor: "pointer" },
-  transcriptTurn: { margin: "8px 0 0", fontSize: 12.5, lineHeight: 1.55, color: "#475569", whiteSpace: "pre-wrap" },
-  reasonPill: { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#EEF2FF", color: "#4F46E5", border: "1px solid #C7D2FE" },
-  meta: { fontSize: 11.5, color: "#94A3B8", marginLeft: "auto" },
-  body: { margin: "12px 0 0", fontSize: 13.5, lineHeight: 1.65, color: "#334155", whiteSpace: "pre-wrap" },
-  answer: { margin: "8px 0 0", fontSize: 12.5, lineHeight: 1.6, color: "#64748B" },
-  thread: { marginTop: 14, borderTop: "1px solid #F1F5F9", paddingTop: 12, display: "flex", flexDirection: "column", gap: 8 },
-  msg: { fontSize: 13, lineHeight: 1.6, color: "#334155", background: "#F8FAFC", border: "1px solid #F1F5F9", borderRadius: 10, padding: "9px 12px", whiteSpace: "pre-wrap" },
-  msgOurs: { background: "#EEF2FF", borderColor: "#E0E7FF" },
-  msgWho: { display: "block", fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#94A3B8", marginBottom: 3 },
-  fine: { margin: "10px 0 0", fontSize: 11.5, lineHeight: 1.6, color: "#94A3B8" },
+  frame: { display: "grid", gridTemplateColumns: "340px minmax(0,1fr)", height: "calc(100vh - 120px)", minHeight: 480, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, overflow: "hidden" },
+  listPane: { borderRight: "1px solid #E2E8F0", display: "flex", flexDirection: "column", minWidth: 0, background: "#fff" },
+  listHead: { padding: "16px 16px 12px", borderBottom: "1px solid #E2E8F0" },
+  h1: { margin: 0, fontSize: 19, fontWeight: 800, letterSpacing: "-0.5px" },
+  newChip: { background: "#EEF2FF", color: "#4F46E5", borderRadius: 999, padding: "3px 9px", fontSize: 10.5, fontWeight: 700 },
+  gearBtn: { width: 30, height: 30, borderRadius: 9, border: "1px solid #E2E8F0", background: "#fff", display: "grid", placeItems: "center", color: "#334155", cursor: "pointer", fontSize: 14, fontFamily: "inherit" },
+  search: { display: "flex", alignItems: "center", gap: 9, marginTop: 13, background: "#F1F5F9", borderRadius: 10, padding: "8px 12px", color: "#64748B" },
+  searchInput: { flex: 1, minWidth: 0, border: 0, background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 12.5, color: "#0F172A" },
+  filterRow: { display: "flex", gap: 6, marginTop: 12, overflowX: "auto", paddingBottom: 2 },
+  filterChip: { flex: "none", border: "1px solid", borderRadius: 999, padding: "6px 13px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" },
+  row: { display: "flex", gap: 12, padding: "14px 16px", borderBottom: "1px solid #F1F5F9", cursor: "pointer" },
+  avatar: { flex: "none", width: 38, height: 38, borderRadius: 11, color: "#fff", display: "grid", placeItems: "center", fontSize: 12.5, fontWeight: 800 },
+  rowName: { flex: 1, minWidth: 0, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  rowTime: { flex: "none", fontSize: 10.5, color: "#64748B" },
+  chanTag: { flex: "none", borderRadius: 5, padding: "2px 7px", fontSize: 9.5, fontWeight: 700, letterSpacing: 0.3 },
+  preview: { flex: 1, minWidth: 0, fontSize: 11.8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  unreadDot: { flex: "none", width: 9, height: 9, borderRadius: "50%", background: GRAD },
+  emptyList: { padding: "44px 26px", textAlign: "center", color: "#64748B" },
+  threadPane: { display: "flex", flexDirection: "column", minWidth: 0, background: "#F8FAFC" },
+  threadHead: { background: "#fff", borderBottom: "1px solid #E2E8F0", padding: "13px 20px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" },
+  backBtn: { width: 34, height: 34, borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", placeItems: "center", color: "#334155", cursor: "pointer", fontSize: 15, fontFamily: "inherit", display: "grid" },
+  iconBtn: { width: 34, height: 34, borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", display: "grid", placeItems: "center", color: "#64748B", cursor: "pointer", fontSize: 14, textDecoration: "none", fontFamily: "inherit" },
+  banner: { background: "#FFFBEB", borderBottom: "1px solid #FDE68A", padding: "10px 20px", display: "flex", alignItems: "center", gap: 10, color: "#92400E", fontSize: 12, fontWeight: 600 },
+  threadScroll: { flex: 1, overflowY: "auto", minHeight: 0, padding: "20px 24px 8px" },
+  threadCol: { maxWidth: 760, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 },
+  dayRow: { display: "flex", alignItems: "center", gap: 12, color: "#64748B" },
+  dayLine: { flex: 1, height: 1, background: "#E2E8F0" },
+  dayLabel: { fontSize: 10.5, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase" },
+  sysPill: { alignSelf: "center", background: "#EEF2FF", color: "#4F46E5", border: "1px solid #E0E7FF", borderRadius: 999, padding: "5px 14px", fontSize: 11, fontWeight: 600, textAlign: "center" },
+  bubble: { maxWidth: "78%", borderRadius: "16px 16px 16px 4px", padding: "11px 15px", fontSize: 13.2, lineHeight: 1.65, whiteSpace: "pre-wrap" },
+  bubbleIn: { background: "#fff", color: "#0F172A", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(15,23,42,.04)" },
+  bubbleOut: { background: GRAD, color: "#fff", border: "1px solid transparent", borderRadius: "16px 16px 4px 16px", boxShadow: "0 8px 20px rgba(99,102,241,.24)" },
+  bubbleDimIn: { background: "#F1F5F9", color: "#64748B", border: "1px solid #E2E8F0", fontSize: 12.3, maxWidth: "70%" },
+  bubbleDimOut: { background: "#EEF2FF", color: "#64748B", border: "1px solid #E0E7FF", borderRadius: "16px 16px 4px 16px", fontSize: 12.3, maxWidth: "70%" },
+  answerLine: { display: "block", marginTop: 8, fontSize: 12.3, color: "#64748B" },
+  msgMeta: { fontSize: 10.5, color: "#94A3B8", padding: "0 4px" },
+  quickChip: { border: "1px solid #E2E8F0", background: "#fff", borderRadius: 999, padding: "7px 13px", fontSize: 11.5, fontWeight: 600, color: "#334155", cursor: "pointer", fontFamily: "inherit" },
+  composer: { background: "#fff", border: "1px solid #E2E8F0", borderRadius: 15, padding: "12px 14px", boxShadow: "0 8px 26px rgba(15,23,42,.06)" },
+  composerInput: { width: "100%", border: 0, outline: "none", resize: "none", fontFamily: "inherit", fontSize: 13.2, lineHeight: 1.65, color: "#0F172A", background: "transparent", boxSizing: "border-box" },
+  composerBar: { display: "flex", alignItems: "center", gap: 7, marginTop: 8, paddingTop: 10, borderTop: "1px solid #F1F5F9" },
+  sendBtn: { display: "inline-flex", alignItems: "center", gap: 7, border: "none", borderRadius: 10, padding: "9px 17px", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", boxShadow: "0 6px 16px rgba(99,102,241,.3)" },
+  noThread: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 30 },
 };

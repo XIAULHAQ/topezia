@@ -32,7 +32,7 @@ type Company = { name: string; slug: string; logoUrl: string | null } | null;
 
 const NAV: { icon: string; label: string; href: string }[] = [
   { icon: "gauge", label: "Overview", href: "/employer" },
-  { icon: "mail", label: "Inbox", href: "/employer/inquiries" },
+  { icon: "mail", label: "Messages", href: "/employer/inquiries" },
   { icon: "chat", label: "Site chat", href: "/employer/widget" },
   { icon: "image", label: "Work", href: "/employer/work" },
   { icon: "star", label: "Testimonials", href: "/employer/testimonials" },
