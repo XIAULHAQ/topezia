@@ -16,6 +16,27 @@ import { INQUIRY_LIMITS, INQUIRY_FROM, renderCandidateReplyEmail } from "@/lib/c
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * GET — the thread's messages, for the still-open widget to poll so a
+ * company reply lands in the chat box the visitor is looking at, not only
+ * in their email. Same token-possession authorization as POST; the polling
+ * window is generous enough for one open tab and nothing else.
+ */
+export async function GET(req: NextRequest, { params }: { params: { token: string } }) {
+  if (!rateLimit(`ithread-poll:${clientIp(req)}`, 240, 60 * 60 * 1000)) {
+    return NextResponse.json(RATE_LIMITED, { status: 429 });
+  }
+  const inquiry = await prisma.companyInquiry.findUnique({
+    where: { threadToken: params.token },
+    select: {
+      status: true,
+      messages: { orderBy: { createdAt: "asc" }, select: { id: true, sender: true, body: true, createdAt: true } },
+    },
+  });
+  if (!inquiry) return NextResponse.json({ error: "That conversation no longer exists." }, { status: 404 });
+  return NextResponse.json({ open: inquiry.status === "REPLIED", messages: inquiry.messages });
+}
+
 export async function POST(req: NextRequest, { params }: { params: { token: string } }) {
   if (!rateLimit(`ithread:${clientIp(req)}`, 20, 60 * 60 * 1000)) {
     return NextResponse.json(RATE_LIMITED, { status: 429 });

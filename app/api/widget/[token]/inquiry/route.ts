@@ -89,7 +89,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
         transcript: transcript.length ? transcript : undefined,
         message,
       },
-      select: { id: true },
+      select: { id: true, threadToken: true },
     });
   } catch (err) {
     if (err && typeof err === "object" && (err as { code?: string }).code === "P2002") {
@@ -115,5 +115,11 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     console.error("[widget/inquiry] delivery failed:", err instanceof Error ? err.message : err);
   }
 
-  return NextResponse.json({ sent: true, id: inquiry.id, emailed });
+  // The thread token goes back to the session that CREATED the inquiry (the
+  // author reading their own thread), kept in iframe memory only, so a
+  // company reply can land in the still-open chat box and not just in email.
+  // Known trade-off, accepted: someone who typed an address that isn't
+  // theirs sees the reply to the message *they wrote* in that open tab; the
+  // email remains the durable channel and the only way back in later.
+  return NextResponse.json({ sent: true, id: inquiry.id, emailed, threadToken: inquiry.threadToken });
 }

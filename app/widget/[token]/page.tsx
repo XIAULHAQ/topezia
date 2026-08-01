@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
+import { companyLogoUrl } from "@/lib/company/storage";
 import WidgetChat from "./widget-chat";
 
 /**
@@ -14,7 +15,7 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
 export default async function WidgetPage({ params }: { params: { token: string } }) {
   const site = await prisma.widgetSite.findUnique({
     where: { siteToken: params.token },
-    select: { enabled: true, pagesCrawled: true, company: { select: { name: true } } },
+    select: { enabled: true, pagesCrawled: true, company: { select: { name: true, logoPath: true } } },
   });
 
   if (!site || !site.enabled) {
@@ -25,5 +26,12 @@ export default async function WidgetPage({ params }: { params: { token: string }
     );
   }
 
-  return <WidgetChat token={params.token} companyName={site.company.name} ready={site.pagesCrawled > 0} />;
+  return (
+    <WidgetChat
+      token={params.token}
+      companyName={site.company.name}
+      logoUrl={companyLogoUrl(site.company.logoPath)}
+      ready={site.pagesCrawled > 0}
+    />
+  );
 }

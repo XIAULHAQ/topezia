@@ -44,7 +44,11 @@ export async function answerFromSite(
     return { ...HANDOFF_FALLBACK, sources: [] };
   }
 
-  const qEmbedding = await embedText(question);
+  // Retrieval query = the question PLUS the previous exchange. "Where can I
+  // buy that?" embeds as nothing on its own — the referent lives in the turn
+  // before, and follow-ups are how people actually talk to these things.
+  const recent = history.slice(-4, -1).map((t) => t.text.slice(0, 300)).join("\n");
+  const qEmbedding = await embedText(recent ? `${recent}\n${question}` : question);
   if (!qEmbedding) return { ...HANDOFF_FALLBACK, sources: [] };
 
   const chunks = await prisma.$queryRawUnsafe<{ url: string; title: string; content: string; distance: number }[]>(

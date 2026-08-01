@@ -3,26 +3,38 @@
 /**
  * The conversation inside the iframe.
  *
- * Stateless on the server: the full visible history rides with every chat
- * request, and nothing is stored until the visitor leaves their email — at
- * which point the transcript becomes part of a CompanyInquiry and the
- * company answers from their Topezia inbox. The little "answers come from
- * this site" line and the powered-by link are honesty, not chrome: visitors
- * should know what they're talking to and where a reply will come from.
+ * Two modes, one box. It starts as an AI assistant answering from the site.
+ * When the visitor leaves a message, the session keeps the thread key (in
+ * memory only — the email link is the durable way back in) and polls it, so
+ * a company reply lands HERE while the tab is open, not just in email. The
+ * moment a human has replied, the box belongs to the humans: further
+ * visitor messages go to the thread, and the bot stays out of a
+ * conversation two people are having.
  */
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 
-type Turn = { role: "visitor" | "bot"; text: string; sources?: string[] };
+type Turn = { role: "visitor" | "bot" | "team"; text: string; sources?: string[] };
 
 const GRAD = "linear-gradient(135deg,#8B5CF6,#3B82F6)";
+const POLL_MS = 20_000;
 
-export default function WidgetChat({ token, companyName, ready }: { token: string; companyName: string; ready: boolean }) {
+export default function WidgetChat({
+  token,
+  companyName,
+  logoUrl,
+  ready,
+}: {
+  token: string;
+  companyName: string;
+  logoUrl: string | null;
+  ready: boolean;
+}) {
   const [turns, setTurns] = useState<Turn[]>([
     {
       role: "bot",
       text: ready
-        ? `Hi — ask me anything about ${companyName}. I answer from what's on this site, and you can always leave a message for the team.`
-        : `Hi — I'm still reading this site, so for now the best I can do is take a message for the ${companyName} team.`,
+        ? `Hi — I'm the ${companyName} AI assistant. Ask me anything, or leave a message and a real person will get back to you.`
+        : `Hi — I'm the ${companyName} AI assistant. I'm still learning this site, so for now let me take a message for the team.`,
     },
   ]);
   const [input, setInput] = useState("");
@@ -33,11 +45,41 @@ export default function WidgetChat({ token, companyName, ready }: { token: strin
   const [name, setName] = useState("");
   const [leadMsg, setLeadMsg] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Set once the visitor leaves a message; memory only, never persisted.
+  const [threadToken, setThreadToken] = useState<string | null>(null);
+  // True after a human replied — from then on the input feeds the thread.
+  const [humanMode, setHumanMode] = useState(false);
+  const seenMsgIds = useRef<Set<string>>(new Set());
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
   }, [turns, leadOpen, leadDone]);
+
+  // Poll the thread while the tab is open so the company's reply appears in
+  // the box the visitor is actually looking at.
+  useEffect(() => {
+    if (!threadToken) return;
+    let stop = false;
+    async function tick() {
+      try {
+        const res = await fetch(`/api/i/${threadToken}`, { cache: "no-store" });
+        if (!res.ok || stop) return;
+        const data = (await res.json()) as { messages?: { id: string; sender: string; body: string }[] };
+        const fresh = (data.messages ?? []).filter((m) => m.sender === "COMPANY" && !seenMsgIds.current.has(m.id));
+        if (fresh.length) {
+          fresh.forEach((m) => seenMsgIds.current.add(m.id));
+          setTurns((cur) => [...cur, ...fresh.map((m) => ({ role: "team" as const, text: m.body }))]);
+          setHumanMode(true);
+        }
+      } catch {
+        /* next tick */
+      }
+    }
+    tick();
+    const timer = setInterval(tick, POLL_MS);
+    return () => { stop = true; clearInterval(timer); };
+  }, [threadToken]);
 
   async function send(e: FormEvent) {
     e.preventDefault();
@@ -49,14 +91,41 @@ export default function WidgetChat({ token, companyName, ready }: { token: strin
     setTurns(history);
     setBusy(true);
     try {
+      if (humanMode && threadToken) {
+        // A person is on the other end now — this goes to them, not the bot.
+        const res = await fetch(`/api/i/${threadToken}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body: text }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { message?: { id: string }; error?: string };
+        if (!res.ok || !data.message) {
+          setTurns((cur) => [...cur, { role: "bot", text: data.error ?? "That didn't send — try again." }]);
+          return;
+        }
+        seenMsgIds.current.add(data.message.id);
+        return;
+      }
+
       const res = await fetch(`/api/widget/${token}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ history: history.map(({ role, text: t }) => ({ role, text: t })) }),
+        body: JSON.stringify({
+          history: history.filter((t) => t.role !== "team").map(({ role, text: t }) => ({ role, text: t })),
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as { reply?: string; sources?: string[]; handoff?: boolean; error?: string };
       if (!res.ok || !data.reply) {
         setTurns((cur) => [...cur, { role: "bot", text: data.error ?? "Something hiccuped — try that again." }]);
+        return;
+      }
+      if (data.handoff && leadDone) {
+        // The team already has their message — "leave your email" again
+        // would be a dead end. Acknowledge and stay useful.
+        setTurns((cur) => [
+          ...cur,
+          { role: "bot", text: "That one's for the team — and they already have your message, so they'll cover it when they reply. Anything else I can look up for you?" },
+        ]);
         return;
       }
       setTurns((cur) => [...cur, { role: "bot", text: data.reply!, sources: data.sources }]);
@@ -84,17 +153,21 @@ export default function WidgetChat({ token, companyName, ready }: { token: strin
           email,
           name,
           message: leadMsg,
-          transcript: turns.map(({ role, text }) => ({ role, text })),
+          transcript: turns.filter((t) => t.role !== "team").map(({ role, text }) => ({ role, text })),
         }),
       });
-      const data = (await res.json().catch(() => ({}))) as { sent?: boolean; error?: string };
+      const data = (await res.json().catch(() => ({}))) as { sent?: boolean; threadToken?: string; error?: string };
       if (!res.ok || !data.sent) {
         setError(data.error ?? "That didn't go through — try again.");
         return;
       }
       setLeadDone(true);
       setLeadOpen(false);
-      setTurns((cur) => [...cur, { role: "bot", text: `Done — your message is with the ${companyName} team. The reply will land at ${email}.` }]);
+      if (data.threadToken) setThreadToken(data.threadToken);
+      setTurns((cur) => [
+        ...cur,
+        { role: "bot", text: `Done — your message is with the ${companyName} team. If they reply while you're here, it shows up right in this chat; otherwise it lands at ${email}.` },
+      ]);
     } catch {
       setError("That didn't go through — try again.");
     } finally {
@@ -102,22 +175,44 @@ export default function WidgetChat({ token, companyName, ready }: { token: strin
     }
   }
 
+  const initials = companyName.trim().slice(0, 2).toUpperCase();
+
   return (
     <main style={S.page}>
       <header style={S.head}>
-        <b style={{ fontSize: 14 }}>{companyName}</b>
-        <span style={S.headSub}>Answers come from this website · a person reads every message</span>
+        <span style={S.avatar}>
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          ) : (
+            <span style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>{initials}</span>
+          )}
+        </span>
+        <span style={{ minWidth: 0 }}>
+          <b style={{ fontSize: 14, display: "block" }}>{companyName}</b>
+          <span style={S.headSub}>AI assistant · a person reads every message</span>
+        </span>
       </header>
 
       <div ref={scroller} style={S.scroll}>
         {turns.map((t, i) => (
-          <div key={i} style={{ ...S.msg, ...(t.role === "visitor" ? S.msgVisitor : S.msgBot) }}>
+          <div
+            key={i}
+            style={{
+              ...S.msg,
+              ...(t.role === "visitor" ? S.msgVisitor : t.role === "team" ? S.msgTeam : S.msgBot),
+            }}
+          >
+            {t.role === "team" && <span style={S.teamLabel}>{companyName} team</span>}
             {t.text}
             {t.sources && t.sources.length > 0 && (
               <span style={S.sources}>
                 {t.sources.map((u) => {
                   let label = u;
-                  try { label = new URL(u).pathname || "/"; } catch {}
+                  try {
+                    const p = new URL(u).pathname;
+                    label = !p || p === "/" ? "Home" : p;
+                  } catch {}
                   return (
                     <a key={u} href={u} target="_top" style={S.sourceLink}>{label}</a>
                   );
@@ -150,11 +245,11 @@ export default function WidgetChat({ token, companyName, ready }: { token: strin
           style={{ ...S.input, flex: 1, margin: 0 }}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={ready ? "Ask a question…" : "Leave a message above…"}
+          placeholder={humanMode ? `Reply to the ${companyName} team…` : ready ? "Ask a question…" : "Leave a message above…"}
           maxLength={1500}
-          disabled={!ready && !leadDone}
+          disabled={!ready && !leadDone && !humanMode}
         />
-        <button type="submit" style={{ ...S.btn, padding: "10px 14px" }} disabled={busy || !input.trim() || (!ready && !leadDone)}>→</button>
+        <button type="submit" style={{ ...S.btn, padding: "10px 14px" }} disabled={busy || !input.trim() || (!ready && !leadDone && !humanMode)}>→</button>
       </form>
 
       {!leadOpen && !leadDone && (
@@ -172,12 +267,15 @@ export default function WidgetChat({ token, companyName, ready }: { token: strin
 
 const S: Record<string, CSSProperties> = {
   page: { fontFamily: "-apple-system, Segoe UI, Roboto, sans-serif", height: "100vh", display: "flex", flexDirection: "column", background: "#fff", color: "#0F172A" },
-  head: { padding: "14px 16px 10px", borderBottom: "1px solid #E2E8F0", display: "flex", flexDirection: "column", gap: 2 },
+  head: { padding: "12px 16px 10px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", gap: 10 },
+  avatar: { flex: "none", width: 36, height: 36, borderRadius: 10, background: GRAD, display: "grid", placeItems: "center", overflow: "hidden", padding: 2 },
   headSub: { fontSize: 11, color: "#94A3B8" },
   scroll: { flex: 1, overflowY: "auto", padding: "14px 12px", display: "flex", flexDirection: "column", gap: 8 },
   msg: { maxWidth: "85%", fontSize: 13.5, lineHeight: 1.55, borderRadius: 14, padding: "9px 13px", whiteSpace: "pre-wrap" },
   msgBot: { alignSelf: "flex-start", background: "#F1F5F9", color: "#0F172A", borderBottomLeftRadius: 4 },
+  msgTeam: { alignSelf: "flex-start", background: "#fff", color: "#0F172A", border: "1.5px solid #C7D2FE", borderBottomLeftRadius: 4 },
   msgVisitor: { alignSelf: "flex-end", background: GRAD, color: "#fff", borderBottomRightRadius: 4 },
+  teamLabel: { display: "block", fontSize: 10, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#4F46E5", marginBottom: 3 },
   sources: { display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" },
   sourceLink: { fontSize: 11, color: "#4F46E5", fontWeight: 700, textDecoration: "none", background: "#EEF2FF", borderRadius: 999, padding: "2px 9px" },
   leadCard: { border: "1px solid #E2E8F0", borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 8, background: "#F8FAFC" },
