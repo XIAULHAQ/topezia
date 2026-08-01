@@ -138,8 +138,32 @@ export default function WidgetClient() {
             </div>
           </div>
 
+          <div style={{ ...ES.card, marginBottom: 18 }}>
+            <label style={ES.label}>WordPress site? Use the plugin</label>
+            <p style={{ ...ES.empty, margin: "0 0 12px" }}>
+              Install it once, paste your site key, done — no theme editing, and updates come from us.
+            </p>
+            <ol style={{ margin: "0 0 14px", paddingLeft: 20, color: "#475569", fontSize: 13, lineHeight: 1.8 }}>
+              <li>Download the plugin below.</li>
+              <li>In WordPress: <b>Plugins → Add New → Upload Plugin</b>, choose the zip, activate.</li>
+              <li>In <b>Settings → Topezia Chat</b>, paste your site key: <code style={{ background: "#F1F5F9", borderRadius: 6, padding: "2px 7px", fontSize: 12 }}>{site.siteToken}</code></li>
+            </ol>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <a href="/downloads/topezia-chat.zip" style={{ ...ES.btn }} download>
+                Download WordPress plugin
+              </a>
+              <button
+                type="button"
+                style={ES.btnGhost}
+                onClick={() => { navigator.clipboard.writeText(site.siteToken).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); }}
+              >
+                {copied ? "Copied ✓" : "Copy site key"}
+              </button>
+            </div>
+          </div>
+
           <div style={ES.card}>
-            <label style={ES.label}>Add this to your site, right before &lt;/body&gt;</label>
+            <label style={ES.label}>Any other site: add this right before &lt;/body&gt;</label>
             <pre style={{ background: "#0F172A", color: "#E2E8F0", borderRadius: 10, padding: "14px 16px", fontSize: 12, overflowX: "auto", margin: "0 0 12px" }}>
               {snippet}
             </pre>
@@ -152,7 +176,7 @@ export default function WidgetClient() {
                 {copied ? "Copied ✓" : "Copy snippet"}
               </button>
               <span style={ES.empty}>
-                WordPress: paste it in Appearance → Theme File Editor → footer.php, or any &quot;custom scripts&quot; box your theme or plugin offers.
+                Works on Wix, Squarespace, Webflow, plain HTML — anywhere you can add a script tag.
               </span>
             </div>
           </div>

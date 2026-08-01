@@ -1579,3 +1579,28 @@ the contact form. Set up at /employer/widget or scripts/setup-widget.ts.
 - 🟡 **Pricing is a recommendation only.** No paid tier is shipped and no
   upsell UI exists — employer billing isn't built (see Stripe notes), and
   fake upgrade buttons are against the house rule.
+
+## WordPress plugin for the site chat widget (added 2026-08-01)
+
+`wordpress/topezia-chat/` (source) → `public/downloads/topezia-chat.zip`
+(served at /downloads/topezia-chat.zip, linked from /employer/widget). Build
+with `bash scripts/build-wp-plugin.sh` after ANY edit under wordpress/ — the
+zip is committed, so an unbuilt edit ships stale.
+
+- 🟡 **The plugin is deliberately one option + one script tag.** All logic
+  lives on topezia.com; the plugin stores `topezia_chat_site_key`, enqueues
+  widget.js async in the footer (skipping admin/feeds/embeds/previews), and
+  refuses keys that don't match the token shape. Resist adding features to
+  the PHP side — WordPress is the one environment we can't redeploy.
+- 🟡 **readme.txt carries the required "External services" disclosure**
+  (script + iframe from topezia.com, chat content and visitor email stored
+  by us, crawl of the registered domain). WP directory review rejects
+  plugins that phone home without this — keep it in sync with reality.
+- 🟡 **NOT yet submitted to the WordPress plugin directory.** Submission at
+  wordpress.org/plugins/developers/add/ needs a wordpress.org account
+  (Brandon's), review takes days-to-weeks, and the readme references
+  /terms and /privacy pages that must exist on topezia.com first (they do —
+  app/terms, app/privacy). Until then the zip upload path works everywhere.
+- 🟡 **PHP is not linted locally** (no php on this Mac; build script skips).
+  The code is standard WP settings API — but any nontrivial PHP change
+  deserves a run through `php -l` somewhere before shipping the zip.
