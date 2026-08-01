@@ -485,9 +485,9 @@ export default function InquiriesClient() {
 }
 
 const CSS = `
-.tzm-back{display:none}
+.tzm-back{display:none !important}
 @media (max-width:900px){
-  .tzm-back{display:grid}
+  .tzm-back{display:grid !important}
   .tzm-thread{display:none !important}
   .tzm-thread-open .tzm-thread{display:flex !important}
   .tzm-thread-open .tzm-list{display:none !important}
@@ -496,7 +496,10 @@ const CSS = `
 
 const S: Record<string, CSSProperties> = {
   frame: { display: "grid", gridTemplateColumns: "340px minmax(0,1fr)", height: "calc(100vh - 120px)", minHeight: 480, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, overflow: "hidden" },
-  listPane: { borderRight: "1px solid #E2E8F0", display: "flex", flexDirection: "column", minWidth: 0, background: "#fff" },
+  // minHeight 0 on BOTH panes: grid children default to min-height auto and
+  // grow past the frame instead of letting their inner overflow scroll —
+  // this exact omission shipped once as "I can't scroll the messages".
+  listPane: { borderRight: "1px solid #E2E8F0", display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, background: "#fff" },
   listHead: { padding: "16px 16px 12px", borderBottom: "1px solid #E2E8F0" },
   h1: { margin: 0, fontSize: 19, fontWeight: 800, letterSpacing: "-0.5px" },
   newChip: { background: "#EEF2FF", color: "#4F46E5", borderRadius: 999, padding: "3px 9px", fontSize: 10.5, fontWeight: 700 },
@@ -513,9 +516,11 @@ const S: Record<string, CSSProperties> = {
   preview: { flex: 1, minWidth: 0, fontSize: 11.8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   unreadDot: { flex: "none", width: 9, height: 9, borderRadius: "50%", background: GRAD },
   emptyList: { padding: "44px 26px", textAlign: "center", color: "#64748B" },
-  threadPane: { display: "flex", flexDirection: "column", minWidth: 0, background: "#F8FAFC" },
+  threadPane: { display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, background: "#F8FAFC" },
   threadHead: { background: "#fff", borderBottom: "1px solid #E2E8F0", padding: "13px 20px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" },
-  backBtn: { width: 34, height: 34, borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", placeItems: "center", color: "#334155", cursor: "pointer", fontSize: 15, fontFamily: "inherit", display: "grid" },
+  // No inline `display`: the .tzm-back CSS owns visibility (inline style
+  // would beat the media query and the arrow showed on desktop).
+  backBtn: { width: 34, height: 34, borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", placeItems: "center", color: "#334155", cursor: "pointer", fontSize: 15, fontFamily: "inherit" },
   iconBtn: { width: 34, height: 34, borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", display: "grid", placeItems: "center", color: "#64748B", cursor: "pointer", fontSize: 14, textDecoration: "none", fontFamily: "inherit" },
   banner: { background: "#FFFBEB", borderBottom: "1px solid #FDE68A", padding: "10px 20px", display: "flex", alignItems: "center", gap: 10, color: "#92400E", fontSize: 12, fontWeight: 600 },
   threadScroll: { flex: 1, overflowY: "auto", minHeight: 0, padding: "20px 24px 8px" },
