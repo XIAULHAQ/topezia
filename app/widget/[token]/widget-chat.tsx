@@ -25,6 +25,8 @@ export default function WidgetChat({
   logoUrl,
   ready,
   branded,
+  greeting,
+  pageUrl,
 }: {
   token: string;
   companyName: string;
@@ -32,13 +34,17 @@ export default function WidgetChat({
   ready: boolean;
   /** Free tier: show the Topezia attribution line. Paid turns it off. */
   branded: boolean;
+  /** Page-aware opener computed server-side; null = the default hello. */
+  greeting: string | null;
+  /** The host page the visitor opened the chat from, for retrieval. */
+  pageUrl: string | null;
 }) {
   const [turns, setTurns] = useState<Turn[]>([
     {
       role: "bot",
-      text: ready
-        ? `Hi — I'm the ${companyName} AI assistant. Ask me anything, or leave a message and a real person will get back to you.`
-        : `Hi — I'm the ${companyName} AI assistant. I'm still learning this site, so for now let me take a message for the team.`,
+      text: !ready
+        ? `Hi — I'm the ${companyName} AI assistant. I'm still learning this site, so for now let me take a message for the team.`
+        : greeting ?? `Hi — I'm the ${companyName} AI assistant. Ask me anything, or leave a message and a real person will get back to you.`,
     },
   ]);
   const [input, setInput] = useState("");
@@ -117,24 +123,59 @@ export default function WidgetChat({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           history: history.filter((t) => t.role !== "team").map(({ role, text: t }) => ({ role, text: t })),
+          page: pageUrl ?? undefined,
         }),
       });
-      const data = (await res.json().catch(() => ({}))) as { reply?: string; sources?: string[]; products?: Product[]; handoff?: boolean; error?: string };
-      if (!res.ok || !data.reply) {
+      if (!res.ok || !res.body) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
         setTurns((cur) => [...cur, { role: "bot", text: data.error ?? "Something hiccuped — try that again." }]);
         return;
       }
-      if (data.handoff && leadDone) {
+
+      // The reply STREAMS as NDJSON events: grow one bot bubble delta by
+      // delta, then finish it with the done event's metadata. The done event
+      // carries the full reply too, which covers fallback paths that never
+      // streamed a delta.
+      setTurns((cur) => [...cur, { role: "bot", text: "" }]);
+      const patchLast = (patch: Partial<Turn>) =>
+        setTurns((cur) => cur.map((t, i) => (i === cur.length - 1 ? { ...t, ...patch } : t)));
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let acc = "";
+      type DoneEvent = { reply?: string; sources?: string[]; products?: Product[]; handoff?: boolean };
+      let done: DoneEvent | null = null;
+      for (;;) {
+        const { value, done: eof } = await reader.read();
+        if (eof) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+          if (!line.trim()) continue;
+          try {
+            const ev = JSON.parse(line) as { t: string; text?: string } & DoneEvent;
+            if (ev.t === "delta" && ev.text) {
+              acc += ev.text;
+              patchLast({ text: acc });
+            } else if (ev.t === "done") {
+              done = ev;
+            }
+          } catch { /* partial line — next read completes it */ }
+        }
+      }
+
+      const finalText = acc || done?.reply || "Something hiccuped — try that again.";
+      if (done?.handoff && leadDone) {
         // The team already has their message — "leave your email" again
         // would be a dead end. Acknowledge and stay useful.
-        setTurns((cur) => [
-          ...cur,
-          { role: "bot", text: "That one's for the team — and they already have your message, so they'll cover it when they reply. Anything else I can look up for you?" },
-        ]);
+        patchLast({ text: "That one's for the team — and they already have your message, so they'll cover it when they reply. Anything else I can look up for you?" });
         return;
       }
-      setTurns((cur) => [...cur, { role: "bot", text: data.reply!, sources: data.sources, products: data.products }]);
-      if (data.handoff) {
+      patchLast({ text: finalText, sources: done?.sources, products: done?.products });
+      if (done?.handoff) {
         setLeadMsg(text);
         setLeadOpen(true);
       }
@@ -223,7 +264,7 @@ export default function WidgetChat({
             }}
           >
             {t.role === "team" && <span style={S.teamLabel}>{companyName} team</span>}
-            {t.text}
+            {t.text || "…"}
             {t.products && t.products.length > 0 && (
               <span style={S.productList}>
                 {t.products.map((p) => (
@@ -257,7 +298,8 @@ export default function WidgetChat({
             )}
           </div>
         ))}
-        {busy && !leadOpen && <div style={{ ...S.msg, ...S.msgBot, color: "#94A3B8" }}>…</div>}
+        {/* Thinking dots only until the first streamed word arrives. */}
+        {busy && !leadOpen && turns.at(-1)?.role === "visitor" && <div style={{ ...S.msg, ...S.msgBot, color: "#94A3B8" }}>…</div>}
 
         {leadOpen && !leadDone && (
           <form onSubmit={sendLead} style={S.leadCard}>

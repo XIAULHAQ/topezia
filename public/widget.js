@@ -57,7 +57,11 @@
     open = !open;
     if (open && !frame) {
       frame = document.createElement("iframe");
-      frame.src = origin + "/widget/" + encodeURIComponent(token);
+      // The page the visitor opened the chat FROM — the assistant greets in
+      // context ("Looking at Logo Design?") and retrieval favors this page.
+      frame.src =
+        origin + "/widget/" + encodeURIComponent(token) +
+        "?page=" + encodeURIComponent(location.origin + location.pathname);
       frame.title = "Chat";
       document.body.appendChild(frame);
     }

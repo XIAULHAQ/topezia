@@ -1646,3 +1646,21 @@ Migration 054 (`WidgetSite.branded`, default true).
   launcher bubble hides while open, and the chat carries its own ✕ which
   postMessages `topezia:close` to the parent — the parent owns the iframe,
   so it cannot close itself. Desktop keeps the corner card.
+
+## Widget streaming + page-aware openers (added 2026-08-01)
+
+- 🔴 **The stream protocol is prose-then-marker, not JSON.** The model
+  writes the reply as plain text (relayed as NDJSON {"t":"delta"} events),
+  then one `<<<META>>>{json}` line with sources/products/handoff. The
+  marker is held back from the visitor by a tail buffer; a missing meta
+  degrades to plain prose (no cards, no handoff), never a failure. The done
+  event repeats the full reply so fallback paths that never streamed still
+  arrive whole. Don't "simplify" back to full-JSON output — that's what
+  made replies land in one 4-second lump.
+- 🟡 **Openers are deterministic.** ?page= from the loader is matched
+  against the crawl (SiteProduct first, then SiteChunk title) — no model
+  call until the visitor speaks. Only same-domain URLs count; the homepage
+  keeps the default hello. The page's own product is also force-included in
+  retrieval ("how much is it?" on a product page means THAT product).
+- 🟡 Reply text is rendered as plain text — the prompt forbids markdown;
+  if asterisks ever show up in bubbles, that rule regressed.
