@@ -219,6 +219,30 @@ export function renderCompanyReplyEmail(opts: {
   };
 }
 
+/**
+ * To an anonymous WIDGET visitor when the company replies. Unlike the member
+ * variant, the reply text and the thread link do all the work — the visitor
+ * has no Topezia account and never needs one. Holding the link is the proof
+ * this mailbox is theirs.
+ */
+export function renderVisitorReplyEmail(opts: {
+  companyName: string;
+  body: string;
+  threadToken: string;
+}): { subject: string; html: string } {
+  const url = `${siteUrl()}/i/${opts.threadToken}`;
+  return {
+    subject: `${opts.companyName} replied to your message`,
+    html: emailShell(
+      `<h1 style="font-size:20px;margin:0 0 8px;color:#1a1a2e;">${escapeHtml(opts.companyName)} wrote back</h1>
+       ${quoteBlock(opts.body)}
+       ${button(url, "Read and reply")}
+       <p style="color:#9ca3af;font-size:13px;line-height:1.55;margin:20px 0 0;">This private link is your conversation — anyone with it can read and reply, so don't forward it.</p>`,
+      `You get this because you left a message in the chat on ${escapeHtml(opts.companyName)}'s website.`
+    ),
+  };
+}
+
 /** To the company owner when the sender answers inside an open thread. */
 export function renderCandidateReplyEmail(opts: {
   companyName: string;

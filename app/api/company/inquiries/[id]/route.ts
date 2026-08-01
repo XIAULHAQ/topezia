@@ -15,7 +15,7 @@ import { requireCompanyOwner, userEmail } from "@/lib/company/owner";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 import { scoreUgc, isSpam, spamMessage } from "@/lib/ugc";
 import { sendEmail } from "@/lib/alerts/send";
-import { INQUIRY_LIMITS, INQUIRY_FROM, renderCompanyReplyEmail } from "@/lib/company/inquiries";
+import { INQUIRY_LIMITS, INQUIRY_FROM, renderCompanyReplyEmail, renderVisitorReplyEmail } from "@/lib/company/inquiries";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,6 +83,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     where: { id: params.id, companyId },
     select: {
       id: true, status: true, repliedAt: true,
+      source: true, visitorEmail: true, threadToken: true,
       profile: { select: { userId: true } },
       _count: { select: { messages: true } },
     },
@@ -111,13 +112,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }),
   ]);
 
+  // Two kinds of sender, two doors for the reply: a member reads it at
+  // /messages, an anonymous widget visitor gets their tokenized thread link.
   let emailed = false;
   try {
-    const to = await userEmail(inquiry.profile.userId);
-    if (to) {
-      const { subject, html } = renderCompanyReplyEmail({ companyName, body: text });
-      await sendEmail({ to, subject, html, from: INQUIRY_FROM });
+    if (inquiry.source === "WIDGET" && inquiry.visitorEmail && inquiry.threadToken) {
+      const { subject, html } = renderVisitorReplyEmail({ companyName, body: text, threadToken: inquiry.threadToken });
+      await sendEmail({ to: inquiry.visitorEmail, subject, html, from: INQUIRY_FROM });
       emailed = true;
+    } else if (inquiry.profile) {
+      const to = await userEmail(inquiry.profile.userId);
+      if (to) {
+        const { subject, html } = renderCompanyReplyEmail({ companyName, body: text });
+        await sendEmail({ to, subject, html, from: INQUIRY_FROM });
+        emailed = true;
+      }
     }
   } catch (err) {
     console.error("[company/inquiries] delivery failed:", err instanceof Error ? err.message : err);

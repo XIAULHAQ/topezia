@@ -26,13 +26,18 @@ type Inquiry = {
   status: "NEW" | "REPLIED" | "ARCHIVED" | "SPAM";
   repliedAt: string | null;
   createdAt: string;
+  // FORM inquiries carry a profile; WIDGET ones carry the visitor fields.
+  source: "FORM" | "WIDGET";
+  visitorEmail: string | null;
+  visitorName: string | null;
+  transcript: { role: "visitor" | "bot"; text: string }[] | null;
   profile: {
     fullName: string | null;
     publicSlug: string | null;
     publicVisible: boolean;
     currentLocation: string | null;
     openToWork: boolean;
-  };
+  } | null;
   messages: Msg[];
 };
 type Config = { contactEnabled: boolean; contactReasons: string[]; contactQuestions: string[] };
@@ -270,8 +275,11 @@ export default function InquiriesClient() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {visible.map((inq) => {
-            const name = inq.profile.fullName?.trim() || "A Topezia member";
-            const profileHref = inq.profile.publicVisible && inq.profile.publicSlug ? `/p/${inq.profile.publicSlug}` : null;
+            const isWidget = inq.source === "WIDGET";
+            const name = isWidget
+              ? inq.visitorName?.trim() || inq.visitorEmail || "A website visitor"
+              : inq.profile?.fullName?.trim() || "A Topezia member";
+            const profileHref = inq.profile?.publicVisible && inq.profile.publicSlug ? `/p/${inq.profile.publicSlug}` : null;
             return (
               <div key={inq.id} style={ES.card}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
@@ -280,13 +288,28 @@ export default function InquiriesClient() {
                   ) : (
                     <span style={S.sender}>{name}</span>
                   )}
+                  {isWidget && <span style={S.widgetPill}>Website chat</span>}
+                  {isWidget && inq.visitorName && inq.visitorEmail && <span style={S.meta2}>{inq.visitorEmail}</span>}
                   {inq.reason && <span style={S.reasonPill}>{inq.reason}</span>}
-                  {inq.profile.openToWork && <span style={ES.pillLive}>Open to work</span>}
+                  {inq.profile?.openToWork && <span style={ES.pillLive}>Open to work</span>}
                   <span style={S.meta}>
-                    {inq.profile.currentLocation ? `${inq.profile.currentLocation} · ` : ""}
+                    {inq.profile?.currentLocation ? `${inq.profile.currentLocation} · ` : ""}
                     {new Date(inq.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
                   </span>
                 </div>
+
+                {isWidget && (inq.transcript?.length ?? 0) > 0 && (
+                  <details style={S.transcript}>
+                    <summary style={S.transcriptHead}>
+                      Chat before this message ({inq.transcript!.length} turns)
+                    </summary>
+                    {inq.transcript!.map((t, i) => (
+                      <p key={i} style={S.transcriptTurn}>
+                        <b style={{ color: t.role === "bot" ? "#8B5CF6" : "#475569" }}>{t.role === "bot" ? "Bot" : "Visitor"}</b> — {t.text}
+                      </p>
+                    ))}
+                  </details>
+                )}
 
                 <p style={S.body}>{inq.message}</p>
                 {(inq.answers ?? []).map((a) => (
@@ -367,6 +390,11 @@ const S: Record<string, CSSProperties> = {
   tab: { background: "#fff", border: "1px solid #E2E8F0", borderRadius: 999, padding: "7px 15px", fontSize: 12.5, fontWeight: 700, color: "#64748B", cursor: "pointer", fontFamily: "inherit" },
   tabOn: { background: "#EEF2FF", borderColor: "#C7D2FE", color: "#4F46E5" },
   sender: { fontSize: 14, fontWeight: 800, color: "#0F172A", textDecoration: "none" },
+  widgetPill: { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#F5F3FF", color: "#7C3AED", border: "1px solid #DDD6FE" },
+  meta2: { fontSize: 11.5, color: "#94A3B8" },
+  transcript: { marginTop: 10, border: "1px solid #F1F5F9", borderRadius: 10, padding: "8px 12px", background: "#F8FAFC" },
+  transcriptHead: { fontSize: 11.5, fontWeight: 700, color: "#64748B", cursor: "pointer" },
+  transcriptTurn: { margin: "8px 0 0", fontSize: 12.5, lineHeight: 1.55, color: "#475569", whiteSpace: "pre-wrap" },
   reasonPill: { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#EEF2FF", color: "#4F46E5", border: "1px solid #C7D2FE" },
   meta: { fontSize: 11.5, color: "#94A3B8", marginLeft: "auto" },
   body: { margin: "12px 0 0", fontSize: 13.5, lineHeight: 1.65, color: "#334155", whiteSpace: "pre-wrap" },

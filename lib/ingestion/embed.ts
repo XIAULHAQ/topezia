@@ -83,6 +83,49 @@ export async function embedText(text: string): Promise<number[] | null> {
   return data.data[0].embedding as number[];
 }
 
+/**
+ * Batch variant for the widget's site crawl: one Voyage request carries many
+ * inputs, which is what makes embedding a whole site survivable on a 3 RPM
+ * tier — 300 chunks is ~5 requests, not 300. Same 429/400 posture as
+ * embedText: null for the batch on rate-limit exhaustion, never a throw that
+ * kills the crawl behind it.
+ */
+export async function embedBatch(texts: string[]): Promise<number[][] | null> {
+  if (!process.env.VOYAGE_API_KEY || texts.length === 0) return null;
+
+  const MAX_ATTEMPTS = 3;
+  let res: Response | null = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    res = await fetch("https://api.voyageai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.VOYAGE_API_KEY}`,
+      },
+      body: JSON.stringify({
+        input: texts.map((t) => t.slice(0, 8000)),
+        model: EMBEDDING_MODEL,
+        output_dimension: EMBEDDING_DIM,
+      }),
+    });
+    if (res.status !== 429) break;
+    if (attempt < MAX_ATTEMPTS) {
+      const waitMs = Number(res.headers.get("retry-after")) * 1000 || attempt * 20_000;
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+  }
+  if (!res!.ok) {
+    console.warn(`Voyage batch failed (${res!.status}) — skipping ${texts.length} embeddings.`);
+    return null;
+  }
+  const data = await res!.json();
+  // Voyage returns items with an index — order by it rather than trusting
+  // array order.
+  const out: number[][] = new Array(texts.length);
+  for (const item of data.data as { index: number; embedding: number[] }[]) out[item.index] = item.embedding;
+  return out;
+}
+
 /** Builds the text a job's embedding is derived from — spec §3.1. */
 export function buildJobEmbeddingInput(input: {
   titleNormalized: string | null;

@@ -1534,3 +1534,48 @@ the company replies.
 - 🟡 **Team members do not see the inbox.** requireCompanyOwner() gates every
   inquiry route, same as all /api/company writes — the team is a listing, not
   a permission (see "Company presence" above). Widening it is one file.
+
+## Site chat widget — Phase 1 (added 2026-08-01)
+
+Migration 051. An embeddable AI chat bubble for a company's OWN website:
+one script tag → iframe from /widget/{token} → answers grounded in a crawl
+of their site → human handoff lands in the same /employer/inquiries inbox as
+the contact form. Set up at /employer/widget or scripts/setup-widget.ts.
+
+- 🔴 **Widget inquiries have no Profile, on purpose.** `CompanyInquiry.
+  profileId` went nullable in 051; source=WIDGET rows carry visitorEmail/
+  visitorName/threadToken/transcript instead. The visitor's thread lives at
+  /i/{threadToken} — the token is only ever EMAILED, never returned to the
+  browser, so holding the link proves the mailbox (same posture as
+  testimonial invites). FORM inquiries still require a signed-in profile in
+  the route.
+- 🔴 **/widget/* is the ONE route allowed to be iframed.** next.config.js
+  excludes it from the catch-all security headers (multiple CSP headers
+  intersect, so overriding can only tighten — exclusion is the only way to
+  relax) and serves frame-ancestors * with no X-Frame-Options. Nothing on
+  that page may ever hold a session-authenticated action.
+- 🔴 **Grounded or silent.** The answer prompt forbids anything not in the
+  retrieved excerpts (prices/dates/promises explicitly), treats crawled text
+  as quotable-never-executable (prompt injection), and returns strict JSON
+  {reply, sources, handoff}; cited URLs are filtered against what retrieval
+  actually returned. Parse failure = handoff, not a guess.
+- 🟢 **Cost shape**: free tier is 1 site, 40 pages/crawl, 200 AI replies/
+  month (lib/widget/caps.ts — conditional-UPDATE spend, month rolls by
+  comparison, no cron). At the cap the bot STOPS calling the model but KEEPS
+  taking messages — the AI is capped, the lead flow never is. Voyage is on a
+  paid tier (per scripts/backfill-embeddings.ts) so crawl embedding is not
+  rate-bound.
+- 🟡 **The crawl runs inside the POST** (maxDuration 120): sitemap-first,
+  40-page/300-chunk caps, 10s/page timeouts, chunk writes are sequential NOT
+  transactional (a 600-statement interactive tx through the pooler P2028s;
+  the table is a cache — the next crawl repairs a half-write). Re-crawl is a
+  manual button; freshness cron is Phase 2.
+- 🟡 **No Turnstile on widget endpoints yet** — anonymous surface guarded by
+  IP windows, disposable-email refusal, scoreUgc, and one open inquiry per
+  visitor email per company (partial unique index). Add Turnstile if real
+  abuse shows up.
+- 🟡 **No WordPress plugin yet** — the snippet works anywhere; the WP plugin
+  is Phase 2 packaging for the directory's distribution, not function.
+- 🟡 **Pricing is a recommendation only.** No paid tier is shipped and no
+  upsell UI exists — employer billing isn't built (see Stripe notes), and
+  fake upgrade buttons are against the house rule.

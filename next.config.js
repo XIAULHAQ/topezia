@@ -48,10 +48,27 @@ const SECURITY_HEADERS = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
 ];
 
+/**
+ * The chat widget page (/widget/{token}) is the ONE surface built to be
+ * iframed on other people's websites, so it can't carry frame-ancestors
+ * 'none' / X-Frame-Options DENY. Multiple CSP headers intersect (most
+ * restrictive wins), so the widget route must be EXCLUDED from the catch-all
+ * and given its own set — overriding wouldn't relax anything. Everything else
+ * keeps the strict headers. The page itself holds no session-authenticated
+ * actions: the token in its URL identifies a site, never authorizes one.
+ */
+const WIDGET_CSP = CSP.replace("frame-ancestors 'none'", "frame-ancestors *");
+const WIDGET_HEADERS = SECURITY_HEADERS.filter((h) => !["Content-Security-Policy", "X-Frame-Options"].includes(h.key)).concat([
+  { key: "Content-Security-Policy", value: WIDGET_CSP },
+]);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async headers() {
-    return [{ source: "/(.*)", headers: SECURITY_HEADERS }];
+    return [
+      { source: "/((?!widget/).*)", headers: SECURITY_HEADERS },
+      { source: "/widget/:path*", headers: WIDGET_HEADERS },
+    ];
   },
   experimental: {
     /**

@@ -1116,6 +1116,9 @@ model Company {
   // on the inquiry, so editing these never corrupts old submissions).
   contactQuestions String[] @default([])
   inquiries        CompanyInquiry[]
+  // The embeddable site chat widget (migration 051). One per company — the
+  // unique IS the free-tier cap.
+  widgetSite       WidgetSite?
 
   // /hq override for the spam scorer, exactly as Profile.spamCleared: the
   // scorer has known false positives and the only other remedy would be
@@ -1143,6 +1146,53 @@ enum InquirySender {
   CANDIDATE
 }
 
+// Where an inquiry came from. FORM = the contact form on /company/{slug},
+// sender is a signed-in member (profileId set). WIDGET = the chat widget on
+// the company's own website, sender is an anonymous visitor identified only
+// by the email they left (visitorEmail/threadToken set, profileId null).
+enum InquirySource {
+  FORM
+  WIDGET
+}
+
+// One company's installed chat widget (migration 051).
+model WidgetSite {
+  id           String   @id @default(uuid())
+  companyId    String   @unique
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  domain       String
+  // Public key in the embed snippet. Identifies, never authorizes — every
+  // owner action still goes through requireCompanyOwner.
+  siteToken    String   @unique
+  enabled      Boolean  @default(true)
+  pagesCrawled Int      @default(0)
+  crawledAt    DateTime?
+  crawlError   String?
+  // Monthly AI budget as (which month, used) — rolls over by comparison at
+  // read time, no cron reset. See lib/widget/caps.ts.
+  monthKey     String   @default("")
+  messagesUsed Int      @default(0)
+  chunks       SiteChunk[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// A chunk of the customer's own site, embedded for retrieval. Wiped and
+// rewritten on every crawl — a cache of their site, not a record.
+model SiteChunk {
+  id        String     @id @default(uuid())
+  siteId    String
+  site      WidgetSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  url       String
+  title     String     @default("")
+  content   String
+  // vector(1024), written via raw SQL like Job/Profile:
+  // embedding Unsupported("vector(1024)")?
+  createdAt DateTime   @default(now())
+
+  @@index([siteId])
+}
+
 // One member's contact-form submission to one company. This is an inbox ITEM,
 // not a conversation: the sender cannot follow up, bump, or re-send while it
 // sits unanswered. Only a company reply turns it into a thread
@@ -1156,8 +1206,20 @@ model CompanyInquiry {
   id        String  @id @default(uuid())
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  profileId String
-  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  // Null for WIDGET inquiries — an anonymous website visitor has no Profile.
+  // FORM inquiries always set it (enforced in the route, not the schema).
+  profileId String?
+  profile   Profile? @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  source    InquirySource @default(FORM)
+  // The anonymous sender, when source is WIDGET: the email they left, the
+  // name they gave, their key to /i/{threadToken} (possession = the reply
+  // email reached that mailbox), and the chat that led here
+  // ([{ role: 'visitor'|'bot', text }]).
+  visitorEmail String?
+  visitorName  String?
+  threadToken  String? @unique
+  transcript   Json?
 
   // One of Company.contactReasons at submit time; null when the company
   // configured no reasons.
