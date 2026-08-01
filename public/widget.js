@@ -86,6 +86,11 @@
         origin + "/widget/" + encodeURIComponent(token) +
         "?page=" + encodeURIComponent(location.origin + location.pathname);
       frame.title = "Chat";
+      // Voice input. A cross-origin iframe gets NO microphone unless the host
+      // page delegates it here — without this the mic button is dead on every
+      // customer site, however the permission is set inside. Delegating is not
+      // granting: the browser still asks the visitor, once, on first use.
+      frame.allow = "microphone";
       document.body.appendChild(frame);
     }
     sizeFrame();

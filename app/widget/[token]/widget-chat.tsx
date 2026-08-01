@@ -25,7 +25,7 @@ type SpeechRec = {
   lang: string; continuous: boolean; interimResults: boolean;
   start: () => void; stop: () => void;
   onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((e: { error?: string }) => void) | null;
   onend: (() => void) | null;
 };
 
@@ -111,6 +111,8 @@ export default function WidgetChat({
   // appears where it works — a mic that does nothing is worse than no mic.
   const [micOn, setMicOn] = useState(false);
   const [micAvailable, setMicAvailable] = useState(false);
+  // A mic that fails silently reads as a broken button. Say what happened.
+  const [micNote, setMicNote] = useState<string | null>(null);
   const recognizer = useRef<SpeechRec | null>(null);
   useEffect(() => {
     const w = window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec };
@@ -140,10 +142,24 @@ export default function WidgetChat({
       for (let i = 0; i < e.results.length; i++) said += e.results[i][0].transcript;
       setInput(said);
     };
-    rec.onerror = () => setMicOn(false);
+    rec.onerror = (e) => {
+      setMicOn(false);
+      // "no-speech" and "aborted" are ordinary — the visitor said nothing or
+      // changed their mind, and a warning for that would be noise.
+      const code = e?.error;
+      if (code === "no-speech" || code === "aborted") return;
+      setMicNote(code === "not-allowed" || code === "service-not-allowed" ? t.micBlocked : t.micFailed);
+    };
     rec.onend = () => setMicOn(false);
     recognizer.current = rec;
-    try { rec.start(); setMicOn(true); } catch { setMicOn(false); }
+    try {
+      rec.start();
+      setMicOn(true);
+      setMicNote(null);
+    } catch {
+      setMicOn(false);
+      setMicNote(t.micFailed);
+    }
   }
 
   useEffect(() => {
@@ -446,6 +462,10 @@ export default function WidgetChat({
         <button type="submit" style={{ ...S.btn, padding: "10px 14px", background: grad }} disabled={busy || !input.trim() || (!ready && !leadDone && !humanMode)} aria-label={t.send}>→</button>
       </form>
 
+      {micNote && (
+        <span style={S.micNote} role="status">{micNote}</span>
+      )}
+
       {!leadOpen && !leadDone && (
         <button type="button" style={S.leaveLink} onClick={() => { setLeadMsg(""); setLeadOpen(true); }}>
           {t.leaveInstead}
@@ -511,6 +531,7 @@ const S: Record<string, CSSProperties> = {
   btnGhost: { background: "#fff", color: "#334155", border: "1px solid #E2E8F0", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   micBtn: { flex: "none", width: 38, borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", display: "grid", placeItems: "center", cursor: "pointer", fontFamily: "inherit" },
   leadNote: { fontSize: 11.5, color: "#64748B", lineHeight: 1.5 },
+  micNote: { display: "block", fontSize: 11.5, color: "#92400E", background: "#FFFBEB", borderTop: "1px solid #FDE68A", padding: "7px 12px", lineHeight: 1.5 },
   leaveLink: { background: "none", border: "none", color: "#64748B", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit", padding: "2px 0 0" },
   error: { color: "#B91C1C", fontSize: 12 },
   poweredRow: { display: "flex", alignItems: "center", justifyContent: "center", gap: 5, flexWrap: "wrap", borderTop: "1px solid #F1F5F9", padding: "8px 12px 10px", fontSize: 11.5 },

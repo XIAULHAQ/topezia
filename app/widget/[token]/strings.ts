@@ -32,6 +32,8 @@ export type Strings = {
   close: string;
   listen: string;
   listening: string;
+  micBlocked: string;
+  micFailed: string;
   teamLabel: (company: string) => string;
   hiReady: (company: string) => string;
   hiLearning: (company: string) => string;
@@ -58,6 +60,8 @@ const en: Strings = {
   close: "Close chat",
   listen: "Speak your message",
   listening: "Listening…",
+  micBlocked: "Your browser is blocking the microphone — allow it in the address bar, then try again.",
+  micFailed: "Voice input didn't start. You can type instead.",
   teamLabel: (c) => `${c} team`,
   hiReady: (c) => `Hi — I'm the ${c} AI assistant. Ask me anything, or leave a message and a real person will get back to you.`,
   hiLearning: (c) => `Hi — I'm the ${c} AI assistant. I'm still learning this site, so for now let me take a message for the team.`,
@@ -84,6 +88,8 @@ const es: Strings = {
   close: "Cerrar el chat",
   listen: "Habla tu mensaje",
   listening: "Escuchando…",
+  micBlocked: "Tu navegador está bloqueando el micrófono — permítelo en la barra de direcciones e inténtalo de nuevo.",
+  micFailed: "No se pudo iniciar la voz. Puedes escribir.",
   teamLabel: (c) => `equipo de ${c}`,
   hiReady: (c) => `Hola — soy el asistente de IA de ${c}. Pregúntame lo que quieras, o deja un mensaje y una persona real te responderá.`,
   hiLearning: (c) => `Hola — soy el asistente de IA de ${c}. Todavía estoy aprendiendo este sitio, así que por ahora puedo tomar un mensaje para el equipo.`,
@@ -110,6 +116,8 @@ const fr: Strings = {
   close: "Fermer le chat",
   listen: "Dictez votre message",
   listening: "J'écoute…",
+  micBlocked: "Votre navigateur bloque le micro — autorisez-le dans la barre d'adresse, puis réessayez.",
+  micFailed: "La dictée n'a pas démarré. Vous pouvez écrire.",
   teamLabel: (c) => `équipe ${c}`,
   hiReady: (c) => `Bonjour — je suis l'assistant IA de ${c}. Posez-moi vos questions, ou laissez un message et une vraie personne vous répondra.`,
   hiLearning: (c) => `Bonjour — je suis l'assistant IA de ${c}. J'apprends encore ce site, alors je peux prendre un message pour l'équipe.`,
@@ -136,6 +144,8 @@ const de: Strings = {
   close: "Chat schließen",
   listen: "Nachricht sprechen",
   listening: "Ich höre zu…",
+  micBlocked: "Ihr Browser blockiert das Mikrofon — erlauben Sie es in der Adressleiste und versuchen Sie es erneut.",
+  micFailed: "Spracheingabe ließ sich nicht starten. Sie können tippen.",
   teamLabel: (c) => `${c}-Team`,
   hiReady: (c) => `Hallo — ich bin der KI-Assistent von ${c}. Fragen Sie mich alles, oder hinterlassen Sie eine Nachricht und ein echter Mensch meldet sich.`,
   hiLearning: (c) => `Hallo — ich bin der KI-Assistent von ${c}. Ich lerne diese Website noch, daher nehme ich gern eine Nachricht für das Team auf.`,
@@ -162,6 +172,8 @@ const pt: Strings = {
   close: "Fechar o chat",
   listen: "Fale a sua mensagem",
   listening: "A ouvir…",
+  micBlocked: "O seu navegador está a bloquear o microfone — permita-o na barra de endereço e tente de novo.",
+  micFailed: "A voz não arrancou. Pode escrever.",
   teamLabel: (c) => `equipa ${c}`,
   hiReady: (c) => `Olá — sou o assistente de IA da ${c}. Pergunte o que quiser, ou deixe uma mensagem e uma pessoa real responderá.`,
   hiLearning: (c) => `Olá — sou o assistente de IA da ${c}. Ainda estou a aprender este site, por isso posso recolher uma mensagem para a equipa.`,
@@ -188,6 +200,8 @@ const it: Strings = {
   close: "Chiudi la chat",
   listen: "Detta il messaggio",
   listening: "In ascolto…",
+  micBlocked: "Il browser sta bloccando il microfono — consentilo nella barra degli indirizzi e riprova.",
+  micFailed: "La dettatura non è partita. Puoi scrivere.",
   teamLabel: (c) => `team ${c}`,
   hiReady: (c) => `Ciao — sono l'assistente IA di ${c}. Chiedimi quello che vuoi, oppure lascia un messaggio e una persona vera ti risponderà.`,
   hiLearning: (c) => `Ciao — sono l'assistente IA di ${c}. Sto ancora imparando questo sito, quindi per ora posso raccogliere un messaggio per il team.`,
@@ -214,6 +228,8 @@ const nl: Strings = {
   close: "Chat sluiten",
   listen: "Spreek je bericht in",
   listening: "Ik luister…",
+  micBlocked: "Je browser blokkeert de microfoon — sta het toe in de adresbalk en probeer opnieuw.",
+  micFailed: "Spraakinvoer startte niet. Je kunt typen.",
   teamLabel: (c) => `${c}-team`,
   hiReady: (c) => `Hoi — ik ben de AI-assistent van ${c}. Vraag me van alles, of laat een bericht achter en een echt persoon reageert.`,
   hiLearning: (c) => `Hoi — ik ben de AI-assistent van ${c}. Ik leer deze site nog, dus voorlopig neem ik graag een bericht aan voor het team.`,

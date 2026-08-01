@@ -58,8 +58,21 @@ const SECURITY_HEADERS = [
  * actions: the token in its URL identifies a site, never authorizes one.
  */
 const WIDGET_CSP = CSP.replace("frame-ancestors 'none'", "frame-ancestors *");
-const WIDGET_HEADERS = SECURITY_HEADERS.filter((h) => !["Content-Security-Policy", "X-Frame-Options"].includes(h.key)).concat([
+/**
+ * The widget also needs the MICROPHONE, for voice input. The site-wide policy
+ * is `microphone=()` — an EMPTY allowlist, which forbids it to every origin
+ * including ourselves, so the mic button did nothing at all until this
+ * existed. `(self)` grants it to this document's own origin only; the host
+ * page still has to delegate it with allow="microphone" on the iframe
+ * (public/widget.js), and the visitor is still asked by the browser.
+ * Camera, geolocation and payment stay fully off.
+ */
+const WIDGET_PERMISSIONS = "camera=(), microphone=(self), geolocation=(), payment=()";
+const WIDGET_HEADERS = SECURITY_HEADERS.filter(
+  (h) => !["Content-Security-Policy", "X-Frame-Options", "Permissions-Policy"].includes(h.key)
+).concat([
   { key: "Content-Security-Policy", value: WIDGET_CSP },
+  { key: "Permissions-Policy", value: WIDGET_PERMISSIONS },
 ]);
 
 /** @type {import('next').NextConfig} */

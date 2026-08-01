@@ -15,42 +15,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireCompanyOwner, userEmail } from "@/lib/company/owner";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
-import { getStripe, billingConfigured, getPrices, formatPrice, BUSINESS_INTEGRATION_ID } from "@/lib/billing/stripe";
-import { PLANS, planFor, priceIdFor, sellablePlans, isPlanId, type BillingPeriod } from "@/lib/billing/plans";
+import { getStripe, billingConfigured, BUSINESS_INTEGRATION_ID } from "@/lib/billing/stripe";
+import { planCatalogue } from "@/lib/billing/catalogue";
+import { PLANS, planFor, priceIdFor, isPlanId, type BillingPeriod } from "@/lib/billing/plans";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com").replace(/\/$/, "");
 const RETURN = `${SITE}/employer/billing`;
-
-/** The plans, with live Stripe amounts where they exist. */
-export async function planCatalogue() {
-  const sellable = sellablePlans();
-  const ids = sellable.flatMap((p) =>
-    (["month", "year"] as const).flatMap((period) => {
-      const id = priceIdFor(p, period);
-      return id ? [id] : [];
-    })
-  );
-  const prices = await getPrices(ids);
-
-  return (["PRO", "STUDIO"] as const).map((id) => {
-    const monthId = priceIdFor(id, "month");
-    const yearId = priceIdFor(id, "year");
-    const month = monthId ? prices[monthId] : undefined;
-    const year = yearId ? prices[yearId] : undefined;
-    return {
-      ...PLANS[id],
-      // "For sale" means Stripe returned a live price — not merely that an
-      // env var is set. A mistyped price id shows as not-for-sale, which is
-      // the honest outcome, rather than a button that fails at checkout.
-      forSale: Boolean(month || year),
-      monthly: month ? { amount: month.amount, label: formatPrice(month) } : null,
-      yearly: year ? { amount: year.amount, label: formatPrice(year) } : null,
-    };
-  });
-}
 
 export async function GET() {
   const auth = await requireCompanyOwner();

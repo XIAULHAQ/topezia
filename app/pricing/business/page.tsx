@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import SiteNav from "@/app/_components/SiteNav";
 import { SiteFooter } from "@/app/_components/SiteChrome";
-import { planCatalogue } from "@/app/api/company/billing/route";
+import { planCatalogue } from "@/lib/billing/catalogue";
 import { PLANS } from "@/lib/billing/plans";
 import { billingConfigured } from "@/lib/billing/stripe";
 
