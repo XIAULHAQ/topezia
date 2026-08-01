@@ -1795,3 +1795,42 @@ Migration 054 (`WidgetSite.branded`, default true).
   priced but multi-site management (site switcher, per-site facts/stats,
   CompanyInquiry.siteId) is unbuilt — do not set a company to STUDIO and
   do not add its price id until that lands.
+
+## Microphone: blocked by our own headers (fixed 2026-08-02)
+
+- 🔴 **`Permissions-Policy: microphone=()` is an EMPTY ALLOWLIST — it
+  forbids the mic to every origin including us.** It applied to /widget/*
+  and killed SpeechRecognition before any of our code ran. The widget
+  route now sends `microphone=(self)`; every other route keeps
+  `microphone=()`. If voice ever dies again, check this header first.
+- 🔴 **A cross-origin iframe gets no microphone unless the host page
+  delegates it** — public/widget.js sets allow="microphone" on the frame.
+  Both halves are needed; either one missing means a dead button.
+- 🟡 Mic errors now surface a line under the composer (localised),
+  separating "your browser is blocking it" from a real failure. no-speech
+  and aborted stay silent. Don't go back to failing silently — that's what
+  made a blocked mic look like a broken button.
+
+## Branding discount — keep the badge, pay less (added 2026-08-02)
+
+- 🔴 **Needs TWO Stripe coupons, one per interval**, in
+  STRIPE_BRANDING_COUPON_MONTHLY / STRIPE_BRANDING_COUPON_YEARLY. An
+  amount_off coupon applies PER INVOICE, so a $5 coupon on a yearly plan
+  takes off $5, not $60 — the yearly coupon must be the full $60. Until
+  both exist the offer is invisible everywhere.
+- 🔴 **A company taking the discount ALWAYS shows the badge.**
+  `Company.brandingDiscount` (migration 059) overrides the per-site
+  `branded` flag, so the free-tier override can hide the free ad but never
+  the paid-for credit. Verified against the full state matrix — don't
+  "simplify" the widget back to one boolean.
+- 🔴 **Stripe forbids `discounts` and `allow_promotion_codes` in the same
+  Checkout Session.** The badge trade wins when chosen; otherwise promo
+  codes stay enabled. Passing both throws at checkout.
+- 🟡 THREE branding states, not two: free tier = the offer line ("Add AI
+  chat to your site. Free with Topezia."), paid + discount = a plain "AI
+  chat powered by Topezia" credit, paid without = nothing. "Free with
+  Topezia" under a paying customer would be a lie.
+- 🟡 The flag is set by the WEBHOOK from subscription metadata
+  (`topezia_branding`), so it survives renewals and plan switches, and a
+  cancelled subscription clears it. The mid-subscription toggle writes
+  Stripe first, then our column — never the other way round.
