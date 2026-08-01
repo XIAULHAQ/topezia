@@ -1732,3 +1732,34 @@ Migration 054 (`WidgetSite.branded`, default true).
   the visitor line immediately before), and the Teach the bot card on
   /employer/widget, which leads with unanswered questions from
   WidgetQuestion. 100 facts per site.
+
+## Voice, language, theming, presence, attribution (added 2026-08-02)
+
+- 🔴 **Revenue attribution is owner-entered, full stop.** outcome/dealValue
+  (migration 057) are set only by the owner in Messages; the totals on
+  /employer/widget and in the digest are sums of those rows. There is no
+  payment rail and no CRM — never add an "estimated value", never infer an
+  amount from the conversation, and never count a lead as revenue. A
+  company that marks nothing must see zeros.
+- 🔴 **The reply-time phrase is measured or absent** (lib/widget/presence.ts):
+  median first-reply gap over the last 25 replied threads, needs 3+ samples,
+  and returns null above ~4 days. Do NOT replace it with a friendly
+  constant ("replies instantly") — that lie is exactly what it exists to
+  avoid. Office hours likewise: unset means the widget says nothing about
+  availability, not that someone is there.
+- 🟡 **Voice input is browser-native and render-gated.** SpeechRecognition /
+  webkitSpeechRecognition only; the mic button is hidden where the API is
+  absent (Firefox). Dictation fills the input — it never auto-sends. No
+  audio touches our servers.
+- 🟡 **Language: two independent halves.** The model replies in the
+  visitor's language (answer.ts rule 4b, product names/prices/URLs kept
+  verbatim). The chrome uses a SHIPPED DICTIONARY in
+  app/widget/[token]/strings.ts keyed off navigator.language — deliberately
+  not a translation call (no latency, no cost, no mistranslated button).
+  The server-rendered greeting stays in the site's language because it
+  quotes the site's own product names.
+- 🟡 **The launcher colour needs the public config endpoint.** widget.js
+  paints the bubble before the iframe exists, so it fetches
+  /api/widget/{token}/config (cached 5 min, CORS-open, returns only
+  enabled+accent). If that call fails the default gradient is already on
+  screen — never block the launcher on it.
