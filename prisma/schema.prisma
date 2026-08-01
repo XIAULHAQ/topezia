@@ -1238,6 +1238,7 @@ model CompanyInquiry {
   // ([{ role: 'visitor'|'bot', text }]).
   visitorEmail String?
   visitorName  String?
+  visitorPhone String?
   threadToken  String? @unique
   transcript   Json?
 

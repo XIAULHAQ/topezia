@@ -44,6 +44,7 @@ export default function WidgetChat({
   const [leadDone, setLeadDone] = useState(false);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [leadMsg, setLeadMsg] = useState("");
   const [error, setError] = useState<string | null>(null);
   // Set once the visitor leaves a message; memory only, never persisted.
@@ -153,6 +154,7 @@ export default function WidgetChat({
         body: JSON.stringify({
           email,
           name,
+          phone,
           message: leadMsg,
           transcript: turns.filter((t) => t.role !== "team").map(({ role, text }) => ({ role, text })),
         }),
@@ -246,6 +248,7 @@ export default function WidgetChat({
             <b style={{ fontSize: 13 }}>Leave a message for the team</b>
             <input style={S.input} type="text" placeholder="Your name (optional)" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
             <input style={S.input} type="email" placeholder="Email — the reply goes here" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={254} />
+            <input style={S.input} type="tel" placeholder="Phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} maxLength={30} />
             <textarea style={{ ...S.input, minHeight: 64, resize: "vertical" }} placeholder="What do you need?" value={leadMsg} onChange={(e) => setLeadMsg(e.target.value)} required maxLength={2000} />
             {error && <span style={S.error}>{error}</span>}
             <div style={{ display: "flex", gap: 8 }}>

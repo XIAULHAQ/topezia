@@ -32,6 +32,7 @@ type Inquiry = {
   source: "FORM" | "WIDGET";
   visitorEmail: string | null;
   visitorName: string | null;
+  visitorPhone: string | null;
   transcript: { role: "visitor" | "bot"; text: string }[] | null;
   profile: {
     fullName: string | null;
@@ -343,7 +344,7 @@ export default function InquiriesClient() {
             {(() => {
               const name = senderName(active);
               const profileHref = active.profile?.publicVisible && active.profile.publicSlug ? `/p/${active.profile.publicSlug}` : null;
-              const sub = [senderEmail(active), active.profile?.currentLocation, active.reason].filter(Boolean).join(" · ");
+              const sub = [senderEmail(active), active.visitorPhone, active.profile?.currentLocation, active.reason].filter(Boolean).join(" · ");
               const closed = active.status === "ARCHIVED" || active.status === "SPAM";
               return (
                 <>
@@ -408,6 +409,25 @@ export default function InquiriesClient() {
                           <span style={S.sysPill}>They left their message ↓</span>
                         </>
                       )}
+
+                      {/* What they gave us about themselves — pinned into the
+                          conversation where they gave it, not hidden in a
+                          header. FORM senders link to their Topezia profile
+                          instead of an email: members are reached here. */}
+                      <div style={S.contactCard}>
+                        <span style={S.contactTitle}>Their details</span>
+                        <span style={S.contactRow}><b style={S.contactKey}>Name</b>{name}</span>
+                        {active.visitorEmail && (
+                          <span style={S.contactRow}><b style={S.contactKey}>Email</b><a href={`mailto:${active.visitorEmail}`} style={S.contactLink}>{active.visitorEmail}</a></span>
+                        )}
+                        {active.visitorPhone && (
+                          <span style={S.contactRow}><b style={S.contactKey}>Phone</b><a href={`tel:${active.visitorPhone.replace(/[^\d+]/g, "")}`} style={S.contactLink}>{active.visitorPhone}</a></span>
+                        )}
+                        {active.source === "FORM" && profileHref && (
+                          <span style={S.contactRow}><b style={S.contactKey}>Profile</b><a href={profileHref} target="_blank" rel="noreferrer" style={S.contactLink}>topezia.com{profileHref} ↗</a></span>
+                        )}
+                        {active.reason && <span style={S.contactRow}><b style={S.contactKey}>Reason</b>{active.reason}</span>}
+                      </div>
 
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 5 }}>
                         <span style={{ ...S.bubble, ...S.bubbleIn }}>
@@ -529,6 +549,11 @@ const S: Record<string, CSSProperties> = {
   dayLine: { flex: 1, height: 1, background: "#E2E8F0" },
   dayLabel: { fontSize: 10.5, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase" },
   sysPill: { alignSelf: "center", background: "#EEF2FF", color: "#4F46E5", border: "1px solid #E0E7FF", borderRadius: 999, padding: "5px 14px", fontSize: 11, fontWeight: 600, textAlign: "center" },
+  contactCard: { alignSelf: "stretch", background: "#fff", border: "1px solid #E0E7FF", borderLeft: "3px solid #8B5CF6", borderRadius: 12, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6, boxShadow: "0 2px 8px rgba(15,23,42,.04)" },
+  contactTitle: { fontSize: 10, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#8B5CF6", marginBottom: 2 },
+  contactRow: { display: "flex", gap: 10, fontSize: 12.5, color: "#334155", alignItems: "baseline", minWidth: 0 },
+  contactKey: { flex: "none", width: 52, fontSize: 10.5, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: 0.4 },
+  contactLink: { color: "#4F46E5", fontWeight: 600, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   bubble: { maxWidth: "78%", borderRadius: "16px 16px 16px 4px", padding: "11px 15px", fontSize: 13.2, lineHeight: 1.65, whiteSpace: "pre-wrap" },
   bubbleIn: { background: "#fff", color: "#0F172A", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(15,23,42,.04)" },
   bubbleOut: { background: GRAD, color: "#fff", border: "1px solid transparent", borderRadius: "16px 16px 4px 16px", boxShadow: "0 8px 20px rgba(99,102,241,.24)" },

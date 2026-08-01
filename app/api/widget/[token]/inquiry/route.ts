@@ -50,6 +50,10 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     return NextResponse.json({ error: "Use an address you actually read — the reply goes there." }, { status: 400 });
   }
   const name = typeof body.name === "string" ? body.name.replace(/\s+/g, " ").trim().slice(0, 80) : "";
+  // Optional, and gently: keep only phone-shaped characters and drop the
+  // field rather than refuse the lead over a typo'd number.
+  const rawPhone = typeof body.phone === "string" ? body.phone.replace(/[^\d+()\-. ]/g, "").trim().slice(0, 30) : "";
+  const phone = /\d{5,}/.test(rawPhone.replace(/\D/g, "")) ? rawPhone : null;
   const message = typeof body.message === "string" ? body.message.replace(/\r\n/g, "\n").trim().slice(0, INQUIRY_LIMITS.message) : "";
   if (message.length < INQUIRY_LIMITS.messageMin) {
     return NextResponse.json({ error: "Say a little more so the team can actually help." }, { status: 400 });
@@ -85,6 +89,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
         source: "WIDGET",
         visitorEmail: email,
         visitorName: name || null,
+        visitorPhone: phone,
         threadToken: randomBytes(24).toString("base64url"),
         transcript: transcript.length ? transcript : undefined,
         message,
@@ -106,7 +111,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
         companyName: site.company.name,
         senderName: name || email,
         reason: "Website chat",
-        message,
+        message: `${message}\n\nReach them: ${email}${phone ? ` · ${phone}` : ""}`,
       });
       await sendEmail({ to, subject, html, from: INQUIRY_FROM });
       emailed = true;
