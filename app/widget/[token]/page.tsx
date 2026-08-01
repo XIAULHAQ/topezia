@@ -41,7 +41,7 @@ export default async function WidgetPage({
     select: {
       id: true, domain: true, enabled: true, branded: true, pagesCrawled: true,
       accentColor: true, replyHours: true,
-      company: { select: { id: true, name: true, logoPath: true, plan: true } },
+      company: { select: { id: true, name: true, logoPath: true, plan: true, brandingDiscount: true } },
     },
   });
 
@@ -95,6 +95,11 @@ export default async function WidgetPage({
   // Branding and theming follow the plan. The `branded` column stays as a
   // per-site override for anyone we comp; the plan is what normally decides.
   const plan = planFor(site.company);
+  // Three states, not two: the free tier carries an ad for us, a paying
+  // company that took the discount carries a credit, and everyone else
+  // carries nothing. A company being PAID to show the badge always shows
+  // it — site.branded can hide the free-tier ad, never the paid-for one.
+  const showsBadge = site.company.brandingDiscount || (plan.branded && site.branded);
 
   return (
     <WidgetChat
@@ -102,7 +107,8 @@ export default async function WidgetPage({
       companyName={site.company.name}
       logoUrl={companyLogoUrl(site.company.logoPath)}
       ready={site.pagesCrawled > 0}
-      branded={plan.branded && site.branded}
+      branded={showsBadge}
+      badgeKind={plan.branded ? "free" : "credit"}
       greeting={greeting}
       pageUrl={pageUrl}
       accent={plan.theming ? normalizeAccent(site.accentColor) : null}

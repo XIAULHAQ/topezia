@@ -133,3 +133,37 @@ export async function getPrices(priceIds: string[]): Promise<Record<string, Prem
 
 /** Tags business-plan checkouts separately from member Premium in Stripe. */
 export const BUSINESS_INTEGRATION_ID = "topezia-business-r7wtqx3m";
+
+/**
+ * A coupon's real value, for display. Same rule as prices: the number on
+ * the page is the number Stripe will apply, or we show nothing.
+ */
+export type CouponValue = { amountOff: number; currency: string; label: string };
+
+const couponCache = new Map<string, { at: number; data: CouponValue | null }>();
+
+export async function getCoupon(couponId: string | null): Promise<CouponValue | null> {
+  const stripe = getStripe();
+  if (!stripe || !couponId) return null;
+
+  const hit = couponCache.get(couponId);
+  if (hit && Date.now() - hit.at < PRICE_TTL_MS) return hit.data;
+
+  try {
+    const c = await stripe.coupons.retrieve(couponId);
+    const data: CouponValue | null =
+      c.valid && c.amount_off != null
+        ? {
+            amountOff: c.amount_off,
+            currency: c.currency ?? "usd",
+            label: formatPrice({ amount: c.amount_off, currency: c.currency ?? "usd", interval: "" }).replace(/\/$/, ""),
+          }
+        : null;
+    couponCache.set(couponId, { at: Date.now(), data });
+    return data;
+  } catch (err) {
+    console.error("[billing] coupon lookup failed:", couponId, err instanceof Error ? err.message : err);
+    couponCache.set(couponId, { at: Date.now(), data: null });
+    return null;
+  }
+}

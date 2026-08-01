@@ -37,6 +37,7 @@ export default function WidgetChat({
   branded,
   greeting,
   pageUrl,
+  badgeKind,
   accent,
   replyTime,
   offline,
@@ -46,8 +47,11 @@ export default function WidgetChat({
   companyName: string;
   logoUrl: string | null;
   ready: boolean;
-  /** Free tier: show the Topezia attribution line. Paid turns it off. */
+  /** Show an attribution line at all. */
   branded: boolean;
+  /** Which line: the free tier's offer, or a paying customer's credit.
+   *  "Free with Topezia" would be a lie under someone paying us. */
+  badgeKind: "free" | "credit";
   /** Page-aware opener computed server-side; null = the default hello. */
   greeting: string | null;
   /** The host page the visitor opened the chat from, for retrieval. */
@@ -472,15 +476,24 @@ export default function WidgetChat({
         </button>
       )}
 
-      {/* The free tier's line, in HubSpot's shape: a real offer, not a
-          watermark. Paid customers get nothing here at all — no branding,
-          no "free", no trace. */}
+      {/* Three states. The free tier carries a real offer, in HubSpot's
+          shape — not a watermark. A paying company that took the discount
+          carries a plain credit, because "Free with Topezia" under someone
+          who pays us would be a lie. Everyone else carries nothing. */}
       {branded && (
         <div style={S.poweredRow}>
-          <a href="https://www.topezia.com/employer/widget" target="_blank" rel="noreferrer" style={S.poweredLink}>
-            ⚡ Add AI chat to your site.
-          </a>
-          <span style={S.poweredMuted}>Free with Topezia.</span>
+          {badgeKind === "free" ? (
+            <>
+              <a href="https://www.topezia.com/pricing/business" target="_blank" rel="noreferrer" style={S.poweredLink}>
+                ⚡ Add AI chat to your site.
+              </a>
+              <span style={S.poweredMuted}>Free with Topezia.</span>
+            </>
+          ) : (
+            <a href="https://www.topezia.com/pricing/business" target="_blank" rel="noreferrer" style={S.poweredMuted}>
+              AI chat powered by <span style={S.poweredLink}>Topezia</span>
+            </a>
+          )}
         </div>
       )}
     </main>

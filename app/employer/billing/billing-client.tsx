@@ -27,6 +27,7 @@ type SellablePlan = Limits & {
   monthly: { amount: number; label: string } | null;
   yearly: { amount: number; label: string } | null;
 };
+type Coupon = { amountOff: number; currency: string; label: string } | null;
 type State = {
   plan: Limits;
   planUntil: string | null;
@@ -34,6 +35,7 @@ type State = {
   billingLive: boolean;
   free: Limits;
   plans: SellablePlan[];
+  branding: { offered: boolean; on: boolean; monthly: Coupon; yearly: Coupon };
 };
 
 const n = (v: number) => v.toLocaleString();
@@ -43,6 +45,7 @@ export default function BillingClient() {
   const [state, setState] = useState<State | null>(null);
   const [period, setPeriod] = useState<"month" | "year">("month");
   const [busy, setBusy] = useState<string | null>(null);
+  const [keepBranding, setKeepBranding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -68,6 +71,7 @@ export default function BillingClient() {
       });
       const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
       if (data.url) { window.location.href = data.url; return; }
+      if (res.ok) { window.location.reload(); return; }
       setError(data.error ?? "That didn't work — try again.");
     } catch {
       setError("That didn't work — try again.");
@@ -123,7 +127,22 @@ export default function BillingClient() {
         </div>
         <ul style={{ margin: "14px 0 0", paddingLeft: 18, color: "#475569", fontSize: 13, lineHeight: 1.9 }}>
           {rows(current).map((r) => <li key={r}>{r}</li>)}
+          {state.branding.on && <li>Showing &ldquo;AI chat powered by Topezia&rdquo; for the discount</li>}
         </ul>
+        {!onFree && state.branding.offered && (
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", borderTop: "1px solid #F1F5F9", marginTop: 14, paddingTop: 12 }}>
+            <span style={{ ...ES.empty, flex: 1, minWidth: 200 }}>
+              {state.branding.on
+                ? "You're getting the discount for keeping our line on your chat."
+                : "Keep a small “AI chat powered by Topezia” line on your chat and pay less."}
+            </span>
+            <button type="button" style={state.branding.on ? ES.btnGhost : ES.btn}
+              disabled={busy === "branding"}
+              onClick={() => go({ action: "branding", keepBranding: !state.branding.on }, "branding")}>
+              {busy === "branding" ? "Saving…" : state.branding.on ? "Remove the line" : "Keep it and save"}
+            </button>
+          </div>
+        )}
       </div>
 
       {!state.billingLive ? (
@@ -144,6 +163,26 @@ export default function BillingClient() {
             ))}
             {period === "year" && <span style={{ ...ES.empty }}>Two months free.</span>}
           </div>
+
+          {state.branding.offered && (period === "year" ? state.branding.yearly : state.branding.monthly) && (
+            <label style={{
+              display: "flex", gap: 11, alignItems: "flex-start", cursor: "pointer",
+              border: "1px solid #A7F3D0", background: "#ECFDF5", borderRadius: 12, padding: "12px 14px", marginBottom: 14,
+            }}>
+              <input type="checkbox" checked={keepBranding} onChange={(e) => setKeepBranding(e.target.checked)} style={{ marginTop: 2 }} />
+              <span>
+                <b style={{ fontSize: 13, color: "#065F46" }}>
+                  Keep &ldquo;AI chat powered by Topezia&rdquo; and save{" "}
+                  {(period === "year" ? state.branding.yearly : state.branding.monthly)!.label}
+                  {period === "year" ? " a year" : " a month"}
+                </b>
+                <span style={{ display: "block", fontSize: 12, color: "#047857", lineHeight: 1.6, marginTop: 3 }}>
+                  A small credit line at the bottom of your chat, linking back to us. Everything else about your
+                  plan is unchanged, and you can turn it off any time — the discount stops when the line does.
+                </span>
+              </span>
+            </label>
+          )}
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 14 }}>
             {state.plans.map((p) => {
@@ -168,7 +207,7 @@ export default function BillingClient() {
                   ) : (
                     <button type="button" style={{ ...ES.btn, width: "100%" }}
                       disabled={busy === p.id}
-                      onClick={() => go({ plan: p.id, period }, p.id)}>
+                      onClick={() => go({ plan: p.id, period, keepBranding }, p.id)}>
                       {busy === p.id ? "Opening checkout…" : `Choose ${p.name}`}
                     </button>
                   )}

@@ -118,3 +118,27 @@ export function planForPriceId(priceId: string | null | undefined): PlanId | nul
 export function sellablePlans(): Exclude<PlanId, "FREE">[] {
   return (["PRO", "STUDIO"] as const).filter((p) => priceIdFor(p, "month") || priceIdFor(p, "year"));
 }
+
+/**
+ * The branding discount: keep an "AI chat powered by Topezia" line on the
+ * widget, pay less. One coupon per billing interval, because a Stripe
+ * amount_off coupon applies PER INVOICE — a $5 coupon on a yearly invoice
+ * would take off $5, not $60.
+ *
+ * Like prices, the amounts live in Stripe. We only hold the coupon ids, and
+ * the real discount is read back from the API for display, so what the page
+ * promises and what checkout charges cannot drift.
+ */
+const BRANDING_COUPON_ENV: Record<BillingPeriod, string> = {
+  month: "STRIPE_BRANDING_COUPON_MONTHLY",
+  year: "STRIPE_BRANDING_COUPON_YEARLY",
+};
+
+export function brandingCouponFor(period: BillingPeriod): string | null {
+  return process.env[BRANDING_COUPON_ENV[period]] || null;
+}
+
+/** Is the keep-the-badge trade available to offer at all? */
+export function brandingDiscountOffered(): boolean {
+  return Boolean(brandingCouponFor("month") || brandingCouponFor("year"));
+}

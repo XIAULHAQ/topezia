@@ -1091,6 +1091,10 @@ model Company {
   // Pooled monthly AI allowance for multi-site plans (see lib/widget/caps.ts).
   aiMonthKey       String    @default("")
   aiRepliesUsed    Int       @default(0)
+  // Paying, but keeping the "AI chat powered by Topezia" badge for a
+  // standing discount. Orthogonal to plan — it survives a plan change, and
+  // while true the widget ALWAYS shows the badge (migration 059).
+  brandingDiscount Boolean   @default(false)
   tagline     String?
   about       String?
   website     String?

@@ -4,7 +4,8 @@ import SiteNav from "@/app/_components/SiteNav";
 import { SiteFooter } from "@/app/_components/SiteChrome";
 import { planCatalogue } from "@/lib/billing/catalogue";
 import { PLANS } from "@/lib/billing/plans";
-import { billingConfigured } from "@/lib/billing/stripe";
+import { billingConfigured, getCoupon } from "@/lib/billing/stripe";
+import { brandingCouponFor } from "@/lib/billing/plans";
 
 /**
  * Public pricing for the site chat.
@@ -25,6 +26,8 @@ const n = (v: number) => v.toLocaleString();
 
 export default async function BusinessPricingPage() {
   const plans = billingConfigured() ? await planCatalogue() : [];
+  // The keep-our-badge trade, only mentioned when a real coupon backs it.
+  const badgeOff = billingConfigured() ? await getCoupon(brandingCouponFor("month")) : null;
 
   const free = PLANS.FREE;
   const cards = [
@@ -104,6 +107,16 @@ export default async function BusinessPricingPage() {
             </div>
           ))}
         </div>
+
+        {badgeOff && (
+          <p style={{
+            marginTop: 22, background: "#ECFDF5", border: "1px solid #A7F3D0", borderRadius: 12,
+            padding: "13px 16px", fontSize: 13.5, color: "#065F46", lineHeight: 1.65, maxWidth: 640,
+          }}>
+            <b>Keep a small &ldquo;AI chat powered by Topezia&rdquo; line on your chat and save {badgeOff.label} a
+            month</b> on any paid plan. Turn it off whenever you like — the discount stops with it.
+          </p>
+        )}
 
         <p style={{ fontSize: 12.5, color: "#94A3B8", marginTop: 24, lineHeight: 1.7, maxWidth: 640 }}>
           Payment is handled by Stripe; your card never touches Topezia. Cancel any time — you keep the plan

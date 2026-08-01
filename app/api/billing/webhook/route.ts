@@ -49,11 +49,16 @@ async function applyCompanySubscription(sub: Stripe.Subscription): Promise<void>
     return;
   }
 
+  // The badge trade travels on the subscription's own metadata, so it
+  // survives renewals and plan switches. A subscription that ends takes the
+  // discount with it, so the badge obligation ends too.
+  const keepsBadge = live && sub.metadata?.topezia_branding === "1";
+
   await prisma.company.updateMany({
     where: { id: companyId },
     data: plan
-      ? { plan, planUntil: periodEnd ? new Date(periodEnd * 1000) : null }
-      : { plan: "FREE", planUntil: null },
+      ? { plan, planUntil: periodEnd ? new Date(periodEnd * 1000) : null, brandingDiscount: keepsBadge }
+      : { plan: "FREE", planUntil: null, brandingDiscount: false },
   });
 }
 
