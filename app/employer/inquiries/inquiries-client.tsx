@@ -67,21 +67,35 @@ export default function InquiriesClient() {
   const [replyBusy, setReplyBusy] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
 
+  // Load, then KEEP loading: an inbox that fetches once goes quietly stale
+  // the moment the other side writes — the visitor's replies exist on the
+  // server while the open dashboard still shows yesterday. Poll while
+  // visible, refetch on focus. Server state replaces items wholesale (our
+  // own optimistic appends carry real ids, so replacement never duplicates);
+  // the config draft and reply composer live in separate state and survive.
   useEffect(() => {
-    fetch("/api/company/inquiries", { cache: "no-store" })
-      .then(async (res) => {
-        if (res.status === 401) { setGate("auth"); return null; }
-        if (res.status === 409) { setGate("company"); return null; }
+    let stop = false;
+    async function load(first: boolean) {
+      try {
+        const res = await fetch("/api/company/inquiries", { cache: "no-store" });
+        if (stop) return;
+        if (res.status === 401) { setGate("auth"); return; }
+        if (res.status === 409) { setGate("company"); return; }
         if (!res.ok) throw new Error();
-        return res.json() as Promise<{ config: Config; inquiries: Inquiry[]; suggested: Suggested }>;
-      })
-      .then((d) => {
-        if (!d) return;
-        setConfig(d.config);
+        const d = (await res.json()) as { config: Config; inquiries: Inquiry[]; suggested: Suggested };
+        if (stop) return;
+        setConfig((cur) => (first || !cur ? d.config : cur)); // don't clobber an unsaved toggle
         setSuggested(d.suggested ?? null);
         setItems(d.inquiries);
-      })
-      .catch(() => setError("Couldn't load your inbox."));
+      } catch {
+        if (first) setError("Couldn't load your inbox.");
+      }
+    }
+    load(true);
+    const timer = setInterval(() => { if (!document.hidden) load(false); }, 20_000);
+    const onFocus = () => load(false);
+    window.addEventListener("focus", onFocus);
+    return () => { stop = true; clearInterval(timer); window.removeEventListener("focus", onFocus); };
   }, []);
 
   async function saveConfig(next: Config) {

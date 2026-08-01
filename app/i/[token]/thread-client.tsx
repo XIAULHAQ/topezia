@@ -5,7 +5,7 @@
  * everywhere else: while the company hasn't replied (or has closed the
  * thread), the visitor sees "sent" and no reply box — never why.
  */
-import { useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 
 type Msg = { id: string; sender: "COMPANY" | "CANDIDATE"; body: string; at: string };
 
@@ -25,9 +25,35 @@ export default function ThreadClient({
   messages: Msg[];
 }) {
   const [thread, setThread] = useState<Msg[]>(messages);
+  const [isOpen, setIsOpen] = useState(open);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // A visitor waiting on this page should see the company's next reply
+  // arrive, not learn about it from a second email. Poll while visible.
+  useEffect(() => {
+    let stop = false;
+    async function tick() {
+      if (document.hidden) return;
+      try {
+        const res = await fetch(`/api/i/${token}`, { cache: "no-store" });
+        if (!res.ok || stop) return;
+        const d = (await res.json()) as { open?: boolean; messages?: { id: string; sender: Msg["sender"]; body: string; createdAt: string }[] };
+        if (stop) return;
+        setIsOpen(Boolean(d.open));
+        setThread((cur) => {
+          const seen = new Set(cur.map((m) => m.id));
+          const fresh = (d.messages ?? []).filter((m) => !seen.has(m.id)).map((m) => ({ id: m.id, sender: m.sender, body: m.body, at: m.createdAt }));
+          return fresh.length ? [...cur, ...fresh] : cur;
+        });
+      } catch {
+        /* next tick */
+      }
+    }
+    const timer = setInterval(tick, 20_000);
+    return () => { stop = true; clearInterval(timer); };
+  }, [token]);
 
   async function send(e: FormEvent) {
     e.preventDefault();
@@ -71,7 +97,7 @@ export default function ThreadClient({
           </div>
         ))}
 
-        {open ? (
+        {isOpen ? (
           <form onSubmit={send} style={{ marginTop: 16 }}>
             <textarea
               style={S.input}

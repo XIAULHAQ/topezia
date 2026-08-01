@@ -37,14 +37,28 @@ export default function MessagesClient() {
   const [replyBusy, setReplyBusy] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
 
+  // Same liveness rule as the employer inbox: a conversation page that
+  // fetches once shows yesterday. Poll while visible, refetch on focus;
+  // wholesale replacement is safe (optimistic appends carry real ids).
   useEffect(() => {
-    fetch("/api/inquiries", { cache: "no-store" })
-      .then(async (r) => {
-        if (r.status === 401 || r.status === 409) { setAuthGate(true); return { inquiries: [] }; }
-        return r.ok ? r.json() : { inquiries: [] };
-      })
-      .then((d) => setRows(d.inquiries ?? []))
-      .catch(() => setRows([]));
+    let stop = false;
+    async function load(first: boolean) {
+      try {
+        const r = await fetch("/api/inquiries", { cache: "no-store" });
+        if (stop) return;
+        if (r.status === 401 || r.status === 409) { setAuthGate(true); setRows([]); return; }
+        const d = r.ok ? await r.json() : null;
+        if (stop || !d) { if (first && !d) setRows([]); return; }
+        setRows(d.inquiries ?? []);
+      } catch {
+        if (first) setRows([]);
+      }
+    }
+    load(true);
+    const timer = setInterval(() => { if (!document.hidden) load(false); }, 20_000);
+    const onFocus = () => load(false);
+    window.addEventListener("focus", onFocus);
+    return () => { stop = true; clearInterval(timer); window.removeEventListener("focus", onFocus); };
   }, []);
 
   async function sendReply(row: Row) {
