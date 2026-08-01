@@ -1180,6 +1180,11 @@ model WidgetSite {
   // the week had activity; digestSentAt guards double-sends.
   digestEnabled Boolean   @default(true)
   digestSentAt  DateTime?
+  // The widget in the customer's colour (hex, validated on write).
+  accentColor   String?
+  // {"tz","days":[1..7],"start":"09:00","end":"17:00"} — when set, the chat
+  // says plainly that nobody's there rather than implying someone is.
+  replyHours    Json?
   chunks       SiteChunk[]
   products     SiteProduct[]
   questions    WidgetQuestion[]
@@ -1291,6 +1296,13 @@ model CompanyInquiry {
   // field is null unless the visitor actually said it.
   brief        Json?
 
+  // Revenue attribution, entirely owner-entered: "WON" | "LOST" | null
+  // (null = still open). dealValue is whole currency units the OWNER typed.
+  // Nothing here is ever inferred — see migration 057.
+  outcome      String?
+  dealValue    Int?
+  outcomeAt    DateTime?
+
   // One of Company.contactReasons at submit time; null when the company
   // configured no reasons.
   reason    String?
@@ -1313,6 +1325,7 @@ model CompanyInquiry {
   //     ON "CompanyInquiry"("companyId", "profileId") WHERE status = 'NEW';
   @@index([companyId, status, createdAt])
   @@index([profileId, createdAt])
+  @@index([companyId, outcome])
 }
 
 // A message inside an opened thread. The first row is always the company's

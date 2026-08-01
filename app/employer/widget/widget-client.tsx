@@ -15,6 +15,8 @@ type Site = {
   enabled: boolean;
   branded: boolean;
   digestEnabled: boolean;
+  accentColor: string | null;
+  replyHours: { tz: string; days: number[]; start: string; end: string } | null;
   pagesCrawled: number;
   crawledAt: string | null;
   crawlError: string | null;
@@ -24,6 +26,13 @@ type Site = {
 
 type Fact = { id: string; question: string; answer: string; updatedAt: string };
 type Gap = { question: string; count: number };
+type Stats = { leads: number; won: number; revenue: number };
+
+const DAYS = [
+  { n: 1, label: "Mon" }, { n: 2, label: "Tue" }, { n: 3, label: "Wed" }, { n: 4, label: "Thu" },
+  { n: 5, label: "Fri" }, { n: 6, label: "Sat" }, { n: 7, label: "Sun" },
+];
+const SWATCHES = ["#8B5CF6", "#2563EB", "#0E7490", "#059669", "#B45309", "#DC2626", "#DB2777", "#0F172A"];
 
 export default function WidgetClient() {
   const [gate, setGate] = useState<"auth" | "company" | null>(null);
@@ -40,17 +49,22 @@ export default function WidgetClient() {
   const [teachBusy, setTeachBusy] = useState(false);
   const [teachError, setTeachError] = useState<string | null>(null);
 
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [hoursDraft, setHoursDraft] = useState<NonNullable<Site["replyHours"]> | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+
   useEffect(() => {
     fetch("/api/company/widget", { cache: "no-store" })
       .then(async (res) => {
         if (res.status === 401) { setGate("auth"); return null; }
         if (res.status === 409) { setGate("company"); return null; }
         if (!res.ok) throw new Error();
-        return res.json() as Promise<{ site: Site | null }>;
+        return res.json() as Promise<{ site: Site | null; stats: Stats }>;
       })
       .then((d) => {
         if (!d) return;
         setSite(d.site);
+        setStats(d.stats ?? null);
         if (d.site) setDomain(d.site.domain);
       })
       .catch(() => setError("Couldn't load the widget status."));
@@ -86,6 +100,20 @@ export default function WidgetClient() {
     } finally {
       setTeachBusy(false);
     }
+  }
+
+  /** One PATCH for every appearance setting on this page. */
+  async function patchSite(patch: Record<string, unknown>, optimistic: Partial<Site>) {
+    if (!site) return;
+    setSettingsError(null);
+    const res = await fetch("/api/company/widget", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) { setSettingsError(data.error ?? "Couldn't save that."); return; }
+    setSite({ ...site, ...optimistic });
   }
 
   async function forgetFact(id: string) {
@@ -205,6 +233,109 @@ export default function WidgetClient() {
                 {site.digestEnabled ? "Turn digest off" : "Turn digest on"}
               </button>
             </div>
+          </div>
+
+          {/* What the chat has produced. Leads are counted; won and revenue
+              are only ever what the owner marked in Messages — we have no
+              payment rail, so nothing here is estimated. */}
+          {stats && stats.leads > 0 && (
+            <div style={{ ...ES.card, marginBottom: 18 }}>
+              <label style={ES.label}>What the chat has brought in</label>
+              <div style={{ display: "flex", gap: 26, flexWrap: "wrap", margin: "6px 0 10px" }}>
+                <span><b style={S2.stat}>{stats.leads}</b><span style={S2.statLabel}>leads from chat</span></span>
+                <span><b style={S2.stat}>{stats.won}</b><span style={S2.statLabel}>became work</span></span>
+                <span><b style={{ ...S2.stat, color: stats.revenue > 0 ? "#047857" : "#0F172A" }}>${stats.revenue.toLocaleString()}</b><span style={S2.statLabel}>you marked won</span></span>
+              </div>
+              <p style={{ ...ES.empty, margin: 0 }}>
+                {stats.won === 0
+                  ? "Mark a conversation “won” in Messages when it turns into work — these totals only ever count what you tell them, never a guess."
+                  : "Counted from the conversations you marked won in Messages. Only your own numbers appear here."}
+              </p>
+            </div>
+          )}
+
+          {/* Appearance + hours. Both are honesty features as much as
+              branding ones: the colour makes it theirs, the hours stop the
+              chat implying someone's there at 2am. */}
+          <div style={{ ...ES.card, marginBottom: 18 }}>
+            <label style={ES.label}>Appearance</label>
+            <p style={{ ...ES.empty, margin: "0 0 10px" }}>Your colour on the chat bubble, buttons and replies.</p>
+            <div style={{ display: "flex", gap: 9, flexWrap: "wrap", alignItems: "center", marginBottom: 18 }}>
+              {SWATCHES.map((c) => {
+                const on = (site.accentColor ?? "#8B5CF6").toLowerCase() === c.toLowerCase();
+                return (
+                  <button key={c} type="button" aria-label={c} title={c}
+                    onClick={() => patchSite({ accentColor: c }, { accentColor: c })}
+                    style={{ width: 30, height: 30, borderRadius: 9, background: c, cursor: "pointer",
+                             border: on ? "3px solid #0F172A" : "1px solid rgba(15,23,42,.15)" }} />
+                );
+              })}
+              <input type="color" aria-label="Custom colour"
+                value={site.accentColor ?? "#8B5CF6"}
+                onChange={(e) => patchSite({ accentColor: e.target.value }, { accentColor: e.target.value })}
+                style={{ width: 42, height: 30, padding: 0, border: "1px solid #E2E8F0", borderRadius: 9, background: "#fff", cursor: "pointer" }} />
+              {site.accentColor && (
+                <button type="button" style={{ ...ES.btnGhost, padding: "6px 12px", fontSize: 11.5 }}
+                  onClick={() => patchSite({ accentColor: null }, { accentColor: null })}>
+                  Reset
+                </button>
+              )}
+            </div>
+
+            <label style={ES.label}>When your team is around</label>
+            <p style={{ ...ES.empty, margin: "0 0 10px" }}>
+              Outside these hours the chat says plainly that nobody&apos;s there and when you&apos;re back, instead of
+              letting someone sit waiting. Leave it off and it says nothing about availability.
+            </p>
+            {site.replyHours && !hoursDraft ? (
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={ES.pillLive}>
+                  {site.replyHours.days.map((d) => DAYS.find((x) => x.n === d)?.label).join(" ")} · {site.replyHours.start}–{site.replyHours.end}
+                </span>
+                <span style={{ ...ES.empty }}>{site.replyHours.tz}</span>
+                <button type="button" style={{ ...ES.btnGhost, padding: "6px 12px", fontSize: 11.5 }} onClick={() => setHoursDraft(site.replyHours)}>Edit</button>
+                <button type="button" style={{ ...ES.btnGhost, padding: "6px 12px", fontSize: 11.5 }} onClick={() => patchSite({ replyHours: null }, { replyHours: null })}>Turn off</button>
+              </div>
+            ) : hoursDraft ? (
+              <div style={{ border: "1px solid #E0E7FF", borderRadius: 12, padding: 14, background: "#FAFAFF" }}>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                  {DAYS.map((d) => {
+                    const on = hoursDraft.days.includes(d.n);
+                    return (
+                      <button key={d.n} type="button"
+                        onClick={() => setHoursDraft({ ...hoursDraft, days: on ? hoursDraft.days.filter((x) => x !== d.n) : [...hoursDraft.days, d.n].sort() })}
+                        style={{ border: "1px solid", borderColor: on ? "#C7D2FE" : "#E2E8F0", background: on ? "#EEF2FF" : "#fff",
+                                 color: on ? "#4F46E5" : "#64748B", borderRadius: 999, padding: "6px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                        {d.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+                  <input type="time" value={hoursDraft.start} onChange={(e) => setHoursDraft({ ...hoursDraft, start: e.target.value })} style={{ ...ES.input, width: 130 }} />
+                  <span style={{ color: "#94A3B8" }}>to</span>
+                  <input type="time" value={hoursDraft.end} onChange={(e) => setHoursDraft({ ...hoursDraft, end: e.target.value })} style={{ ...ES.input, width: 130 }} />
+                  <span style={{ ...ES.empty }}>{hoursDraft.tz}</span>
+                </div>
+                {settingsError && <p style={ES.error}>{settingsError}</p>}
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button type="button" style={ES.btn}
+                    onClick={async () => { await patchSite({ replyHours: hoursDraft }, { replyHours: hoursDraft }); setHoursDraft(null); }}>
+                    Save hours
+                  </button>
+                  <button type="button" style={ES.btnGhost} onClick={() => { setHoursDraft(null); setSettingsError(null); }}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" style={ES.btnGhost}
+                onClick={() => setHoursDraft({
+                  tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+                  days: [1, 2, 3, 4, 5], start: "09:00", end: "17:00",
+                })}>
+                + Set your hours
+              </button>
+            )}
+            {settingsError && !hoursDraft && <p style={ES.error}>{settingsError}</p>}
           </div>
 
           {/* Teach the bot — owner-written answers outrank the crawl, and
@@ -343,3 +474,8 @@ export default function WidgetClient() {
     </EmployerSection>
   );
 }
+
+const S2: Record<string, React.CSSProperties> = {
+  stat: { display: "block", fontSize: 24, fontWeight: 800, letterSpacing: "-0.5px", color: "#0F172A" },
+  statLabel: { display: "block", fontSize: 11.5, color: "#64748B", marginTop: 2 },
+};

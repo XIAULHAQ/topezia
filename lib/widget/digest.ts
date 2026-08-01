@@ -35,6 +35,9 @@ export type DigestData = {
   leads: number;
   pendingInbox: number;
   themes: { label: string; count: number }[] | null;
+  /** Owner-marked outcomes only — never estimated. See migration 057. */
+  won: number;
+  wonValue: number;
 };
 
 export async function runWeeklyDigests(now = new Date()): Promise<{ sent: number; skipped: number; failed: number }> {
@@ -84,7 +87,7 @@ export async function runWeeklyDigests(now = new Date()): Promise<{ sent: number
 }
 
 async function collect(siteId: string, companyId: string, since: Date): Promise<DigestData> {
-  const [questions, answered, unanswered, leads, pendingInbox] = await Promise.all([
+  const [questions, answered, unanswered, leads, pendingInbox, wonAgg] = await Promise.all([
     prisma.widgetQuestion.count({ where: { siteId, createdAt: { gte: since } } }),
     prisma.widgetQuestion.count({ where: { siteId, createdAt: { gte: since }, answered: true } }),
     prisma.widgetQuestion.findMany({
@@ -97,8 +100,23 @@ async function collect(siteId: string, companyId: string, since: Date): Promise<
     // Everything still waiting on the owner, whatever its age or source —
     // the digest's job is to pull them back to the inbox.
     prisma.companyInquiry.count({ where: { companyId, status: "NEW" } }),
+    // What the owner marked won this week — their numbers, not ours.
+    prisma.companyInquiry.aggregate({
+      where: { companyId, source: "WIDGET", outcome: "WON", outcomeAt: { gte: since } },
+      _count: { _all: true },
+      _sum: { dealValue: true },
+    }),
   ]);
-  return { questions, answered, unansweredTexts: unanswered.map((q) => q.question), leads, pendingInbox, themes: null };
+  return {
+    questions,
+    answered,
+    unansweredTexts: unanswered.map((q) => q.question),
+    leads,
+    pendingInbox,
+    themes: null,
+    won: wonAgg._count._all,
+    wonValue: wonAgg._sum.dealValue ?? 0,
+  };
 }
 
 /**
@@ -166,6 +184,7 @@ export function renderDigestEmail(companyName: string, data: DigestData): { subj
     ${gapRows ? `<p style="font-weight:700;font-size:14px;color:#1a1a2e;margin:0 0 4px;">Your site couldn't answer these</p>
       <p style="color:#6b7280;font-size:12.5px;line-height:1.5;margin:0 0 8px;">The assistant only answers from what your website says — add a line about these and it answers them next week.</p>
       <ul style="margin:0 0 18px;padding-left:18px;">${gapRows}</ul>` : ""}
+    ${data.won > 0 ? `<p style="background:#ECFDF5;border:1px solid #A7F3D0;border-radius:12px;padding:12px 14px;color:#065F46;font-size:14px;line-height:1.55;margin:0 0 16px;">You marked <strong>${data.won}</strong> chat conversation${data.won === 1 ? "" : "s"} as won this week${data.wonValue > 0 ? `, worth <strong>$${data.wonValue.toLocaleString()}</strong>` : ""}.</p>` : ""}
     ${data.pendingInbox > 0 ? `<p style="color:#334155;font-size:14px;line-height:1.55;margin:0 0 16px;"><strong>${data.pendingInbox}</strong> message${data.pendingInbox === 1 ? " is" : "s are"} still waiting for a reply — people who asked for a person, not the bot.</p>` : ""}
     <a href="${inbox}" style="display:inline-block;padding:12px 24px;background:#4f46e5;color:#fff;border-radius:10px;font-weight:700;font-size:15px;text-decoration:none;">Open your inbox</a>`;
 

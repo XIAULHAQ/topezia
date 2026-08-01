@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { companyLogoUrl } from "@/lib/company/storage";
+import { replyTimePhrase, parseReplyHours, officeState, normalizeAccent } from "@/lib/widget/presence";
 import WidgetChat from "./widget-chat";
 
 /**
@@ -36,7 +37,11 @@ export default async function WidgetPage({
 }) {
   const site = await prisma.widgetSite.findUnique({
     where: { siteToken: params.token },
-    select: { id: true, domain: true, enabled: true, branded: true, pagesCrawled: true, company: { select: { name: true, logoPath: true } } },
+    select: {
+      id: true, domain: true, enabled: true, branded: true, pagesCrawled: true,
+      accentColor: true, replyHours: true,
+      company: { select: { id: true, name: true, logoPath: true } },
+    },
   });
 
   if (!site || !site.enabled) {
@@ -77,6 +82,15 @@ export default async function WidgetPage({
     }
   }
 
+  // How fast this company actually replies, and whether anyone is at the
+  // desk right now. Both are honest-or-absent: no history, no phrase; no
+  // configured hours, no availability claim.
+  const [replyTime, hours] = await Promise.all([
+    replyTimePhrase(site.company.id),
+    Promise.resolve(parseReplyHours(site.replyHours)),
+  ]);
+  const office = officeState(hours);
+
   return (
     <WidgetChat
       token={params.token}
@@ -86,6 +100,10 @@ export default async function WidgetPage({
       branded={site.branded}
       greeting={greeting}
       pageUrl={pageUrl}
+      accent={normalizeAccent(site.accentColor)}
+      replyTime={replyTime}
+      offlineUntil={office && !office.open ? office.backAt || null : null}
+      offline={Boolean(office && !office.open)}
     />
   );
 }

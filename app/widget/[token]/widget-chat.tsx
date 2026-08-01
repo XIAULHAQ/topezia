@@ -11,13 +11,23 @@
  * visitor messages go to the thread, and the bot stays out of a
  * conversation two people are having.
  */
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { T, pickLocale } from "./strings";
 
 type Product = { name: string; price: string | null; image: string | null; url: string };
 type Turn = { role: "visitor" | "bot" | "team"; text: string; sources?: string[]; products?: Product[] };
 
-const GRAD = "linear-gradient(135deg,#8B5CF6,#3B82F6)";
+const DEFAULT_GRAD = "linear-gradient(135deg,#8B5CF6,#3B82F6)";
 const POLL_MS = 20_000;
+
+/** Chrome's SpeechRecognition, under either name. Absent everywhere else. */
+type SpeechRec = {
+  lang: string; continuous: boolean; interimResults: boolean;
+  start: () => void; stop: () => void;
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+};
 
 export default function WidgetChat({
   token,
@@ -27,6 +37,10 @@ export default function WidgetChat({
   branded,
   greeting,
   pageUrl,
+  accent,
+  replyTime,
+  offline,
+  offlineUntil,
 }: {
   token: string;
   companyName: string;
@@ -38,15 +52,43 @@ export default function WidgetChat({
   greeting: string | null;
   /** The host page the visitor opened the chat from, for retrieval. */
   pageUrl: string | null;
+  /** The company's brand colour (#rrggbb), or null for Topezia's gradient. */
+  accent: string | null;
+  /** Measured from this company's real replies; null when unknown. */
+  replyTime: string | null;
+  /** Outside the owner's stated hours — say so rather than imply presence. */
+  offline: boolean;
+  offlineUntil: string | null;
 }) {
+  // The visitor's browser language drives the chrome; the assistant's own
+  // replies follow whatever language they type in (a prompt rule server-side).
+  const [locale, setLocale] = useState("en");
+  useEffect(() => { setLocale(pickLocale(navigator.language)); }, []);
+  const t = T(locale);
+
+  const grad = useMemo(() => {
+    if (!accent) return DEFAULT_GRAD;
+    const n = parseInt(accent.slice(1), 16);
+    const sh = (c: number) => Math.max(0, Math.round(c * 0.72));
+    const hx = (c: number) => c.toString(16).padStart(2, "0");
+    return `linear-gradient(135deg,${accent},#${hx(sh((n >> 16) & 255))}${hx(sh((n >> 8) & 255))}${hx(sh(n & 255))})`;
+  }, [accent]);
+  const ink = accent ?? "#4F46E5";
+
   const [turns, setTurns] = useState<Turn[]>([
-    {
-      role: "bot",
-      text: !ready
-        ? `Hi — I'm the ${companyName} AI assistant. I'm still learning this site, so for now let me take a message for the team.`
-        : greeting ?? `Hi — I'm the ${companyName} AI assistant. Ask me anything, or leave a message and a real person will get back to you.`,
-    },
+    { role: "bot", text: !ready ? t.hiLearning(companyName) : greeting ?? t.hiReady(companyName) },
   ]);
+  // The opener is seeded before the locale is known (it renders on the
+  // server); once it is, translate our own default — but never the
+  // server-computed greeting, which quotes the site's own words.
+  useEffect(() => {
+    if (greeting) return;
+    setTurns((cur) =>
+      cur.length === 1 && cur[0].role === "bot"
+        ? [{ role: "bot", text: !ready ? t.hiLearning(companyName) : t.hiReady(companyName) }]
+        : cur
+    );
+  }, [locale, greeting, ready, companyName, t]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [leadOpen, setLeadOpen] = useState(!ready);
@@ -62,6 +104,47 @@ export default function WidgetChat({
   const [humanMode, setHumanMode] = useState(false);
   const seenMsgIds = useRef<Set<string>>(new Set());
   const scroller = useRef<HTMLDivElement>(null);
+
+  // ── Voice input ────────────────────────────────────────────────────────
+  // Browser-native speech recognition: no upload, no model of ours, no cost.
+  // It exists in Chrome and Safari and nowhere else, so the button only
+  // appears where it works — a mic that does nothing is worse than no mic.
+  const [micOn, setMicOn] = useState(false);
+  const [micAvailable, setMicAvailable] = useState(false);
+  const recognizer = useRef<SpeechRec | null>(null);
+  useEffect(() => {
+    const w = window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec };
+    const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+    if (!Ctor) return;
+    setMicAvailable(true);
+    return () => { try { recognizer.current?.stop(); } catch { /* already stopped */ } };
+  }, []);
+
+  function toggleMic() {
+    if (micOn) {
+      try { recognizer.current?.stop(); } catch { /* already stopped */ }
+      setMicOn(false);
+      return;
+    }
+    const w = window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec };
+    const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+    if (!Ctor) return;
+    const rec = new Ctor();
+    rec.lang = navigator.language || "en-US";
+    rec.continuous = false;
+    rec.interimResults = true;
+    // Dictation lands in the box; the visitor still presses send. Nothing
+    // is transmitted on their behalf because they held a button down.
+    rec.onresult = (e) => {
+      let said = "";
+      for (let i = 0; i < e.results.length; i++) said += e.results[i][0].transcript;
+      setInput(said);
+    };
+    rec.onerror = () => setMicOn(false);
+    rec.onend = () => setMicOn(false);
+    recognizer.current = rec;
+    try { rec.start(); setMicOn(true); } catch { setMicOn(false); }
+  }
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
@@ -205,18 +288,15 @@ export default function WidgetChat({
       });
       const data = (await res.json().catch(() => ({}))) as { sent?: boolean; threadToken?: string; error?: string };
       if (!res.ok || !data.sent) {
-        setError(data.error ?? "That didn't go through — try again.");
+        setError(data.error ?? t.failed);
         return;
       }
       setLeadDone(true);
       setLeadOpen(false);
       if (data.threadToken) setThreadToken(data.threadToken);
-      setTurns((cur) => [
-        ...cur,
-        { role: "bot", text: `Done — your message is with the ${companyName} team. If they reply while you're here, it shows up right in this chat; otherwise it lands at ${email}.` },
-      ]);
+      setTurns((cur) => [...cur, { role: "bot", text: t.sent(companyName, email) }]);
     } catch {
-      setError("That didn't go through — try again.");
+      setError(t.failed);
     } finally {
       setBusy(false);
     }
@@ -228,7 +308,7 @@ export default function WidgetChat({
     <main style={S.page} className="tzw">
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
       <header style={S.head}>
-        <span style={S.avatar}>
+        <span style={{ ...S.avatar, background: grad }}>
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
@@ -238,7 +318,14 @@ export default function WidgetChat({
         </span>
         <span style={{ minWidth: 0, flex: 1 }}>
           <b style={{ fontSize: 14, display: "block" }}>{companyName}</b>
-          <span style={S.headSub}>AI assistant · a person reads every message</span>
+          {/* Availability is stated only when it's been earned: a measured
+              reply time, or hours the owner actually set. Otherwise the
+              honest thing to say is what the assistant is. */}
+          <span style={S.headSub}>
+            {offline
+              ? offlineUntil ? t.offline(offlineUntil) : t.offlineNoTime
+              : replyTime ?? t.aiSub}
+          </span>
         </span>
         {/* Full-screen on phones hides the launcher bubble, so the chat has
             to carry its own way out. The parent page owns the iframe, hence
@@ -246,7 +333,7 @@ export default function WidgetChat({
         <button
           type="button"
           className="tzw-close"
-          aria-label="Close chat"
+          aria-label={t.close}
           style={S.closeBtn}
           onClick={() => window.parent?.postMessage("topezia:close", "*")}
         >
@@ -255,19 +342,23 @@ export default function WidgetChat({
       </header>
 
       <div ref={scroller} style={S.scroll}>
-        {turns.map((t, i) => (
+        {turns.map((turn, i) => (
           <div
             key={i}
             style={{
               ...S.msg,
-              ...(t.role === "visitor" ? S.msgVisitor : t.role === "team" ? S.msgTeam : S.msgBot),
+              ...(turn.role === "visitor"
+                ? { ...S.msgVisitor, background: grad }
+                : turn.role === "team"
+                  ? { ...S.msgTeam, borderColor: ink }
+                  : S.msgBot),
             }}
           >
-            {t.role === "team" && <span style={S.teamLabel}>{companyName} team</span>}
-            {t.text || "…"}
-            {t.products && t.products.length > 0 && (
+            {turn.role === "team" && <span style={{ ...S.teamLabel, color: ink }}>{t.teamLabel(companyName)}</span>}
+            {turn.text || "…"}
+            {turn.products && turn.products.length > 0 && (
               <span style={S.productList}>
-                {t.products.map((p) => (
+                {turn.products.map((p) => (
                   <a key={p.url + p.name} href={p.url} target="_top" style={S.productCard}>
                     {p.image && (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -275,23 +366,23 @@ export default function WidgetChat({
                     )}
                     <span style={{ minWidth: 0, flex: 1 }}>
                       <b style={S.productName}>{p.name}</b>
-                      {p.price && <span style={S.productPrice}>{p.price}</span>}
+                      {p.price && <span style={{ ...S.productPrice, color: ink }}>{p.price}</span>}
                     </span>
-                    <span style={S.productGo}>View →</span>
+                    <span style={{ ...S.productGo, color: ink }}>View →</span>
                   </a>
                 ))}
               </span>
             )}
-            {t.sources && t.sources.length > 0 && (
+            {turn.sources && turn.sources.length > 0 && (
               <span style={S.sources}>
-                {t.sources.map((u) => {
+                {turn.sources.map((u) => {
                   let label = u;
                   try {
                     const p = new URL(u).pathname;
                     label = !p || p === "/" ? "Home" : p;
                   } catch {}
                   return (
-                    <a key={u} href={u} target="_top" style={S.sourceLink}>{label}</a>
+                    <a key={u} href={u} target="_top" style={{ ...S.sourceLink, color: ink }}>{label}</a>
                   );
                 })}
               </span>
@@ -303,16 +394,24 @@ export default function WidgetChat({
 
         {leadOpen && !leadDone && (
           <form onSubmit={sendLead} style={S.leadCard}>
-            <b style={{ fontSize: 13 }}>Leave a message for the team</b>
-            <input style={S.input} type="text" placeholder="Your name (optional)" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
-            <input style={S.input} type="email" placeholder="Email — the reply goes here" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={254} />
-            <input style={S.input} type="tel" placeholder="Phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} maxLength={30} />
-            <textarea style={{ ...S.input, minHeight: 64, resize: "vertical" }} placeholder="What do you need?" value={leadMsg} onChange={(e) => setLeadMsg(e.target.value)} required maxLength={2000} />
+            <b style={{ fontSize: 13 }}>{t.leadTitle}</b>
+            {/* Expectation-setting exactly where it matters: the moment
+                someone hands over their email. Both lines are real — a
+                measured median, or hours the owner set. */}
+            {(offline || replyTime) && (
+              <span style={S.leadNote}>
+                {offline ? (offlineUntil ? t.offline(offlineUntil) : t.offlineNoTime) : replyTime}
+              </span>
+            )}
+            <input style={S.input} type="text" placeholder={t.namePlaceholder} value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
+            <input style={S.input} type="email" placeholder={t.emailPlaceholder} value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={254} />
+            <input style={S.input} type="tel" placeholder={t.phonePlaceholder} value={phone} onChange={(e) => setPhone(e.target.value)} maxLength={30} />
+            <textarea style={{ ...S.input, minHeight: 64, resize: "vertical" }} placeholder={t.needPlaceholder} value={leadMsg} onChange={(e) => setLeadMsg(e.target.value)} required maxLength={2000} />
             {error && <span style={S.error}>{error}</span>}
             <div style={{ display: "flex", gap: 8 }}>
-              <button type="submit" style={S.btn} disabled={busy}>{busy ? "Sending…" : "Send to the team"}</button>
+              <button type="submit" style={{ ...S.btn, background: grad }} disabled={busy}>{busy ? t.sending : t.sendToTeam}</button>
               {ready && (
-                <button type="button" style={S.btnGhost} onClick={() => setLeadOpen(false)}>Keep chatting</button>
+                <button type="button" style={S.btnGhost} onClick={() => setLeadOpen(false)}>{t.keepChatting}</button>
               )}
             </div>
           </form>
@@ -324,16 +423,32 @@ export default function WidgetChat({
           style={{ ...S.input, flex: 1, margin: 0 }}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={humanMode ? `Reply to the ${companyName} team…` : ready ? "Ask a question…" : "Leave a message above…"}
+          placeholder={micOn ? t.listening : humanMode ? t.replyPlaceholder(companyName) : ready ? t.askPlaceholder : t.leadTitle}
           maxLength={1500}
           disabled={!ready && !leadDone && !humanMode}
         />
-        <button type="submit" style={{ ...S.btn, padding: "10px 14px" }} disabled={busy || !input.trim() || (!ready && !leadDone && !humanMode)}>→</button>
+        {/* Only rendered where the browser actually supports dictation. */}
+        {micAvailable && (
+          <button
+            type="button"
+            onClick={toggleMic}
+            aria-label={micOn ? t.listening : t.listen}
+            title={micOn ? t.listening : t.listen}
+            style={{ ...S.micBtn, ...(micOn ? { background: grad, color: "#fff", borderColor: "transparent" } : null) }}
+            disabled={!ready && !leadDone && !humanMode}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <rect x="9" y="2" width="6" height="11" rx="3" />
+              <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+            </svg>
+          </button>
+        )}
+        <button type="submit" style={{ ...S.btn, padding: "10px 14px", background: grad }} disabled={busy || !input.trim() || (!ready && !leadDone && !humanMode)} aria-label={t.send}>→</button>
       </form>
 
       {!leadOpen && !leadDone && (
         <button type="button" style={S.leaveLink} onClick={() => { setLeadMsg(""); setLeadOpen(true); }}>
-          Leave a message instead
+          {t.leaveInstead}
         </button>
       )}
 
@@ -372,14 +487,14 @@ const CSS = `
 const S: Record<string, CSSProperties> = {
   page: { fontFamily: "-apple-system, Segoe UI, Roboto, sans-serif", height: "100vh", display: "flex", flexDirection: "column", background: "#fff", color: "#0F172A" },
   head: { padding: "12px 16px 10px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", gap: 10 },
-  avatar: { flex: "none", width: 36, height: 36, borderRadius: 10, background: GRAD, display: "grid", placeItems: "center", overflow: "hidden", padding: 2 },
+  avatar: { flex: "none", width: 36, height: 36, borderRadius: 10, background: DEFAULT_GRAD, display: "grid", placeItems: "center", overflow: "hidden", padding: 2 },
   headSub: { fontSize: 11, color: "#94A3B8" },
   closeBtn: { flex: "none", width: 34, height: 34, borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", placeItems: "center", color: "#64748B", cursor: "pointer", fontSize: 15, fontFamily: "inherit" },
   scroll: { flex: 1, overflowY: "auto", padding: "14px 12px", display: "flex", flexDirection: "column", gap: 8 },
   msg: { maxWidth: "85%", fontSize: 13.5, lineHeight: 1.55, borderRadius: 14, padding: "9px 13px", whiteSpace: "pre-wrap" },
   msgBot: { alignSelf: "flex-start", background: "#F1F5F9", color: "#0F172A", borderBottomLeftRadius: 4 },
   msgTeam: { alignSelf: "flex-start", background: "#fff", color: "#0F172A", border: "1.5px solid #C7D2FE", borderBottomLeftRadius: 4 },
-  msgVisitor: { alignSelf: "flex-end", background: GRAD, color: "#fff", borderBottomRightRadius: 4 },
+  msgVisitor: { alignSelf: "flex-end", background: DEFAULT_GRAD, color: "#fff", borderBottomRightRadius: 4 },
   teamLabel: { display: "block", fontSize: 10, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#4F46E5", marginBottom: 3 },
   productList: { display: "flex", flexDirection: "column", gap: 8, marginTop: 10 },
   productCard: { display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, padding: "9px 11px", textDecoration: "none", color: "#0F172A", boxShadow: "0 1px 3px rgba(15,23,42,.06)" },
@@ -392,8 +507,10 @@ const S: Record<string, CSSProperties> = {
   leadCard: { border: "1px solid #E2E8F0", borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 8, background: "#F8FAFC" },
   input: { border: "1px solid #E2E8F0", borderRadius: 10, padding: "9px 11px", fontSize: 13, fontFamily: "inherit", background: "#fff", color: "#0F172A", boxSizing: "border-box", width: "100%" },
   inputRow: { display: "flex", gap: 8, padding: "10px 12px 6px", borderTop: "1px solid #E2E8F0" },
-  btn: { background: GRAD, color: "#fff", border: "none", borderRadius: 10, padding: "9px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  btn: { background: DEFAULT_GRAD, color: "#fff", border: "none", borderRadius: 10, padding: "9px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   btnGhost: { background: "#fff", color: "#334155", border: "1px solid #E2E8F0", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  micBtn: { flex: "none", width: 38, borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", display: "grid", placeItems: "center", cursor: "pointer", fontFamily: "inherit" },
+  leadNote: { fontSize: 11.5, color: "#64748B", lineHeight: 1.5 },
   leaveLink: { background: "none", border: "none", color: "#64748B", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit", padding: "2px 0 0" },
   error: { color: "#B91C1C", fontSize: 12 },
   poweredRow: { display: "flex", alignItems: "center", justifyContent: "center", gap: 5, flexWrap: "wrap", borderTop: "1px solid #F1F5F9", padding: "8px 12px 10px", fontSize: 11.5 },

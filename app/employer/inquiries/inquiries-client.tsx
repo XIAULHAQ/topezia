@@ -36,6 +36,8 @@ type Inquiry = {
   visitorPhone: string | null;
   transcript: { role: "visitor" | "bot"; text: string }[] | null;
   brief: Brief | null;
+  outcome: "WON" | "LOST" | null;
+  dealValue: number | null;
   profile: {
     fullName: string | null;
     publicSlug: string | null;
@@ -107,6 +109,8 @@ export default function InquiriesClient() {
   const [fixIdx, setFixIdx] = useState<number | null>(null);
   const [fixText, setFixText] = useState("");
   const [fixState, setFixState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  /** Non-null while the owner is typing what a won deal was worth. */
+  const [wonInput, setWonInput] = useState<string | null>(null);
 
   const [confDraft, setConfDraft] = useState<Config | null>(null);
   const [saving, setSaving] = useState(false);
@@ -162,6 +166,25 @@ export default function InquiriesClient() {
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
   }, [active?.id, active?.messages.length]);
+
+  /**
+   * Owner bookkeeping only: whether this conversation turned into work, and
+   * what it was worth. The sender is never told, and nothing about it is
+   * ever computed — the amount is whatever the owner types.
+   */
+  async function setOutcome(inq: Inquiry, outcome: "WON" | "LOST" | null, dealValue?: number | null) {
+    const res = await fetch(`/api/company/inquiries/${inq.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outcome, dealValue: dealValue ?? null }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { inquiry?: { outcome: Inquiry["outcome"]; dealValue: number | null }; error?: string };
+    if (!res.ok) { setError(data.error ?? "That didn't work — try again."); return; }
+    setItems((cur) => (cur ?? []).map((i) =>
+      i.id === inq.id ? { ...i, outcome: data.inquiry?.outcome ?? outcome, dealValue: data.inquiry?.dealValue ?? null } : i
+    ));
+    setWonInput(null);
+  }
 
   async function setStatus(inq: Inquiry, status: "NEW" | "ARCHIVED" | "SPAM") {
     const res = await fetch(`/api/company/inquiries/${inq.id}`, {
@@ -574,6 +597,53 @@ export default function InquiriesClient() {
                     </div>
                   </div>
 
+                  {/* Did this turn into work? Owner-only bookkeeping — the
+                      sender never sees any of it, and the amount is only
+                      ever what the owner types. */}
+                  <div style={S.outcomeBar}>
+                    {active.outcome === "WON" ? (
+                      <>
+                        <span style={S.wonPill}>Won{active.dealValue ? ` · $${active.dealValue.toLocaleString()}` : ""}</span>
+                        <span style={{ fontSize: 11.5, color: "#94A3B8" }}>Counted in your site chat totals.</span>
+                        <span style={{ flex: 1 }} />
+                        <button type="button" style={S.outcomeUndo} onClick={() => setOutcome(active, null)}>Undo</button>
+                      </>
+                    ) : active.outcome === "LOST" ? (
+                      <>
+                        <span style={S.lostPill}>Didn&apos;t work out</span>
+                        <span style={{ flex: 1 }} />
+                        <button type="button" style={S.outcomeUndo} onClick={() => setOutcome(active, null)}>Undo</button>
+                      </>
+                    ) : wonInput !== null ? (
+                      <>
+                        <span style={{ fontSize: 12, color: "#334155", fontWeight: 600 }}>What was it worth?</span>
+                        <span style={S.moneyWrap}>
+                          <span style={{ color: "#94A3B8", fontSize: 13 }}>$</span>
+                          <input
+                            autoFocus
+                            inputMode="numeric"
+                            value={wonInput}
+                            placeholder="4200"
+                            onChange={(e) => setWonInput(e.target.value.replace(/[^\d]/g, "").slice(0, 9))}
+                            onKeyDown={(e) => { if (e.key === "Enter") setOutcome(active, "WON", wonInput ? Number(wonInput) : null); }}
+                            style={S.moneyInput}
+                          />
+                        </span>
+                        <button type="button" style={{ ...ES.btn, padding: "7px 14px", fontSize: 12 }}
+                          onClick={() => setOutcome(active, "WON", wonInput ? Number(wonInput) : null)}>
+                          Save
+                        </button>
+                        <button type="button" style={S.outcomeUndo} onClick={() => setOutcome(active, "WON", null)}>Skip the amount</button>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ fontSize: 11.5, color: "#64748B" }}>Did this become work?</span>
+                        <button type="button" style={S.outcomeWonBtn} onClick={() => setWonInput("")}>Mark won</button>
+                        <button type="button" style={S.outcomeLostBtn} onClick={() => setOutcome(active, "LOST")}>Didn&apos;t work out</button>
+                      </>
+                    )}
+                  </div>
+
                   {!closed ? (
                     <div style={{ padding: "0 24px 18px" }}>
                       <div style={{ maxWidth: 760, margin: "0 auto" }}>
@@ -689,6 +759,14 @@ const S: Record<string, CSSProperties> = {
   fixBox: { alignSelf: "stretch", background: "#fff", border: "1px solid #E0E7FF", borderRadius: 12, padding: "12px 14px", marginTop: 2 },
   fixHead: { display: "block", fontSize: 11.5, color: "#64748B", marginBottom: 8 },
   fixInput: { width: "100%", border: "1px solid #E2E8F0", borderRadius: 10, padding: "9px 11px", outline: "none", resize: "vertical", fontFamily: "inherit", fontSize: 12.8, lineHeight: 1.6, color: "#0F172A", boxSizing: "border-box" },
+  outcomeBar: { display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap", padding: "10px 24px", borderTop: "1px solid #E2E8F0", background: "#fff" },
+  outcomeWonBtn: { border: "1px solid #A7F3D0", background: "#ECFDF5", color: "#047857", borderRadius: 999, padding: "6px 13px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  outcomeLostBtn: { border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", borderRadius: 999, padding: "6px 13px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
+  outcomeUndo: { border: 0, background: "none", color: "#94A3B8", fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
+  wonPill: { background: "#ECFDF5", color: "#047857", border: "1px solid #A7F3D0", borderRadius: 999, padding: "5px 13px", fontSize: 11.5, fontWeight: 800 },
+  lostPill: { background: "#F8FAFC", color: "#64748B", border: "1px solid #E2E8F0", borderRadius: 999, padding: "5px 13px", fontSize: 11.5, fontWeight: 700 },
+  moneyWrap: { display: "inline-flex", alignItems: "center", gap: 4, border: "1px solid #E2E8F0", borderRadius: 9, padding: "5px 10px", background: "#fff" },
+  moneyInput: { width: 90, border: 0, outline: "none", fontFamily: "inherit", fontSize: 13, fontWeight: 700, color: "#0F172A", background: "transparent" },
   contactTitle: { fontSize: 10, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#8B5CF6", marginBottom: 2 },
   contactRow: { display: "flex", gap: 10, fontSize: 12.5, color: "#334155", alignItems: "baseline", minWidth: 0 },
   contactKey: { flex: "none", width: 52, fontSize: 10.5, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: 0.4 },

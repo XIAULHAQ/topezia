@@ -44,14 +44,37 @@
     btn.style.display = mobile && open ? "none" : "flex";
   }
 
+  var DEFAULT_GRAD = "linear-gradient(135deg,#8B5CF6,#3B82F6)";
+  var grad = DEFAULT_GRAD;
+
   var btn = document.createElement("button");
   btn.setAttribute("aria-label", "Open chat");
   btn.innerHTML =
     '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M4 4h16v12H7l-3 3z"/></svg>';
   btn.style.cssText =
     "position:fixed;right:20px;bottom:20px;width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;" +
-    "background:linear-gradient(135deg,#8B5CF6,#3B82F6);box-shadow:0 8px 24px rgba(59,60,246,.35);" +
+    "background:" + grad + ";box-shadow:0 8px 24px rgba(59,60,246,.35);" +
     "display:flex;align-items:center;justify-content:center;z-index:2147483000;";
+
+  /**
+   * The launcher is painted before the iframe exists, so its colour comes
+   * from a tiny cached config call. Failure is not a problem: the default
+   * gradient is already on screen.
+   */
+  try {
+    fetch(origin + "/api/widget/" + encodeURIComponent(token) + "/config")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (cfg) {
+        if (!cfg || !cfg.accent || !/^#[0-9a-f]{6}$/i.test(cfg.accent)) return;
+        var n = parseInt(cfg.accent.slice(1), 16);
+        var sh = function (c) { return Math.max(0, Math.round(c * 0.72)); };
+        var hx = function (c) { return ("0" + c.toString(16)).slice(-2); };
+        var dark = "#" + hx(sh((n >> 16) & 255)) + hx(sh((n >> 8) & 255)) + hx(sh(n & 255));
+        grad = "linear-gradient(135deg," + cfg.accent + "," + dark + ")";
+        btn.style.background = grad;
+      })
+      .catch(function () {});
+  } catch (e) { /* no fetch, no colour — the chat still works */ }
 
   function toggle() {
     open = !open;

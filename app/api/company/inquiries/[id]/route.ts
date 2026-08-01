@@ -29,8 +29,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   try { body = (await req.json()) as Record<string, unknown>; }
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
+  // Two different edits share this route: the inbox state, and the deal
+  // outcome. Outcome is owner bookkeeping — it never touches status, and
+  // the sender is never told anything about it.
+  const hasOutcome = "outcome" in body;
   const requested = body.status;
-  if (requested !== "NEW" && requested !== "ARCHIVED" && requested !== "SPAM") {
+  if (!hasOutcome && requested !== "NEW" && requested !== "ARCHIVED" && requested !== "SPAM") {
     return NextResponse.json({ error: "status must be NEW, ARCHIVED or SPAM." }, { status: 400 });
   }
 
@@ -41,7 +45,29 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   });
   if (!inquiry) return NextResponse.json({ error: "That message no longer exists." }, { status: 404 });
 
-  const status = requested === "NEW" && inquiry.repliedAt ? "REPLIED" : requested;
+  if (hasOutcome) {
+    const outcome = body.outcome;
+    if (outcome !== null && outcome !== "WON" && outcome !== "LOST") {
+      return NextResponse.json({ error: "outcome must be WON, LOST or null." }, { status: 400 });
+    }
+    // Whole currency units, owner-typed. Nothing here is ever computed from
+    // the conversation — see migration 057.
+    const raw = body.dealValue;
+    const value =
+      outcome === "WON" && typeof raw === "number" && Number.isFinite(raw) && raw > 0
+        ? Math.min(Math.round(raw), 100_000_000)
+        : null;
+
+    const updated = await prisma.companyInquiry.update({
+      where: { id: inquiry.id },
+      data: { outcome, dealValue: value, outcomeAt: outcome ? new Date() : null },
+      select: { id: true, outcome: true, dealValue: true },
+    });
+    return NextResponse.json({ inquiry: updated });
+  }
+
+  const asked = requested as "NEW" | "ARCHIVED" | "SPAM";
+  const status = asked === "NEW" && inquiry.repliedAt ? "REPLIED" : asked;
 
   try {
     const updated = await prisma.companyInquiry.update({
