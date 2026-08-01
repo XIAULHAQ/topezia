@@ -32,7 +32,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   const inquiry = await prisma.companyInquiry.findFirst({
     where: { id: params.id, companyId },
     select: {
-      status: true, reason: true, message: true, answers: true, transcript: true,
+      status: true, reason: true, message: true, answers: true, transcript: true, brief: true,
       visitorName: true, visitorEmail: true,
       profile: { select: { fullName: true } },
       messages: { orderBy: { createdAt: "asc" }, select: { sender: true, body: true } },
@@ -51,6 +51,9 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     answers: Array.isArray(inquiry.answers) ? (inquiry.answers as DraftThread["answers"]) : [],
     transcript: Array.isArray(inquiry.transcript) ? (inquiry.transcript as DraftThread["transcript"]) : [],
     messages: inquiry.messages,
+    brief: inquiry.brief && typeof inquiry.brief === "object" && !Array.isArray(inquiry.brief)
+      ? (inquiry.brief as NonNullable<DraftThread["brief"]>)
+      : null,
   };
 
   try {

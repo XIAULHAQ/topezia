@@ -22,6 +22,9 @@ type Site = {
   limits: { pages: number; aiRepliesPerMonth: number };
 };
 
+type Fact = { id: string; question: string; answer: string; updatedAt: string };
+type Gap = { question: string; count: number };
+
 export default function WidgetClient() {
   const [gate, setGate] = useState<"auth" | "company" | null>(null);
   const [site, setSite] = useState<Site | null | undefined>(undefined); // undefined = loading
@@ -29,6 +32,13 @@ export default function WidgetClient() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Teach the bot
+  const [facts, setFacts] = useState<Fact[]>([]);
+  const [gaps, setGaps] = useState<Gap[]>([]);
+  const [teaching, setTeaching] = useState<{ id?: string; question: string; answer: string } | null>(null);
+  const [teachBusy, setTeachBusy] = useState(false);
+  const [teachError, setTeachError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/company/widget", { cache: "no-store" })
@@ -45,6 +55,43 @@ export default function WidgetClient() {
       })
       .catch(() => setError("Couldn't load the widget status."));
   }, []);
+
+  useEffect(() => { loadFacts(); }, []);
+
+  async function loadFacts() {
+    try {
+      const res = await fetch("/api/company/facts", { cache: "no-store" });
+      if (!res.ok) return;
+      const d = (await res.json()) as { facts: Fact[]; unanswered: Gap[] };
+      setFacts(d.facts ?? []);
+      setGaps(d.unanswered ?? []);
+    } catch { /* the section just stays empty */ }
+  }
+
+  async function saveTeach() {
+    if (!teaching || teachBusy || !teaching.question.trim() || !teaching.answer.trim()) return;
+    setTeachBusy(true); setTeachError(null);
+    try {
+      const res = await fetch("/api/company/facts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(teaching),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) { setTeachError(data.error ?? "Couldn't save that."); return; }
+      setTeaching(null);
+      await loadFacts();
+    } catch {
+      setTeachError("Couldn't save that.");
+    } finally {
+      setTeachBusy(false);
+    }
+  }
+
+  async function forgetFact(id: string) {
+    const res = await fetch(`/api/company/facts?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (res.ok) setFacts((cur) => cur.filter((f) => f.id !== id));
+  }
 
   async function scan() {
     if (busy) return;
@@ -158,6 +205,95 @@ export default function WidgetClient() {
                 {site.digestEnabled ? "Turn digest off" : "Turn digest on"}
               </button>
             </div>
+          </div>
+
+          {/* Teach the bot — owner-written answers outrank the crawl, and
+              survive re-scans. The gap list is what visitors actually asked
+              and didn't get an answer to. */}
+          <div style={{ ...ES.card, marginBottom: 18 }}>
+            <label style={ES.label}>Teach the bot</label>
+            <p style={{ ...ES.empty, margin: "0 0 14px" }}>
+              Anything your website doesn&apos;t spell out — pricing rules, what you don&apos;t do, shipping,
+              lead times. What you write here wins over your site&apos;s pages, and re-scanning never erases it.
+            </p>
+
+            {gaps.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: "#B45309", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+                  Asked, but your site had no answer
+                </span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {gaps.map((g) => (
+                    <div key={g.question} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "9px 12px" }}>
+                      <span style={{ flex: 1, minWidth: 180, fontSize: 12.8, color: "#334155", lineHeight: 1.5 }}>
+                        &ldquo;{g.question}&rdquo;{g.count > 1 && <span style={{ color: "#92400E", fontWeight: 700 }}> · asked {g.count}×</span>}
+                      </span>
+                      <button type="button" style={{ ...ES.btn, padding: "7px 14px", fontSize: 12 }}
+                        onClick={() => { setTeaching({ question: g.question, answer: "" }); setTeachError(null); }}>
+                        Answer this
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {teaching ? (
+              <div style={{ border: "1px solid #E0E7FF", borderRadius: 12, padding: 14, marginBottom: 14, background: "#FAFAFF" }}>
+                <label style={ES.label}>When someone asks…</label>
+                <input
+                  style={{ ...ES.input, marginBottom: 12 }}
+                  value={teaching.question}
+                  maxLength={200}
+                  placeholder="Do you ship to Canada?"
+                  onChange={(e) => setTeaching({ ...teaching, question: e.target.value })}
+                />
+                <label style={ES.label}>…say this</label>
+                <textarea
+                  style={{ ...ES.input, minHeight: 92, resize: "vertical", marginBottom: 12 }}
+                  value={teaching.answer}
+                  maxLength={900}
+                  placeholder="Yes — we ship anywhere in Canada and the US. Shipping is quoted at checkout and usually runs $18–$40."
+                  onChange={(e) => setTeaching({ ...teaching, answer: e.target.value })}
+                />
+                {teachError && <p style={ES.error}>{teachError}</p>}
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button type="button" style={ES.btn} disabled={teachBusy || !teaching.question.trim() || !teaching.answer.trim()} onClick={saveTeach}>
+                    {teachBusy ? "Saving…" : "Save answer"}
+                  </button>
+                  <button type="button" style={ES.btnGhost} onClick={() => { setTeaching(null); setTeachError(null); }}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" style={{ ...ES.btnGhost, marginBottom: facts.length ? 14 : 0 }}
+                onClick={() => { setTeaching({ question: "", answer: "" }); setTeachError(null); }}>
+                + Teach an answer
+              </button>
+            )}
+
+            {facts.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  What you&apos;ve taught it ({facts.length})
+                </span>
+                {facts.map((f) => (
+                  <div key={f.id} style={{ border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px 13px" }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                      <b style={{ flex: 1, minWidth: 160, fontSize: 12.8, color: "#0F172A" }}>{f.question}</b>
+                      <button type="button" style={{ border: 0, background: "none", color: "#4F46E5", fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+                        onClick={() => { setTeaching({ id: f.id, question: f.question, answer: f.answer }); setTeachError(null); }}>
+                        Edit
+                      </button>
+                      <button type="button" style={{ border: 0, background: "none", color: "#B91C1C", fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+                        onClick={() => forgetFact(f.id)}>
+                        Forget
+                      </button>
+                    </div>
+                    <p style={{ margin: "5px 0 0", fontSize: 12.5, color: "#475569", lineHeight: 1.6 }}>{f.answer}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div style={{ ...ES.card, marginBottom: 18 }}>

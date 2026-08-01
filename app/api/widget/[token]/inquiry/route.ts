@@ -20,6 +20,7 @@ import { userEmail } from "@/lib/company/owner";
 import { sendEmail } from "@/lib/alerts/send";
 import { INQUIRY_LIMITS, INQUIRY_FROM, renderNewInquiryEmail } from "@/lib/company/inquiries";
 import type { ChatTurn } from "@/lib/widget/answer";
+import { buildBrief } from "@/lib/widget/intake";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -81,6 +82,10 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     );
   }
 
+  // Concierge intake: read the chat once and hand the owner a brief. Best
+  // effort — a null brief just means the lead looks like it always did.
+  const brief = await buildBrief(site.company.name, transcript, message, { name: name || null, email });
+
   let inquiry;
   try {
     inquiry = await prisma.companyInquiry.create({
@@ -92,6 +97,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
         visitorPhone: phone,
         threadToken: randomBytes(24).toString("base64url"),
         transcript: transcript.length ? transcript : undefined,
+        brief: brief ?? undefined,
         message,
       },
       select: { id: true, threadToken: true },
@@ -107,11 +113,24 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
   try {
     const to = await userEmail(site.company.ownerUserId);
     if (to) {
+      // The brief goes in the email too — the owner often decides whether
+      // to act from their phone, before they ever open the inbox.
+      const briefLines = brief
+        ? [
+            ``,
+            `— What they're after —`,
+            brief.summary,
+            ...(brief.wants.length ? [`Wants: ${brief.wants.join(", ")}`] : []),
+            ...(brief.budget ? [`Budget: ${brief.budget}`] : []),
+            ...(brief.timeline ? [`Timing: ${brief.timeline}`] : []),
+            ...(brief.openQuestions.length ? [`Still to ask: ${brief.openQuestions.join(" · ")}`] : []),
+          ].join("\n")
+        : "";
       const { subject, html } = renderNewInquiryEmail({
         companyName: site.company.name,
         senderName: name || email,
         reason: "Website chat",
-        message: `${message}\n\nReach them: ${email}${phone ? ` · ${phone}` : ""}`,
+        message: `${message}\n${briefLines}\n\nReach them: ${email}${phone ? ` · ${phone}` : ""}`,
       });
       await sendEmail({ to, subject, html, from: INQUIRY_FROM });
       emailed = true;

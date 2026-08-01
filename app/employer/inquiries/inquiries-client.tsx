@@ -35,6 +35,7 @@ type Inquiry = {
   visitorName: string | null;
   visitorPhone: string | null;
   transcript: { role: "visitor" | "bot"; text: string }[] | null;
+  brief: Brief | null;
   profile: {
     fullName: string | null;
     publicSlug: string | null;
@@ -43,6 +44,13 @@ type Inquiry = {
     openToWork: boolean;
   } | null;
   messages: Msg[];
+};
+type Brief = {
+  summary: string;
+  wants: string[];
+  budget: string | null;
+  timeline: string | null;
+  openQuestions: string[];
 };
 type Config = { contactEnabled: boolean; contactReasons: string[]; contactQuestions: string[] };
 type Suggested = { reasons: string[]; questions: string[] };
@@ -93,6 +101,12 @@ export default function InquiriesClient() {
   const [sending, setSending] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+
+  // Teach-the-bot from a transcript bubble: which bot line is being fixed,
+  // and what the owner wants said instead.
+  const [fixIdx, setFixIdx] = useState<number | null>(null);
+  const [fixText, setFixText] = useState("");
+  const [fixState, setFixState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   const [confDraft, setConfDraft] = useState<Config | null>(null);
   const [saving, setSaving] = useState(false);
@@ -184,6 +198,28 @@ export default function InquiriesClient() {
       setSendError("Couldn't send that.");
     } finally {
       setSending(false);
+    }
+  }
+
+  /**
+   * Teach the bot a better answer for a question it fumbled. The question
+   * is the visitor's line immediately before the bot's — that's what the
+   * bot was actually answering.
+   */
+  async function teachFix(question: string) {
+    if (!fixText.trim() || fixState === "saving") return;
+    setFixState("saving");
+    try {
+      const res = await fetch("/api/company/facts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, answer: fixText }),
+      });
+      if (!res.ok) { setFixState("error"); return; }
+      setFixState("saved");
+      setTimeout(() => { setFixIdx(null); setFixText(""); setFixState("idle"); }, 1400);
+    } catch {
+      setFixState("error");
     }
   }
 
@@ -419,11 +455,51 @@ export default function InquiriesClient() {
                       {(active.transcript?.length ?? 0) > 0 && (
                         <>
                           <span style={S.sysPill}>Chat with the AI assistant, before they left this message</span>
-                          {active.transcript!.map((t, i) => (
-                            <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: t.role === "visitor" ? "flex-end" : "flex-start", gap: 4 }}>
-                              <span style={{ ...S.bubble, ...(t.role === "visitor" ? S.bubbleDimOut : S.bubbleDimIn) }}>{t.text}</span>
-                            </div>
-                          ))}
+                          {active.transcript!.map((t, i) => {
+                            // What the bot was answering: the visitor line
+                            // right before it. Without one there's nothing
+                            // to teach, so no Fix affordance.
+                            const asked = t.role === "bot" ? active.transcript!.slice(0, i).reverse().find((p) => p.role === "visitor")?.text : undefined;
+                            const fixing = fixIdx === i;
+                            return (
+                              <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: t.role === "visitor" ? "flex-end" : "flex-start", gap: 4, alignSelf: "stretch" }}>
+                                <span style={{ ...S.bubble, ...(t.role === "visitor" ? S.bubbleDimOut : S.bubbleDimIn), alignSelf: t.role === "visitor" ? "flex-end" : "flex-start" }}>{t.text}</span>
+                                {asked && !fixing && (
+                                  <button type="button" style={S.fixLink}
+                                    onClick={() => { setFixIdx(i); setFixText(""); setFixState("idle"); }}>
+                                    Fix this answer
+                                  </button>
+                                )}
+                                {asked && fixing && (
+                                  <div style={S.fixBox}>
+                                    <span style={S.fixHead}>They asked: &ldquo;{asked.slice(0, 120)}&rdquo;</span>
+                                    <textarea
+                                      autoFocus
+                                      rows={3}
+                                      value={fixText}
+                                      maxLength={900}
+                                      placeholder="What should it have said? The bot will use this from now on."
+                                      onChange={(e) => setFixText(e.target.value)}
+                                      style={S.fixInput}
+                                    />
+                                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+                                      <button type="button" style={{ ...ES.btn, padding: "7px 14px", fontSize: 12 }}
+                                        disabled={!fixText.trim() || fixState === "saving"}
+                                        onClick={() => teachFix(asked)}>
+                                        {fixState === "saving" ? "Teaching…" : fixState === "saved" ? "Learned ✓" : "Teach the bot"}
+                                      </button>
+                                      <button type="button" style={{ ...ES.btnGhost, padding: "7px 14px", fontSize: 12 }}
+                                        onClick={() => { setFixIdx(null); setFixText(""); setFixState("idle"); }}>
+                                        Cancel
+                                      </button>
+                                      {fixState === "error" && <span style={{ fontSize: 11.5, color: "#B91C1C" }}>Couldn&apos;t save that.</span>}
+                                      {fixState === "saved" && <span style={{ fontSize: 11.5, color: "#047857" }}>It&apos;ll answer this way from now on.</span>}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                           <span style={S.sysPill}>They left their message ↓</span>
                         </>
                       )}
@@ -432,6 +508,33 @@ export default function InquiriesClient() {
                           conversation where they gave it, not hidden in a
                           header. FORM senders link to their Topezia profile
                           instead of an email: members are reached here. */}
+                      {/* What the chat established about the job. Only ever
+                          shows what they actually said — a missing budget
+                          line means they never gave one. */}
+                      {active.brief && (
+                        <div style={S.briefCard}>
+                          <span style={S.briefTitle}>The brief</span>
+                          <span style={{ fontSize: 13.4, color: "#0F172A", lineHeight: 1.6, fontWeight: 600 }}>{active.brief.summary}</span>
+                          {active.brief.wants.length > 0 && (
+                            <span style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
+                              {active.brief.wants.map((w) => <span key={w} style={S.wantChip}>{w}</span>)}
+                            </span>
+                          )}
+                          <span style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 2 }}>
+                            <span style={S.briefStat}><b style={S.briefKey}>Budget</b>{active.brief.budget ?? <i style={S.notSaid}>not said</i>}</span>
+                            <span style={S.briefStat}><b style={S.briefKey}>Timing</b>{active.brief.timeline ?? <i style={S.notSaid}>not said</i>}</span>
+                          </span>
+                          {active.brief.openQuestions.length > 0 && (
+                            <span style={{ display: "block", marginTop: 4 }}>
+                              <b style={{ ...S.briefKey, display: "block", marginBottom: 4 }}>Still to ask</b>
+                              {active.brief.openQuestions.map((q) => (
+                                <span key={q} style={{ display: "block", fontSize: 12.5, color: "#475569", lineHeight: 1.6 }}>· {q}</span>
+                              ))}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
                       <div style={S.contactCard}>
                         <span style={S.contactTitle}>Their details</span>
                         <span style={S.contactRow}><b style={S.contactKey}>Name</b>{name}</span>
@@ -576,6 +679,16 @@ const S: Record<string, CSSProperties> = {
   dayLabel: { fontSize: 10.5, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase" },
   sysPill: { alignSelf: "center", background: "#EEF2FF", color: "#4F46E5", border: "1px solid #E0E7FF", borderRadius: 999, padding: "5px 14px", fontSize: 11, fontWeight: 600, textAlign: "center" },
   contactCard: { alignSelf: "stretch", background: "#fff", border: "1px solid #E0E7FF", borderLeft: "3px solid #8B5CF6", borderRadius: 12, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6, boxShadow: "0 2px 8px rgba(15,23,42,.04)" },
+  briefCard: { alignSelf: "stretch", background: "linear-gradient(180deg,#FFFBEB,#fff)", border: "1px solid #FDE68A", borderLeft: "3px solid #F59E0B", borderRadius: 12, padding: "13px 16px", display: "flex", flexDirection: "column", gap: 7, boxShadow: "0 2px 8px rgba(15,23,42,.04)" },
+  briefTitle: { fontSize: 10, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#B45309" },
+  briefKey: { fontSize: 10.5, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: 0.4, marginRight: 8 },
+  briefStat: { fontSize: 12.8, color: "#334155" },
+  notSaid: { color: "#B9C2CF", fontStyle: "italic" },
+  wantChip: { background: "#fff", border: "1px solid #FDE68A", borderRadius: 999, padding: "3px 10px", fontSize: 11.5, color: "#92400E", fontWeight: 600 },
+  fixLink: { alignSelf: "flex-start", border: 0, background: "none", padding: "0 4px", fontSize: 11, fontWeight: 600, color: "#8B5CF6", cursor: "pointer", fontFamily: "inherit" },
+  fixBox: { alignSelf: "stretch", background: "#fff", border: "1px solid #E0E7FF", borderRadius: 12, padding: "12px 14px", marginTop: 2 },
+  fixHead: { display: "block", fontSize: 11.5, color: "#64748B", marginBottom: 8 },
+  fixInput: { width: "100%", border: "1px solid #E2E8F0", borderRadius: 10, padding: "9px 11px", outline: "none", resize: "vertical", fontFamily: "inherit", fontSize: 12.8, lineHeight: 1.6, color: "#0F172A", boxSizing: "border-box" },
   contactTitle: { fontSize: 10, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#8B5CF6", marginBottom: 2 },
   contactRow: { display: "flex", gap: 10, fontSize: 12.5, color: "#334155", alignItems: "baseline", minWidth: 0 },
   contactKey: { flex: "none", width: 52, fontSize: 10.5, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: 0.4 },

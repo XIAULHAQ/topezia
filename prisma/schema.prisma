@@ -1183,8 +1183,29 @@ model WidgetSite {
   chunks       SiteChunk[]
   products     SiteProduct[]
   questions    WidgetQuestion[]
+  facts        SiteFact[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// Answers the OWNER wrote — "teach the bot". Retrieved alongside the crawl
+// and given priority over it, because a human correcting the assistant
+// outranks whatever the page said.
+//
+// NOT A CACHE. SiteChunk/SiteProduct are wiped on every crawl; this table
+// must survive them, or "correct it once" becomes "correct it every scan".
+model SiteFact {
+  id        String     @id @default(uuid())
+  siteId    String
+  site      WidgetSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  question  String
+  answer    String
+  // vector(1024) of question+answer, written via raw SQL like SiteChunk:
+  // embedding Unsupported("vector(1024)")?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @default(now())
+
+  @@index([siteId])
 }
 
 // Rolling log of what visitors asked the AI — feeds the weekly digest and
@@ -1265,6 +1286,10 @@ model CompanyInquiry {
   visitorPhone String?
   threadToken  String? @unique
   transcript   Json?
+  // Concierge intake: what the chat established about the job, extracted at
+  // submission — { summary, wants, budget, timeline, openQuestions }. Every
+  // field is null unless the visitor actually said it.
+  brief        Json?
 
   // One of Company.contactReasons at submit time; null when the company
   // configured no reasons.

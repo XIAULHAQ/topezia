@@ -24,6 +24,14 @@ export type DraftThread = {
   answers: { question: string; answer: string }[];
   transcript: { role: "visitor" | "bot"; text: string }[];
   messages: { sender: "COMPANY" | "CANDIDATE"; body: string }[];
+  /** Concierge brief, when the chat produced one (lib/widget/intake.ts). */
+  brief?: {
+    summary: string;
+    wants: string[];
+    budget: string | null;
+    timeline: string | null;
+    openQuestions: string[];
+  } | null;
 };
 
 /** How much of each piece rides into the prompt — the thread cap (60
@@ -74,7 +82,21 @@ export async function draftReply(
     }
   }
 
+  const b = thread.brief;
+  const briefBlock = b
+    ? [
+        `<brief>`,
+        b.summary,
+        ...(b.wants.length ? [`Wants: ${b.wants.join(", ")}`] : []),
+        ...(b.budget ? [`Budget they gave: ${b.budget}`] : []),
+        ...(b.timeline ? [`Timing they gave: ${b.timeline}`] : []),
+        ...(b.openQuestions.length ? [`Not yet established: ${b.openQuestions.join(" · ")}`] : []),
+        `</brief>`,
+      ].join("\n")
+    : "";
+
   const user = [
+    briefBlock,
     `<conversation>`,
     ...lines,
     `</conversation>`,
