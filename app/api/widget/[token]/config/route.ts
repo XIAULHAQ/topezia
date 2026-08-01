@@ -10,17 +10,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeAccent } from "@/lib/widget/presence";
+import { planFor } from "@/lib/billing/plans";
 
 export const runtime = "nodejs";
 
 export async function GET(_req: Request, { params }: { params: { token: string } }) {
   const site = await prisma.widgetSite.findUnique({
     where: { siteToken: params.token },
-    select: { enabled: true, accentColor: true },
+    select: { enabled: true, accentColor: true, company: { select: { plan: true } } },
   });
 
   const body = site?.enabled
-    ? { enabled: true, accent: normalizeAccent(site.accentColor) }
+    ? { enabled: true, accent: planFor(site.company).theming ? normalizeAccent(site.accentColor) : null }
     : { enabled: false, accent: null };
 
   return NextResponse.json(body, {

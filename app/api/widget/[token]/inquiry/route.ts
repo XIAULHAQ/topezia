@@ -21,6 +21,7 @@ import { sendEmail } from "@/lib/alerts/send";
 import { INQUIRY_LIMITS, INQUIRY_FROM, renderNewInquiryEmail } from "@/lib/company/inquiries";
 import type { ChatTurn } from "@/lib/widget/answer";
 import { buildBrief } from "@/lib/widget/intake";
+import { planFor } from "@/lib/billing/plans";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
 
   const site = await prisma.widgetSite.findUnique({
     where: { siteToken: params.token },
-    select: { id: true, enabled: true, company: { select: { id: true, name: true, ownerUserId: true } } },
+    select: { id: true, enabled: true, company: { select: { id: true, name: true, ownerUserId: true, plan: true } } },
   });
   if (!site || !site.enabled) {
     return NextResponse.json({ error: "This widget is turned off." }, { status: 404 });
@@ -82,9 +83,12 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     );
   }
 
-  // Concierge intake: read the chat once and hand the owner a brief. Best
-  // effort — a null brief just means the lead looks like it always did.
-  const brief = await buildBrief(site.company.name, transcript, message, { name: name || null, email });
+  // Concierge intake: read the chat once and hand the owner a brief. Paid
+  // (a model call per lead) and best effort — without it the lead is
+  // delivered exactly as it always was. THE LEAD ITSELF IS NEVER GATED.
+  const brief = planFor(site.company).aiAssist
+    ? await buildBrief(site.company.name, transcript, message, { name: name || null, email })
+    : null;
 
   let inquiry;
   try {

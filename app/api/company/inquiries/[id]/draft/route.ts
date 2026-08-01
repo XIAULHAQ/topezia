@@ -13,6 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { requireCompanyOwner } from "@/lib/company/owner";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 import { draftReply, type DraftThread } from "@/lib/widget/draft";
+import { planFor } from "@/lib/billing/plans";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,14 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
   if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json({ error: "Drafting isn't available right now." }, { status: 503 });
+  }
+  // A drafted reply is a model call per press — it carries the plan.
+  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { plan: true } });
+  if (!planFor(company).aiAssist) {
+    return NextResponse.json(
+      { error: "Drafting replies is part of Pro.", upgrade: true },
+      { status: 402 }
+    );
   }
   if (!rateLimit(`inquiry-draft:${userId}`, 30, 60 * 60 * 1000)) {
     return NextResponse.json(RATE_LIMITED, { status: 429 });

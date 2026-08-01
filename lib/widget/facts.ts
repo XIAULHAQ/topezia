@@ -14,13 +14,21 @@
  */
 import { prisma } from "@/lib/prisma";
 import { embedText } from "@/lib/ingestion/embed";
+import { planFor } from "@/lib/billing/plans";
 
 export const FACT_LIMITS = {
   question: 200,
   answer: 900,
-  /** Free-tier ceiling. Generous — this is owner effort, not our compute. */
-  perSite: 100,
 };
+
+/** How many answers this site's plan allows. */
+export async function factCap(siteId: string): Promise<number> {
+  const site = await prisma.widgetSite.findUnique({
+    where: { id: siteId },
+    select: { company: { select: { plan: true } } },
+  });
+  return planFor(site?.company).facts;
+}
 
 export type Fact = { id: string; question: string; answer: string; updatedAt: Date };
 
@@ -49,7 +57,7 @@ export async function saveFact(
       select: { id: true, question: true, answer: true, updatedAt: true },
     });
   } else {
-    if ((await prisma.siteFact.count({ where: { siteId } })) >= FACT_LIMITS.perSite) return null;
+    if ((await prisma.siteFact.count({ where: { siteId } })) >= (await factCap(siteId))) return null;
     fact = await prisma.siteFact.create({
       data: { siteId, question, answer },
       select: { id: true, question: true, answer: true, updatedAt: true },

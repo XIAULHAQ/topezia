@@ -5,18 +5,28 @@
  *  - Stripe-HOSTED Checkout and Billing Portal, reached by redirect. No
  *    stripe.js on our pages, so the enforced CSP needs no new script hosts
  *    and no card data ever crosses our origin.
- *  - Everything is gated on billingConfigured(): until STRIPE_SECRET_KEY,
- *    STRIPE_WEBHOOK_SECRET and STRIPE_PREMIUM_PRICE_ID are all set, the
- *    pricing page keeps its honest "Not on sale yet" and the endpoints 503.
- *    A partial config (key but no webhook secret) stays OFF — selling
- *    without the webhook would take money and never flip the tier.
+ *  - Everything is gated on billingConfigured(): until STRIPE_SECRET_KEY and
+ *    STRIPE_WEBHOOK_SECRET are both set, every pricing page keeps its honest
+ *    "not on sale yet" and the endpoints 503. A partial config (key but no
+ *    webhook secret) stays OFF — selling without the webhook would take
+ *    money and never grant anything.
+ *  - Each SELLABLE THING then needs its own price ID on top: member Premium
+ *    needs STRIPE_PREMIUM_PRICE_ID, business plans need theirs (see
+ *    lib/billing/plans.ts). A missing price means that one product isn't for
+ *    sale; it never disables the others.
  *  - The webhook is the ONLY writer of tier/premiumUntil. Checkout success
  *    redirects are a UI signal, never proof of payment.
  */
 import Stripe from "stripe";
 
+/** The rail itself: a key to call Stripe with, a secret to trust it back. */
 export function billingConfigured(): boolean {
-  return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET && process.env.STRIPE_PREMIUM_PRICE_ID);
+  return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
+}
+
+/** The member Premium product specifically. */
+export function premiumConfigured(): boolean {
+  return billingConfigured() && Boolean(process.env.STRIPE_PREMIUM_PRICE_ID);
 }
 
 let client: Stripe | null = null;
@@ -66,7 +76,7 @@ const PRICE_TTL_MS = 10 * 60 * 1000;
 /** The live Premium price, or null when billing is off or Stripe is unreachable. */
 export async function getPremiumPrice(): Promise<PremiumPrice | null> {
   const stripe = getStripe();
-  if (!stripe) return null;
+  if (!stripe || !premiumConfigured()) return null;
   if (priceCache && Date.now() - priceCache.at < PRICE_TTL_MS) return priceCache.data;
   try {
     const price = await stripe.prices.retrieve(PREMIUM_PRICE_ID());
@@ -82,3 +92,44 @@ export async function getPremiumPrice(): Promise<PremiumPrice | null> {
     return null;
   }
 }
+
+/**
+ * Live amounts for several prices at once — what the business pricing page
+ * shows. Same rule as Premium: the number on the page comes FROM Stripe, so
+ * changing what you charge is a Dashboard edit, never a deploy. Prices that
+ * don't resolve are simply absent from the map, and the page says that plan
+ * isn't on sale rather than inventing a figure.
+ */
+const multiCache = new Map<string, { at: number; data: PremiumPrice | null }>();
+
+export async function getPrices(priceIds: string[]): Promise<Record<string, PremiumPrice>> {
+  const stripe = getStripe();
+  const out: Record<string, PremiumPrice> = {};
+  if (!stripe) return out;
+
+  await Promise.all(
+    priceIds.map(async (id) => {
+      const hit = multiCache.get(id);
+      if (hit && Date.now() - hit.at < PRICE_TTL_MS) {
+        if (hit.data) out[id] = hit.data;
+        return;
+      }
+      try {
+        const price = await stripe.prices.retrieve(id);
+        const data: PremiumPrice | null =
+          price.active && price.unit_amount != null && price.recurring
+            ? { amount: price.unit_amount, currency: price.currency, interval: price.recurring.interval }
+            : null;
+        multiCache.set(id, { at: Date.now(), data });
+        if (data) out[id] = data;
+      } catch (err) {
+        console.error("[billing] price lookup failed:", id, err instanceof Error ? err.message : err);
+        multiCache.set(id, { at: Date.now(), data: null });
+      }
+    })
+  );
+  return out;
+}
+
+/** Tags business-plan checkouts separately from member Premium in Stripe. */
+export const BUSINESS_INTEGRATION_ID = "topezia-business-r7wtqx3m";

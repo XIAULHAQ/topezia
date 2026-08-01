@@ -39,6 +39,7 @@ const NAV: { icon: string; label: string; href: string }[] = [
   { icon: "briefcase", label: "Clients", href: "/employer/clients" },
   { icon: "doc", label: "Articles", href: "/employer/articles" },
   { icon: "user", label: "Team", href: "/employer/team" },
+  { icon: "coins", label: "Plan", href: "/employer/billing" },
 ];
 
 export default function EmployerShell({ children }: { children: ReactNode }) {

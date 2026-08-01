@@ -1,5 +1,6 @@
 /**
- * POST /api/billing/webhook — Stripe events; the ONLY writer of Profile.tier.
+ * POST /api/billing/webhook — Stripe events; the ONLY writer of Profile.tier
+ * AND Company.plan.
  *
  * The signature is the entire authentication: constructEvent verifies the
  * HMAC over the RAW body against STRIPE_WEBHOOK_SECRET, so a forged POST
@@ -11,15 +12,52 @@
  *   anything else (canceled, unpaid, paused, expired) → FREE
  * A member who cancels keeps PREMIUM until Stripe ends the period, because
  * Stripe keeps the subscription active until then — no logic needed here.
+ *
+ * Business plans follow the same shape one level up. Which one a
+ * subscription is comes from its own metadata (set at checkout, carried on
+ * every later event), and WHICH plan comes from the price it actually
+ * carries — so a company that switches Pro to Studio inside Stripe's portal
+ * lands on Studio here without us being told separately.
  */
 import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { getStripe } from "@/lib/billing/stripe";
+import { planForPriceId } from "@/lib/billing/plans";
 
 export const runtime = "nodejs"; // signature check uses node crypto
 
 async function applySubscription(sub: Stripe.Subscription): Promise<void> {
+  if (sub.metadata?.topezia_kind === "company") return applyCompanySubscription(sub);
+  return applyMemberSubscription(sub);
+}
+
+async function applyCompanySubscription(sub: Stripe.Subscription): Promise<void> {
+  const companyId = sub.metadata?.companyId;
+  if (!companyId) throw new Error(`company subscription ${sub.id} has no companyId`);
+
+  const live = sub.status === "active" || sub.status === "trialing";
+  const periodEnd = sub.items.data[0]?.current_period_end ?? null;
+  // The PRICE decides the plan — metadata could be stale after a switch.
+  const priceId = sub.items.data[0]?.price?.id ?? null;
+  const plan = live ? planForPriceId(priceId) : null;
+  if (live && !plan) {
+    // An active subscription on a price we don't recognise: leave the plan
+    // alone and shout. Downgrading a paying customer because an env var is
+    // missing would be the worst possible guess.
+    console.error(`[billing] company sub ${sub.id} on unknown price ${priceId} — plan left unchanged`);
+    return;
+  }
+
+  await prisma.company.updateMany({
+    where: { id: companyId },
+    data: plan
+      ? { plan, planUntil: periodEnd ? new Date(periodEnd * 1000) : null }
+      : { plan: "FREE", planUntil: null },
+  });
+}
+
+async function applyMemberSubscription(sub: Stripe.Subscription): Promise<void> {
   // We always create and pass a v1 Customer, so `customer` is what comes back.
   // `customer_account` is the v2-accounts shape Stripe uses when Checkout mints
   // the buyer itself; falling back to it costs nothing and the failure it

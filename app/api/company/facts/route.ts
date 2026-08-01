@@ -12,7 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { requireCompanyOwner } from "@/lib/company/owner";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 import { scoreUgc, isSpam, spamMessage } from "@/lib/ugc";
-import { saveFact, listFacts, deleteFact, unansweredQuestions, FACT_LIMITS } from "@/lib/widget/facts";
+import { saveFact, listFacts, deleteFact, unansweredQuestions, factCap, FACT_LIMITS } from "@/lib/widget/facts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,10 +26,10 @@ export async function GET() {
   if (!auth.ok) return auth.response;
 
   const site = await siteFor(auth.owner.companyId);
-  if (!site) return NextResponse.json({ facts: [], unanswered: [], limits: FACT_LIMITS });
+  if (!site) return NextResponse.json({ facts: [], unanswered: [], limits: { ...FACT_LIMITS, perSite: 0 } });
 
-  const [facts, unanswered] = await Promise.all([listFacts(site.id), unansweredQuestions(site.id)]);
-  return NextResponse.json({ facts, unanswered, limits: FACT_LIMITS });
+  const [facts, unanswered, perSite] = await Promise.all([listFacts(site.id), unansweredQuestions(site.id), factCap(site.id)]);
+  return NextResponse.json({ facts, unanswered, limits: { ...FACT_LIMITS, perSite } });
 }
 
 export async function POST(req: NextRequest) {
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
   });
   if (!fact) {
     return NextResponse.json(
-      { error: `You can teach up to ${FACT_LIMITS.perSite} answers. Delete one to add another.` },
+      { error: `You can teach up to ${await factCap(site.id)} answers on your plan. Delete one, or upgrade for more.`, upgrade: true },
       { status: 409 }
     );
   }

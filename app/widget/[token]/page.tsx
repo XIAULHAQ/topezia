@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { companyLogoUrl } from "@/lib/company/storage";
 import { replyTimePhrase, parseReplyHours, officeState, normalizeAccent } from "@/lib/widget/presence";
+import { planFor } from "@/lib/billing/plans";
 import WidgetChat from "./widget-chat";
 
 /**
@@ -40,7 +41,7 @@ export default async function WidgetPage({
     select: {
       id: true, domain: true, enabled: true, branded: true, pagesCrawled: true,
       accentColor: true, replyHours: true,
-      company: { select: { id: true, name: true, logoPath: true } },
+      company: { select: { id: true, name: true, logoPath: true, plan: true } },
     },
   });
 
@@ -91,16 +92,20 @@ export default async function WidgetPage({
   ]);
   const office = officeState(hours);
 
+  // Branding and theming follow the plan. The `branded` column stays as a
+  // per-site override for anyone we comp; the plan is what normally decides.
+  const plan = planFor(site.company);
+
   return (
     <WidgetChat
       token={params.token}
       companyName={site.company.name}
       logoUrl={companyLogoUrl(site.company.logoPath)}
       ready={site.pagesCrawled > 0}
-      branded={site.branded}
+      branded={plan.branded && site.branded}
       greeting={greeting}
       pageUrl={pageUrl}
-      accent={normalizeAccent(site.accentColor)}
+      accent={plan.theming ? normalizeAccent(site.accentColor) : null}
       replyTime={replyTime}
       offlineUntil={office && !office.open ? office.backAt || null : null}
       offline={Boolean(office && !office.open)}

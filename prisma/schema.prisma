@@ -1080,6 +1080,17 @@ model Company {
   ownerUserId String  @unique
   name        String
   slug        String  @unique // public page at /company/{slug}
+
+  // Billing lives on the COMPANY, not the owner: an owner handover must not
+  // cancel the plan. "FREE" | "PRO" | "STUDIO" — TEXT so a new tier is a code
+  // change, not a type migration. The Stripe webhook is the only writer of
+  // plan/planUntil, same rule as Profile.tier. See lib/billing/plans.ts.
+  plan             String    @default("FREE")
+  planUntil        DateTime?
+  stripeCustomerId String?   @unique
+  // Pooled monthly AI allowance for multi-site plans (see lib/widget/caps.ts).
+  aiMonthKey       String    @default("")
+  aiRepliesUsed    Int       @default(0)
   tagline     String?
   about       String?
   website     String?

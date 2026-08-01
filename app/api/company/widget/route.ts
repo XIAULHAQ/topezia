@@ -14,12 +14,15 @@ import { prisma } from "@/lib/prisma";
 import { requireCompanyOwner } from "@/lib/company/owner";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 import { normalizeDomain, crawlSite } from "@/lib/widget/crawl";
-import { usageThisMonth, FREE_LIMITS } from "@/lib/widget/caps";
+import { usageThisMonth } from "@/lib/widget/caps";
 import { normalizeAccent, parseReplyHours } from "@/lib/widget/presence";
+import { planFor } from "@/lib/billing/plans";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
+
+const PLAN_SELECT = { plan: true, aiMonthKey: true, aiRepliesUsed: true } as const;
 
 const SITE_SELECT = {
   id: true, domain: true, siteToken: true, enabled: true, branded: true,
@@ -28,10 +31,14 @@ const SITE_SELECT = {
   monthKey: true, messagesUsed: true,
 } as const;
 
-async function view(site: { monthKey: string; messagesUsed: number } & Record<string, unknown>) {
-  const usage = await usageThisMonth(site);
+async function view(
+  site: { monthKey: string; messagesUsed: number } & Record<string, unknown>,
+  company: { plan: string; aiMonthKey: string; aiRepliesUsed: number } | null
+) {
+  const usage = await usageThisMonth(site, company);
+  const plan = planFor(company);
   const { monthKey: _mk, messagesUsed: _mu, ...rest } = site;
-  return { ...rest, usage, limits: FREE_LIMITS };
+  return { ...rest, usage, limits: plan, plan: plan.id };
 }
 
 /**
@@ -56,11 +63,12 @@ export async function GET() {
   const auth = await requireCompanyOwner();
   if (!auth.ok) return auth.response;
 
-  const [site, stats] = await Promise.all([
+  const [site, stats, company] = await Promise.all([
     prisma.widgetSite.findUnique({ where: { companyId: auth.owner.companyId }, select: SITE_SELECT }),
     attribution(auth.owner.companyId),
+    prisma.company.findUnique({ where: { id: auth.owner.companyId }, select: PLAN_SELECT }),
   ]);
-  return NextResponse.json({ site: site ? await view(site) : null, stats });
+  return NextResponse.json({ site: site ? await view(site, company) : null, stats, plan: planFor(company).id });
 }
 
 export async function POST(req: NextRequest) {
@@ -92,10 +100,11 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
 
-  const crawl = await crawlSite(site.id, norm.host);
+  const company = await prisma.company.findUnique({ where: { id: companyId }, select: PLAN_SELECT });
+  const crawl = await crawlSite(site.id, norm.host, planFor(company).pages);
 
   const fresh = await prisma.widgetSite.findUnique({ where: { id: site.id }, select: SITE_SELECT });
-  return NextResponse.json({ site: fresh ? await view(fresh) : null, crawl });
+  return NextResponse.json({ site: fresh ? await view(fresh, company) : null, crawl });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -111,6 +120,10 @@ export async function PATCH(req: NextRequest) {
   if (typeof body.enabled === "boolean") data.enabled = body.enabled;
   if (typeof body.digestEnabled === "boolean") data.digestEnabled = body.digestEnabled;
   if ("accentColor" in body) {
+    const company = await prisma.company.findUnique({ where: { id: auth.owner.companyId }, select: { plan: true } });
+    if (!planFor(company).theming) {
+      return NextResponse.json({ error: "Custom colours are part of Pro.", upgrade: true }, { status: 402 });
+    }
     // Null clears it back to Topezia's gradient; anything that isn't a hex
     // colour is refused rather than quietly coerced into one.
     if (body.accentColor === null) data.accentColor = null;

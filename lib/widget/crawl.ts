@@ -93,7 +93,7 @@ const sameHost = (url: string, host: string) => {
 };
 
 /** Sitemap <loc> entries on this host, else a shallow BFS from the homepage. */
-async function discoverUrls(host: string): Promise<string[]> {
+async function discoverUrls(host: string, maxPages: number): Promise<string[]> {
   const base = `https://${host}`;
   const seen = new Set<string>([base, `${base}/`]);
   const keep = (u: string) =>
@@ -113,12 +113,12 @@ async function discoverUrls(host: string): Promise<string[]> {
     // A sitemap index points at more sitemaps; follow one level of those.
     const pages: string[] = [];
     for (const loc of locs) {
-      if (pages.length >= FREE_LIMITS.pages) break;
+      if (pages.length >= maxPages) break;
       if (/sitemap[^/]*\.xml(\?|$)/i.test(loc)) {
         const child = await fetchPage(loc);
         if (child) {
           for (const m of child.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)) {
-            if (pages.length >= FREE_LIMITS.pages) break;
+            if (pages.length >= maxPages) break;
             const u = m[1].trim();
             if (keep(u)) pages.push(u);
           }
@@ -127,7 +127,7 @@ async function discoverUrls(host: string): Promise<string[]> {
         pages.push(loc);
       }
     }
-    if (pages.length) return Array.from(new Set([`${base}/`, ...pages])).slice(0, FREE_LIMITS.pages);
+    if (pages.length) return Array.from(new Set([`${base}/`, ...pages])).slice(0, maxPages);
   }
 
   // No sitemap: homepage links, one level deep.
@@ -135,7 +135,7 @@ async function discoverUrls(host: string): Promise<string[]> {
   if (!home) return [`${base}/`];
   const found: string[] = [`${base}/`];
   for (const m of home.matchAll(/href=["']([^"']+)["']/gi)) {
-    if (found.length >= FREE_LIMITS.pages) break;
+    if (found.length >= maxPages) break;
     let u = m[1];
     if (u.startsWith("/")) u = `${base}${u}`;
     if (!keep(u) || seen.has(u)) continue;
@@ -247,7 +247,7 @@ function chunkText(text: string): string[] {
  * chunks in one transaction. Returns what the UI shows. Throws never — the
  * error lands on WidgetSite.crawlError instead.
  */
-export async function crawlSite(siteId: string, host: string): Promise<{ pages: number; chunks: number; products: number; error: string | null }> {
+export async function crawlSite(siteId: string, host: string, maxPages = FREE_LIMITS.pages): Promise<{ pages: number; chunks: number; products: number; error: string | null }> {
   let pages = 0;
   let error: string | null = null;
   const rows: { url: string; title: string; content: string }[] = [];
@@ -255,7 +255,7 @@ export async function crawlSite(siteId: string, host: string): Promise<{ pages: 
   const seenProductNames = new Set<string>();
 
   try {
-    const urls = await discoverUrls(host);
+    const urls = await discoverUrls(host, maxPages);
     for (let i = 0; i < urls.length; i += FETCH_CONCURRENCY) {
       const batch = await Promise.all(urls.slice(i, i + FETCH_CONCURRENCY).map(async (url) => ({ url, html: await fetchPage(url) })));
       for (const { url, html } of batch) {

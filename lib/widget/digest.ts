@@ -21,6 +21,7 @@ import { userEmail } from "@/lib/company/owner";
 import { sendEmail, siteUrl, escapeHtml } from "@/lib/alerts/send";
 import { INQUIRY_FROM } from "@/lib/company/inquiries";
 import { completion } from "./answer";
+import { planFor } from "@/lib/billing/plans";
 
 const WINDOW_DAYS = 7;
 /** Re-runs inside this window are no-ops — cron retries must not double-send. */
@@ -52,13 +53,15 @@ export async function runWeeklyDigests(now = new Date()): Promise<{ sent: number
     },
     select: {
       id: true,
-      company: { select: { id: true, name: true, ownerUserId: true } },
+      company: { select: { id: true, name: true, ownerUserId: true, plan: true } },
     },
   });
 
   let sent = 0, skipped = 0, failed = 0;
   for (const site of sites) {
     try {
+      // The digest is a model call plus a send, every week, per site.
+      if (!planFor(site.company).aiAssist) { skipped++; continue; }
       const data = await collect(site.id, site.company.id, since);
       // A quiet week is a quiet inbox, not an email.
       if (data.questions === 0 && data.leads === 0 && data.pendingInbox === 0) { skipped++; continue; }
