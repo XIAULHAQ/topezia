@@ -40,7 +40,7 @@ async function main() {
 
   console.log(`Crawling ${norm.host} for ${company.name}…`);
   const result = await crawlSite(site.id, norm.host);
-  console.log(`Pages: ${result.pages}, chunks: ${result.chunks}${result.error ? `, error: ${result.error}` : ""}`);
+  console.log(`Pages: ${result.pages}, chunks: ${result.chunks}, products: ${result.products}${result.error ? `, error: ${result.error}` : ""}`);
 
   const embedded = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
     `SELECT COUNT(*)::bigint AS n FROM "SiteChunk" WHERE "siteId" = $1 AND embedding IS NOT NULL`,

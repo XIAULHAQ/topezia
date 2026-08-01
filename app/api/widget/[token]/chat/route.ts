@@ -53,6 +53,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     return NextResponse.json({
       reply: "Our automatic answers are resting this month — but a person isn't. Leave your email and your question and the team will reply directly.",
       sources: [],
+      products: [],
       handoff: true,
       capped: true,
     });

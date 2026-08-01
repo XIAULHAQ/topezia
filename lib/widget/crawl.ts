@@ -154,6 +154,66 @@ function pageToText(html: string): { title: string; text: string } {
   return { title, text };
 }
 
+export type CrawledProduct = { url: string; name: string; price: string | null; image: string | null; description: string };
+
+const MAX_PRODUCTS = 100;
+
+/**
+ * Harvest Product JSON-LD from a page. WooCommerce, Shopify, BigCommerce and
+ * every SEO plugin emit it, which makes this the one reliable, deterministic
+ * "does this site sell things" signal — no config, no guessing. The JSON is
+ * third-party input: parsed defensively, strings truncated, anything that
+ * doesn't look like a product ignored.
+ */
+export function extractProducts(html: string, pageUrl: string): CrawledProduct[] {
+  const out: CrawledProduct[] = [];
+  const asText = (v: unknown): string => (typeof v === "string" ? decodeHtmlEntities(v).trim() : "");
+  const firstStr = (v: unknown): string => {
+    if (typeof v === "string") return v;
+    if (Array.isArray(v)) return firstStr(v[0]);
+    if (v && typeof v === "object" && "url" in (v as object)) return firstStr((v as { url: unknown }).url);
+    return "";
+  };
+
+  const visit = (node: unknown) => {
+    if (!node || typeof node !== "object" || out.length >= 20) return;
+    if (Array.isArray(node)) { node.forEach(visit); return; }
+    const obj = node as Record<string, unknown>;
+    const type = obj["@type"];
+    const isProduct = type === "Product" || (Array.isArray(type) && type.includes("Product"));
+    if (isProduct) {
+      const name = asText(obj.name).slice(0, 120);
+      if (name) {
+        const offers = (Array.isArray(obj.offers) ? obj.offers[0] : obj.offers) as Record<string, unknown> | undefined;
+        // Offer.price, AggregateOffer.lowPrice, or a nested priceSpecification
+        // — the three shapes real stores emit. lowPrice renders as "From".
+        const direct = offers ? asText(offers.price) || asText((offers.priceSpecification as Record<string, unknown> | undefined)?.price) : "";
+        const low = !direct && offers ? asText(offers.lowPrice) : "";
+        const rawPrice = direct || low;
+        const currency = offers ? asText(offers.priceCurrency) : "";
+        const formatted = rawPrice ? (currency === "USD" || !currency ? `$${rawPrice.replace(/^\$/, "")}` : `${rawPrice} ${currency}`) : null;
+        const price = formatted && low ? `From ${formatted}` : formatted;
+        out.push({
+          url: firstStr(offers?.url) || firstStr(obj.url) || pageUrl,
+          name,
+          price,
+          image: firstStr(obj.image) || null,
+          description: asText(obj.description).slice(0, 500),
+        });
+      }
+    }
+    // @graph and nested structures
+    for (const key of ["@graph", "itemListElement", "item", "mainEntity"]) {
+      if (key in obj) visit(obj[key]);
+    }
+  };
+
+  for (const m of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try { visit(JSON.parse(m[1])); } catch { /* malformed block — skip */ }
+  }
+  return out;
+}
+
 function chunkText(text: string): string[] {
   const out: string[] = [];
   let current = "";
@@ -173,10 +233,12 @@ function chunkText(text: string): string[] {
  * chunks in one transaction. Returns what the UI shows. Throws never — the
  * error lands on WidgetSite.crawlError instead.
  */
-export async function crawlSite(siteId: string, host: string): Promise<{ pages: number; chunks: number; error: string | null }> {
+export async function crawlSite(siteId: string, host: string): Promise<{ pages: number; chunks: number; products: number; error: string | null }> {
   let pages = 0;
   let error: string | null = null;
   const rows: { url: string; title: string; content: string }[] = [];
+  const products: CrawledProduct[] = [];
+  const seenProductNames = new Set<string>();
 
   try {
     const urls = await discoverUrls(host);
@@ -184,6 +246,15 @@ export async function crawlSite(siteId: string, host: string): Promise<{ pages: 
       const batch = await Promise.all(urls.slice(i, i + FETCH_CONCURRENCY).map(async (url) => ({ url, html: await fetchPage(url) })));
       for (const { url, html } of batch) {
         if (!html) continue;
+        // Products first — listing pages can carry Product JSON-LD while
+        // having little readable text.
+        for (const p of extractProducts(html, url)) {
+          if (products.length >= MAX_PRODUCTS) break;
+          const key = p.name.toLowerCase();
+          if (seenProductNames.has(key)) continue; // same product on listing + detail page
+          seenProductNames.add(key);
+          products.push(p);
+        }
         const { title, text } = pageToText(html);
         if (text.length < CHUNK_MIN) continue;
         pages++;
@@ -207,8 +278,14 @@ export async function crawlSite(siteId: string, host: string): Promise<{ pages: 
     if (batch) batch.forEach((e, j) => (embeddings[i + j] = e ?? null));
   }
 
+  const productEmbeddings: (number[] | null)[] = new Array(products.length).fill(null);
+  for (let i = 0; i < products.length; i += EMBED_BATCH_SIZE) {
+    const batch = await embedBatch(products.slice(i, i + EMBED_BATCH_SIZE).map((p) => `${p.name}\n${p.description}`));
+    if (batch) batch.forEach((e, j) => (productEmbeddings[i + j] = e ?? null));
+  }
+
   // NOT one transaction: hundreds of statements inside an interactive tx
-  // through the pooler is exactly what P2028s. The chunk table is a cache of
+  // through the pooler is exactly what P2028s. Both tables are a cache of
   // someone else's site — a crawl that dies mid-write is fully repaired by
   // the next crawl, so plain sequential writes are the honest shape.
   await prisma.siteChunk.deleteMany({ where: { siteId } });
@@ -219,10 +296,18 @@ export async function crawlSite(siteId: string, host: string): Promise<{ pages: 
       await prisma.$executeRawUnsafe(`UPDATE "SiteChunk" SET embedding = $1::vector WHERE id = $2`, `[${e.join(",")}]`, created.id);
     }
   }
+  await prisma.siteProduct.deleteMany({ where: { siteId } });
+  for (let i = 0; i < products.length; i++) {
+    const created = await prisma.siteProduct.create({ data: { siteId, ...products[i] }, select: { id: true } });
+    const e = productEmbeddings[i];
+    if (e) {
+      await prisma.$executeRawUnsafe(`UPDATE "SiteProduct" SET embedding = $1::vector WHERE id = $2`, `[${e.join(",")}]`, created.id);
+    }
+  }
   await prisma.widgetSite.update({
     where: { id: siteId },
     data: { pagesCrawled: pages, crawledAt: new Date(), crawlError: error },
   });
 
-  return { pages, chunks: rows.length, error };
+  return { pages, chunks: rows.length, products: products.length, error };
 }

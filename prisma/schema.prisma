@@ -1173,6 +1173,7 @@ model WidgetSite {
   monthKey     String   @default("")
   messagesUsed Int      @default(0)
   chunks       SiteChunk[]
+  products     SiteProduct[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -1189,6 +1190,25 @@ model SiteChunk {
   // vector(1024), written via raw SQL like Job/Profile:
   // embedding Unsupported("vector(1024)")?
   createdAt DateTime   @default(now())
+
+  @@index([siteId])
+}
+
+// A product harvested from the site's own Product JSON-LD during the crawl
+// (migration 052). Products found = the site sells things = the widget may
+// answer buy-intent with product cards instead of prose. Same cache
+// semantics as SiteChunk: wiped and rewritten every crawl.
+model SiteProduct {
+  id          String     @id @default(uuid())
+  siteId      String
+  site        WidgetSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  url         String
+  name        String
+  price       String? // display string ("$99", "From $49") — never arithmetic
+  image       String?
+  description String     @default("")
+  // embedding Unsupported("vector(1024)")? — raw SQL, as everywhere
+  createdAt   DateTime   @default(now())
 
   @@index([siteId])
 }

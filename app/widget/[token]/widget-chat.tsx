@@ -13,7 +13,8 @@
  */
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 
-type Turn = { role: "visitor" | "bot" | "team"; text: string; sources?: string[] };
+type Product = { name: string; price: string | null; image: string | null; url: string };
+type Turn = { role: "visitor" | "bot" | "team"; text: string; sources?: string[]; products?: Product[] };
 
 const GRAD = "linear-gradient(135deg,#8B5CF6,#3B82F6)";
 const POLL_MS = 20_000;
@@ -114,7 +115,7 @@ export default function WidgetChat({
           history: history.filter((t) => t.role !== "team").map(({ role, text: t }) => ({ role, text: t })),
         }),
       });
-      const data = (await res.json().catch(() => ({}))) as { reply?: string; sources?: string[]; handoff?: boolean; error?: string };
+      const data = (await res.json().catch(() => ({}))) as { reply?: string; sources?: string[]; products?: Product[]; handoff?: boolean; error?: string };
       if (!res.ok || !data.reply) {
         setTurns((cur) => [...cur, { role: "bot", text: data.error ?? "Something hiccuped — try that again." }]);
         return;
@@ -128,7 +129,7 @@ export default function WidgetChat({
         ]);
         return;
       }
-      setTurns((cur) => [...cur, { role: "bot", text: data.reply!, sources: data.sources }]);
+      setTurns((cur) => [...cur, { role: "bot", text: data.reply!, sources: data.sources, products: data.products }]);
       if (data.handoff) {
         setLeadMsg(text);
         setLeadOpen(true);
@@ -205,6 +206,23 @@ export default function WidgetChat({
           >
             {t.role === "team" && <span style={S.teamLabel}>{companyName} team</span>}
             {t.text}
+            {t.products && t.products.length > 0 && (
+              <span style={S.productList}>
+                {t.products.map((p) => (
+                  <a key={p.url + p.name} href={p.url} target="_top" style={S.productCard}>
+                    {p.image && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={p.image} alt="" style={S.productImg} />
+                    )}
+                    <span style={{ minWidth: 0, flex: 1 }}>
+                      <b style={S.productName}>{p.name}</b>
+                      {p.price && <span style={S.productPrice}>{p.price}</span>}
+                    </span>
+                    <span style={S.productGo}>View →</span>
+                  </a>
+                ))}
+              </span>
+            )}
             {t.sources && t.sources.length > 0 && (
               <span style={S.sources}>
                 {t.sources.map((u) => {
@@ -276,6 +294,12 @@ const S: Record<string, CSSProperties> = {
   msgTeam: { alignSelf: "flex-start", background: "#fff", color: "#0F172A", border: "1.5px solid #C7D2FE", borderBottomLeftRadius: 4 },
   msgVisitor: { alignSelf: "flex-end", background: GRAD, color: "#fff", borderBottomRightRadius: 4 },
   teamLabel: { display: "block", fontSize: 10, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#4F46E5", marginBottom: 3 },
+  productList: { display: "flex", flexDirection: "column", gap: 8, marginTop: 10 },
+  productCard: { display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, padding: "9px 11px", textDecoration: "none", color: "#0F172A", boxShadow: "0 1px 3px rgba(15,23,42,.06)" },
+  productImg: { flex: "none", width: 44, height: 44, borderRadius: 8, objectFit: "cover", background: "#F1F5F9" },
+  productName: { display: "block", fontSize: 12.8, fontWeight: 700, lineHeight: 1.35, overflow: "hidden", textOverflow: "ellipsis" },
+  productPrice: { display: "block", fontSize: 12, fontWeight: 800, color: "#4F46E5", marginTop: 2 },
+  productGo: { flex: "none", fontSize: 11.5, fontWeight: 700, color: "#4F46E5" },
   sources: { display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" },
   sourceLink: { fontSize: 11, color: "#4F46E5", fontWeight: 700, textDecoration: "none", background: "#EEF2FF", borderRadius: 999, padding: "2px 9px" },
   leadCard: { border: "1px solid #E2E8F0", borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 8, background: "#F8FAFC" },

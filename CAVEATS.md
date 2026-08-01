@@ -1604,3 +1604,26 @@ zip is committed, so an unbuilt edit ships stale.
 - 🟡 **PHP is not linted locally** (no php on this Mac; build script skips).
   The code is standard WP settings API — but any nontrivial PHP change
   deserves a run through `php -l` somewhere before shipping the zip.
+
+## Widget ecommerce awareness (added 2026-08-01)
+
+Migration 052 (SiteProduct). The crawl harvests Product JSON-LD (Woo/
+Shopify/BigCommerce all emit it); buy-intent questions retrieve nearest
+products and the reply leads with a pitch plus up to 3 preview cards
+(image/name/price/View). "Is this an ecommerce site" is implicit: products
+found = yes, zero config.
+
+- 🔴 **The model orders the shelf, never stocks it** — it returns indexes
+  into what retrieval offered; cards are built server-side from SiteProduct
+  rows, so a hallucinated product cannot render. Prices come only from the
+  product's own price field ("From $X" for AggregateOffer.lowPrice); price
+  absent → card shows none, reply may not invent one.
+- 🟡 **rodeo.graphics legitimately has 0 products** — its sellable items are
+  Yoast ARTICLES, not Product markup (verified by inspecting the pages, not
+  assumed). Cards will never show there until the shop items become real
+  WooCommerce/Shopify products; the bot still pitches from prose. Extraction
+  itself verified on synthetic fixtures (plain, @graph, AggregateOffer) and
+  a live Shopify store.
+- 🟡 Some stores bury price in variant structures the extractor doesn't
+  chase — the card renders without a price, which is honest. Extend
+  extractProducts if a paying customer's store needs it.
