@@ -1664,3 +1664,23 @@ Migration 054 (`WidgetSite.branded`, default true).
   retrieval ("how much is it?" on a product page means THAT product).
 - 🟡 Reply text is rendered as plain text — the prompt forbids markdown;
   if asterisks ever show up in bubbles, that rule regressed.
+
+## Draft-with-AI in the company inbox (added 2026-08-01)
+
+- 🔴 **The draft only fills the compose box.** POST
+  /api/company/inquiries/{id}/draft returns text and changes nothing — no
+  message row, no status change, no email. The owner edits and sends
+  through the normal reply POST, which is where spam scoring, the thread
+  cap and the closed-state refusal live. Never wire the draft to send
+  directly; the whole safety story is that every outbound reply passes the
+  same checks whether typed or drafted.
+- 🟡 **Grounding = conversation + (if the company has a crawled widget
+  site) the nearest site chunks/products** (lib/widget/draft.ts). The
+  prompt restricts facts to what's written and turns missing info into a
+  clarifying question. Verified live against the Rodeo Graphics thread:
+  the draft's claims ("bio card", "social media kit", the $99–$299 range)
+  all trace to crawled chunks. A company with no widget site still gets
+  drafts, grounded on the thread alone.
+- 🟡 **AI-cost feature, currently metered only by rate limit** (30/hr per
+  owner). Destined for the paid tier once employer billing exists — same
+  standing rule as widget replies, no upsell UI until then.
