@@ -1763,3 +1763,35 @@ Migration 054 (`WidgetSite.branded`, default true).
   /api/widget/{token}/config (cached 5 min, CORS-open, returns only
   enabled+accent). If that call fails the default gradient is already on
   screen — never block the launcher on it.
+
+## Business plans — Free / Pro / Studio (added 2026-08-02)
+
+- 🔴 **BEFORE PAID PLANS CAN SELL, Brandon must create four prices in
+  Stripe LIVE mode** (Pro monthly + yearly, Studio monthly + yearly) and
+  the four ids go in Vercel as STRIPE_PRO_MONTHLY_PRICE_ID,
+  STRIPE_PRO_YEARLY_PRICE_ID, STRIPE_STUDIO_MONTHLY_PRICE_ID,
+  STRIPE_STUDIO_YEARLY_PRICE_ID (non-sensitive). Until then the pricing
+  page shows only the free card and checkout 503s — by design, no dead
+  buttons. Watch the dashboard account-context trap documented in the
+  Stripe memory: confirm the acct_ in the URL is LIVE.
+- 🔴 **lib/billing/plans.ts is the only place a limit is defined.** Every
+  gate reads it. Don't hardcode a number anywhere else, and don't gate the
+  human handoff — a company out of AI answers must still collect leads.
+- 🔴 **The webhook derives the plan from the subscription's PRICE**, not
+  from metadata, so a portal-side switch lands correctly. An active
+  subscription on an unknown price leaves the plan UNCHANGED and logs —
+  never downgrade a paying customer because an env var is missing.
+- 🟡 **STUDIO pools its AI budget on the Company row** (aiMonthKey /
+  aiRepliesUsed); single-site plans still spend on WidgetSite. Two
+  near-identical blocks in caps.ts on purpose — Prisma's delegates don't
+  share a callable type and casting the client would be worse.
+- 🟡 **Gating the digest changed existing behaviour**: a FREE company no
+  longer receives the weekly email (verified: sent 0, skipped 1 on the
+  pilot). Same for drafted replies, intake briefs, custom colour, and the
+  Topezia line returning. Comp a customer by setting Company.plan = 'PRO'
+  by hand — the same pattern the `branded` column used.
+- 🟡 **STUDIO cannot yet be delivered**: WidgetSite.companyId is still
+  @unique, so a company can only run one site. The plan is defined and
+  priced but multi-site management (site switcher, per-site facts/stats,
+  CompanyInquiry.siteId) is unbuilt — do not set a company to STUDIO and
+  do not add its price id until that lands.
