@@ -18,6 +18,31 @@
 
   var open = false;
   var frame = null;
+  var MOBILE = "(max-width: 640px)";
+
+  /**
+   * Phones get the whole screen, the way every chat app people already know
+   * behaves — a 380px card floating over a 375px viewport is a scrollbar
+   * sandwich. Desktop keeps the corner card. Re-applied on resize/rotate.
+   */
+  function sizeFrame() {
+    if (!frame) return;
+    var mobile = window.matchMedia(MOBILE).matches;
+    if (mobile) {
+      frame.style.cssText =
+        "position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;" +
+        "border:none;border-radius:0;z-index:2147483000;background:#fff;" +
+        "display:" + (open ? "block" : "none");
+    } else {
+      frame.style.cssText =
+        "position:fixed;right:20px;bottom:88px;width:380px;height:560px;max-width:calc(100vw - 24px);" +
+        "max-height:calc(100vh - 110px);border:none;border-radius:16px;z-index:2147483000;" +
+        "box-shadow:0 12px 48px rgba(15,23,42,.28);background:#fff;" +
+        "display:" + (open ? "block" : "none");
+    }
+    // The bubble would sit on top of a full-screen chat; hide it while open.
+    btn.style.display = mobile && open ? "none" : "flex";
+  }
 
   var btn = document.createElement("button");
   btn.setAttribute("aria-label", "Open chat");
@@ -34,16 +59,17 @@
       frame = document.createElement("iframe");
       frame.src = origin + "/widget/" + encodeURIComponent(token);
       frame.title = "Chat";
-      frame.style.cssText =
-        "position:fixed;right:20px;bottom:88px;width:380px;height:560px;max-width:calc(100vw - 24px);" +
-        "max-height:calc(100vh - 110px);border:none;border-radius:16px;z-index:2147483000;" +
-        "box-shadow:0 12px 48px rgba(15,23,42,.28);background:#fff;";
       document.body.appendChild(frame);
     }
-    if (frame) frame.style.display = open ? "block" : "none";
+    sizeFrame();
     btn.setAttribute("aria-label", open ? "Close chat" : "Open chat");
   }
 
   btn.addEventListener("click", toggle);
+  window.addEventListener("resize", sizeFrame);
+  // The iframe asks to be closed (its own X button on phones).
+  window.addEventListener("message", function (e) {
+    if (e.origin === origin && e.data === "topezia:close" && open) toggle();
+  });
   document.body.appendChild(btn);
 })();

@@ -13,6 +13,7 @@ type Site = {
   domain: string;
   siteToken: string;
   enabled: boolean;
+  branded: boolean;
   pagesCrawled: number;
   crawledAt: string | null;
   crawlError: string | null;
@@ -131,6 +132,7 @@ export default function WidgetClient() {
               <span style={{ ...ES.empty, flex: 1, minWidth: 180 }}>
                 {site.usage.used} of {site.usage.limit} AI replies used this month. After that the chat keeps
                 taking messages — it just stops answering automatically.
+                {site.branded && " On the free plan the chat shows a small “Add AI chat to your site. Free with Topezia.” line at the bottom."}
               </span>
               <button type="button" style={site.enabled ? ES.btnDanger : ES.btn} onClick={toggle}>
                 {site.enabled ? "Turn off" : "Turn on"}

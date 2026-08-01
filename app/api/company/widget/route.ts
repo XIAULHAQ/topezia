@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const SITE_SELECT = {
-  id: true, domain: true, siteToken: true, enabled: true,
+  id: true, domain: true, siteToken: true, enabled: true, branded: true,
   pagesCrawled: true, crawledAt: true, crawlError: true,
   monthKey: true, messagesUsed: true,
 } as const;

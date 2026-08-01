@@ -1165,6 +1165,10 @@ model WidgetSite {
   // owner action still goes through requireCompanyOwner.
   siteToken    String   @unique
   enabled      Boolean  @default(true)
+  // The free tier's "Powered by Topezia · Add AI chat to your site. Free."
+  // line under the chat. True until a paid plan turns it off — the switch is
+  // real, the plan that flips it isn't built yet (no employer billing).
+  branded      Boolean  @default(true)
   pagesCrawled Int      @default(0)
   crawledAt    DateTime?
   crawlError   String?

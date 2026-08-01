@@ -1627,3 +1627,22 @@ found = yes, zero config.
 - 🟡 Some stores bury price in variant structures the extractor doesn't
   chase — the card renders without a price, which is honest. Extend
   extractProducts if a paying customer's store needs it.
+
+## Widget mobile + free-tier attribution (added 2026-08-01)
+
+Migration 054 (`WidgetSite.branded`, default true).
+
+- 🔴 **`branded` is the switch a paid plan will flip — nothing flips it
+  today.** There is no employer billing surface, so a real customer who pays
+  gets it set by hand (`UPDATE "WidgetSite" SET branded=false WHERE ...`)
+  until billing exists. When false the widget shows NO line at all: no
+  branding, no "free", no trace. Never render a fake upgrade button here.
+- 🟡 **16px inputs under 820px is an anti-zoom fix, not a style choice.**
+  iOS Safari zooms any focused input whose text is <16px, and inside an
+  iframe that zoom sticks — the visitor drags a magnified chat around.
+  `user-scalable=no` is ignored by modern iOS and would break pinch-zoom for
+  everyone, so the font size IS the fix. Verified computed 16px at 390px.
+- 🟡 **Phones get a full-screen iframe** (widget.js `sizeFrame`), the
+  launcher bubble hides while open, and the chat carries its own ✕ which
+  postMessages `topezia:close` to the parent — the parent owns the iframe,
+  so it cannot close itself. Desktop keeps the corner card.
