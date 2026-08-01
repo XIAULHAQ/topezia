@@ -1684,3 +1684,24 @@ Migration 054 (`WidgetSite.branded`, default true).
 - 🟡 **AI-cost feature, currently metered only by rate limit** (30/hr per
   owner). Destined for the paid tier once employer billing exists — same
   standing rule as widget replies, no upsell UI until then.
+
+## Weekly "what visitors asked" digest (added 2026-08-01)
+
+- 🔴 **The cron does not run until CRON_SECRET is set in Vercel.** The
+  route (/api/cron/widget-digest, Mondays 13:00 UTC via vercel.json) fails
+  closed — no secret, 404, no digests. Set a CRON_SECRET env var in the
+  Vercel project; Vercel then sends it as the Bearer token automatically.
+  Without it nothing breaks — owners just never get the email.
+- 🟡 **WidgetQuestion is telemetry, not an archive.** The chat route logs
+  each visitor question (280 chars) + whether the bot answered or handed
+  off, fire-and-forget after the stream; rows purge past 90 days in the
+  digest run. The digest's "your site couldn't answer these" list is the
+  handoff rows — the content-gap advice is the feature's real value.
+- 🟡 **Quiet weeks send nothing, on purpose.** No "0 questions!" filler
+  mail. Numbers are counted from rows; the only model call groups question
+  texts into themes (needs ≥4 questions; on failure the section is simply
+  omitted). digestSentAt guards double-sends inside 6 days — safe to
+  re-trigger the cron.
+- 🟡 The digest toggle on /employer/widget is a real column
+  (WidgetSite.digestEnabled, migration 055) — PATCH /api/company/widget
+  accepts enabled and/or digestEnabled.
