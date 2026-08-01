@@ -186,9 +186,10 @@ export async function answerFromSite(
   }
 }
 
-type ModelMessage = { role: "user" | "assistant"; content: string };
+export type ModelMessage = { role: "user" | "assistant"; content: string };
 
-async function completion(system: string, messages: ModelMessage[]): Promise<string> {
+/** Non-streaming Haiku call, shared with the inbox draft engine. */
+export async function completion(system: string, messages: ModelMessage[]): Promise<string> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {

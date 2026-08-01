@@ -6,11 +6,12 @@
  * the same data and routes as before.
  *
  * What the mockup shows that this deliberately does NOT: online dots, read
- * receipts, a typing indicator, "Draft with AI", "Create brief". Every one
- * of those would be a fake signal today — there is no presence system, no
- * read tracking, no AI-draft endpoint — and this product doesn't render
- * lights that aren't wired to anything. When those systems exist, the spots
- * for them are obvious.
+ * receipts, a typing indicator, "Create brief". Every one of those would be
+ * a fake signal today — there is no presence system, no read tracking — and
+ * this product doesn't render lights that aren't wired to anything. When
+ * those systems exist, the spots for them are obvious. "Draft with AI" IS
+ * wired now (POST …/draft): it only fills the compose box — the owner
+ * edits and sends through the same Send as always.
  *
  * The three actions are still the whole model: Reply opens a thread, Archive
  * closes, Spam is a private judgement feeding the sender lockout. The sender
@@ -90,6 +91,7 @@ export default function InquiriesClient() {
 
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [drafting, setDrafting] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
 
   const [confDraft, setConfDraft] = useState<Config | null>(null);
@@ -182,6 +184,22 @@ export default function InquiriesClient() {
       setSendError("Couldn't send that.");
     } finally {
       setSending(false);
+    }
+  }
+
+  /** Fills the compose box, nothing more — the owner still edits and sends. */
+  async function draftWithAi() {
+    if (!active || drafting || sending) return;
+    setDrafting(true); setSendError(null);
+    try {
+      const res = await fetch(`/api/company/inquiries/${active.id}/draft`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { draft?: string; error?: string };
+      if (!res.ok || !data.draft) { setSendError(data.error ?? "Couldn't draft that one — write it by hand or try again."); return; }
+      setDraft(data.draft);
+    } catch {
+      setSendError("Couldn't draft that one — write it by hand or try again.");
+    } finally {
+      setDrafting(false);
     }
   }
 
@@ -475,8 +493,13 @@ export default function InquiriesClient() {
                           />
                           {sendError && <p style={{ ...ES.error, margin: "8px 0 0" }}>{sendError}</p>}
                           <div style={S.composerBar}>
+                            <button type="button" disabled={drafting || sending} onClick={draftWithAi}
+                              title="Write a reply draft from this conversation — you edit it before sending"
+                              style={{ ...S.draftBtn, opacity: drafting ? 0.6 : 1, cursor: drafting ? "wait" : "pointer" }}>
+                              {drafting ? "Drafting…" : "✨ Draft with AI"}
+                            </button>
                             {active.messages.length === 0 && (
-                              <span style={{ fontSize: 11, color: "#94A3B8" }}>Replying opens the conversation and emails them.</span>
+                              <span style={{ fontSize: 11, color: "#94A3B8" }} className="tzm-composer-hint">Replying opens the conversation and emails them.</span>
                             )}
                             <span style={{ flex: 1 }} />
                             <button type="submit" disabled={sending || !draft.trim()}
@@ -511,6 +534,9 @@ const CSS = `
   .tzm-thread{display:none !important}
   .tzm-thread-open .tzm-thread{display:flex !important}
   .tzm-thread-open .tzm-list{display:none !important}
+}
+@media (max-width:640px){
+  .tzm-composer-hint{display:none}
 }
 `;
 
@@ -562,6 +588,7 @@ const S: Record<string, CSSProperties> = {
   answerLine: { display: "block", marginTop: 8, fontSize: 12.3, color: "#64748B" },
   msgMeta: { fontSize: 10.5, color: "#94A3B8", padding: "0 4px" },
   quickChip: { border: "1px solid #E2E8F0", background: "#fff", borderRadius: 999, padding: "7px 13px", fontSize: 11.5, fontWeight: 600, color: "#334155", cursor: "pointer", fontFamily: "inherit" },
+  draftBtn: { flex: "none", border: "1px solid #DDD6FE", background: "#F5F3FF", color: "#6D28D9", borderRadius: 999, padding: "7px 13px", fontSize: 11.5, fontWeight: 700, fontFamily: "inherit" },
   composer: { background: "#fff", border: "1px solid #E2E8F0", borderRadius: 15, padding: "12px 14px", boxShadow: "0 8px 26px rgba(15,23,42,.06)" },
   composerInput: { width: "100%", border: 0, outline: "none", resize: "none", fontFamily: "inherit", fontSize: 13.2, lineHeight: 1.65, color: "#0F172A", background: "transparent", boxSizing: "border-box" },
   composerBar: { display: "flex", alignItems: "center", gap: 7, marginTop: 8, paddingTop: 10, borderTop: "1px solid #F1F5F9" },
