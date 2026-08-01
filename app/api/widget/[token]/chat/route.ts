@@ -86,6 +86,14 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
           { pageUrl, onDelta: (text) => send({ t: "delta", text }) }
         );
         send({ t: "done", ...answer, capped: false });
+        // Remember what was asked (feeds the weekly digest). After the send,
+        // and a failure here must never break the answer the visitor got.
+        const question = history.filter((t) => t.role === "visitor").at(-1)?.text.slice(0, 280);
+        if (question) {
+          await prisma.widgetQuestion
+            .create({ data: { siteId: site!.id, question, answered: !answer.handoff, pageUrl } })
+            .catch(() => { /* telemetry, not the product */ });
+        }
       } catch (err) {
         console.error("[widget/chat] stream failed:", err instanceof Error ? err.message : err);
         send({

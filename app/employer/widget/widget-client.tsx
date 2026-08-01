@@ -14,6 +14,7 @@ type Site = {
   siteToken: string;
   enabled: boolean;
   branded: boolean;
+  digestEnabled: boolean;
   pagesCrawled: number;
   crawledAt: string | null;
   crawlError: string | null;
@@ -73,6 +74,16 @@ export default function WidgetClient() {
       body: JSON.stringify({ enabled: !site.enabled }),
     });
     if (res.ok) setSite({ ...site, enabled: !site.enabled });
+  }
+
+  async function toggleDigest() {
+    if (!site) return;
+    const res = await fetch("/api/company/widget", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ digestEnabled: !site.digestEnabled }),
+    });
+    if (res.ok) setSite({ ...site, digestEnabled: !site.digestEnabled });
   }
 
   const snippet = site
@@ -136,6 +147,15 @@ export default function WidgetClient() {
               </span>
               <button type="button" style={site.enabled ? ES.btnDanger : ES.btn} onClick={toggle}>
                 {site.enabled ? "Turn off" : "Turn on"}
+              </button>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", borderTop: "1px solid #F1F5F9", paddingTop: 12 }}>
+              <span style={{ ...ES.empty, flex: 1, minWidth: 180 }}>
+                Weekly digest: what visitors asked, what your site couldn&apos;t answer, and what&apos;s waiting in your
+                inbox — one email on Mondays. Quiet weeks send nothing.
+              </span>
+              <button type="button" style={site.digestEnabled ? ES.btnGhost : ES.btn} onClick={toggleDigest}>
+                {site.digestEnabled ? "Turn digest off" : "Turn digest on"}
               </button>
             </div>
           </div>

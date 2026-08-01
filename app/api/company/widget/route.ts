@@ -21,7 +21,7 @@ export const maxDuration = 120;
 
 const SITE_SELECT = {
   id: true, domain: true, siteToken: true, enabled: true, branded: true,
-  pagesCrawled: true, crawledAt: true, crawlError: true,
+  digestEnabled: true, pagesCrawled: true, crawledAt: true, crawlError: true,
   monthKey: true, messagesUsed: true,
 } as const;
 
@@ -81,16 +81,20 @@ export async function PATCH(req: NextRequest) {
   let body: Record<string, unknown>;
   try { body = (await req.json()) as Record<string, unknown>; }
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
-  if (typeof body.enabled !== "boolean") {
-    return NextResponse.json({ error: "enabled must be true or false." }, { status: 400 });
+
+  const data: { enabled?: boolean; digestEnabled?: boolean } = {};
+  if (typeof body.enabled === "boolean") data.enabled = body.enabled;
+  if (typeof body.digestEnabled === "boolean") data.digestEnabled = body.digestEnabled;
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: "Send enabled or digestEnabled as true or false." }, { status: 400 });
   }
 
   const updated = await prisma.widgetSite.updateMany({
     where: { companyId: auth.owner.companyId },
-    data: { enabled: body.enabled },
+    data,
   });
   if (updated.count === 0) {
     return NextResponse.json({ error: "Set up the widget first." }, { status: 404 });
   }
-  return NextResponse.json({ enabled: body.enabled });
+  return NextResponse.json(data);
 }

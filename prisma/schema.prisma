@@ -1176,10 +1176,30 @@ model WidgetSite {
   // read time, no cron reset. See lib/widget/caps.ts.
   monthKey     String   @default("")
   messagesUsed Int      @default(0)
+  // Weekly "what visitors asked" email. On by default — it only sends when
+  // the week had activity; digestSentAt guards double-sends.
+  digestEnabled Boolean   @default(true)
+  digestSentAt  DateTime?
   chunks       SiteChunk[]
   products     SiteProduct[]
+  questions    WidgetQuestion[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// Rolling log of what visitors asked the AI — feeds the weekly digest and
+// its content-gap advice. Purged past ~90 days by the digest cron.
+model WidgetQuestion {
+  id        String     @id @default(uuid())
+  siteId    String
+  site      WidgetSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  question  String
+  // false = the bot handed off — the site's content couldn't answer it.
+  answered  Boolean    @default(true)
+  pageUrl   String?
+  createdAt DateTime   @default(now())
+
+  @@index([siteId, createdAt])
 }
 
 // A chunk of the customer's own site, embedded for retrieval. Wiped and
