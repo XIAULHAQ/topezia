@@ -1705,3 +1705,30 @@ Migration 054 (`WidgetSite.branded`, default true).
 - 🟡 The digest toggle on /employer/widget is a real column
   (WidgetSite.digestEnabled, migration 055) — PATCH /api/company/widget
   accepts enabled and/or digestEnabled.
+
+## Concierge intake + teach-the-bot (added 2026-08-01)
+
+- 🔴 **SiteFact must survive crawls.** SiteChunk and SiteProduct are wiped
+  and rebuilt on every scan (lib/widget/crawl.ts); SiteFact is the one
+  piece of site knowledge a human wrote and crawls must never touch it.
+  If a future crawl "cleans up" facts, "correct it once" silently becomes
+  "correct it after every scan" — the whole feature.
+- 🔴 **Taught answers outrank the crawl, by design.** answer.ts rule 0
+  puts <owner_answer> above the excerpts, including prices and policies
+  the page states. Verified live: a taught $200 logo minimum beat the
+  site's $150, and deleting the fact reverted the answer to $150. A loose
+  distance cutoff (0.7) drops facts nowhere near the question — tightening
+  it is how you'd cause "I taught it that and it still doesn't know".
+- 🔴 **The brief is EXTRACTION, never inference** (lib/widget/intake.ts).
+  budget/timeline are the visitor's own words or null; a null becomes an
+  open question for the owner. An inferred number here would become a
+  wrong quote — never "improve" this by letting the model estimate. Brief
+  failure returns null and the lead is delivered as it always was.
+- 🟡 Concierge qualifying lives in answer.ts rule 6 (one short question
+  per reply, only when the visitor describes a job of their own). It costs
+  nothing extra — same call. The brief costs one Haiku call per real lead.
+- 🟡 Two teach surfaces, one endpoint (/api/company/facts): "Fix this
+  answer" under bot lines in an inbox transcript (the question taught is
+  the visitor line immediately before), and the Teach the bot card on
+  /employer/widget, which leads with unanswered questions from
+  WidgetQuestion. 100 facts per site.
