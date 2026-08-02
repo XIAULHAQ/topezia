@@ -1195,6 +1195,11 @@ model WidgetSite {
   /// "woocommerce" | "shopify" | null — the two hand off to checkout in
   /// completely different ways, so the link builder must know which.
   storeKind    String?
+  /// Answer "where is my order?" from the store's own order records
+  /// (migration 066). Off until the owner turns it on, even once a store is
+  /// connected — connecting and publishing are two different decisions.
+  orderLookup  Boolean @default(false)
+  storeCredential SiteStoreCredential?
   /// The owner's own opening line, editable any time. Null keeps the
   /// page-aware opener computed from the crawl (migration 063).
   greeting       String?
@@ -1252,6 +1257,30 @@ model SiteFact {
 
 // Rolling log of what visitors asked the AI — feeds the weekly digest and
 // its content-gap advice. Purged past ~90 days by the digest cron.
+/// Read-only access to one merchant's orders (migration 066).
+///
+/// Its own table on purpose: these are the most sensitive values the product
+/// holds, and keeping them off WidgetSite means no existing `select`,
+/// endpoint or log line can reach them by accident.
+model SiteStoreCredential {
+  id       String     @id @default(uuid())
+  siteId   String     @unique
+  site     WidgetSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  /// "woocommerce" | "shopify" | "bigcommerce"
+  platform String
+  /// AES-256-GCM blob (lib/crypto/secrets.ts). NEVER plaintext, and never
+  /// sent to a browser — not even to the owner who typed it.
+  secret   String
+  /// Recognisable, unusable: enough to tell which key is stored.
+  hint     String?
+  /// When the connection was last proven to work, and why it stopped.
+  lastCheckedAt DateTime?
+  lastError     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model WidgetQuestion {
   id        String     @id @default(uuid())
   siteId    String

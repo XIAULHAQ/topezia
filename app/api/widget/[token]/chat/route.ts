@@ -26,6 +26,8 @@ import { answerFromSite, type ChatTurn } from "@/lib/widget/answer";
 import { consumeAiReply } from "@/lib/widget/caps";
 import { detectContact, detectContactInChat, leadMessageFromChat } from "@/lib/widget/contact";
 import { createWidgetLead } from "@/lib/widget/lead";
+import { loadCredentials, lookupOrder, parseOrderQuery } from "@/lib/widget/orders";
+import type { OrderContext } from "@/lib/widget/answer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +41,54 @@ type CaptureSite = {
 };
 /** What the visitor gave us, and whether the team already had it. */
 type Captured = { email: string; name: string | null; threadToken: string | null; already: boolean };
+
+/** The status in plain words, with no model in the loop — used when the
+ *  month's AI budget is spent. Facts only, and never a delivery estimate. */
+function plainOrderReply(order: import("@/lib/widget/orders").OrderStatus): string {
+  const parcel = order.shipments.find((s) => s.trackingNumber || s.trackingUrl);
+  const tracking = parcel
+    ? ` ${parcel.carrier ? `${parcel.carrier}: ` : "Tracking: "}${parcel.trackingNumber ?? ""}${parcel.trackingUrl ? ` — ${parcel.trackingUrl}` : ""}`
+    : "";
+  const placed = order.placedAt ? ` placed ${new Date(order.placedAt).toISOString().slice(0, 10)}` : "";
+  return `Order ${order.reference}${placed}: ${order.stageLabel}.${tracking}`.trim();
+}
+
+/**
+ * "Where is my order?"
+ *
+ * The whole design lives in one place: an order number is not a secret, so a
+ * number alone gets nothing — the visitor must also give the email or
+ * postcode on the order. See lib/widget/orders/index.ts.
+ *
+ * The per-IP window is the brute-force guard. Order numbers are sequential;
+ * without a ceiling, a script could walk them against one known postcode.
+ * Twelve attempts an hour is generous for a customer who mistyped and useless
+ * for anyone working through a range.
+ */
+async function orderContext(
+  site: { id: string; domain: string; orderLookup: boolean },
+  history: ChatTurn[],
+  ip: string
+): Promise<OrderContext | null> {
+  if (!site.orderLookup) return null;
+  const query = parseOrderQuery(history, site.domain);
+  if (!query.intent) return null;
+
+  // Asking about an order but hasn't given us both halves yet.
+  if (!query.reference || query.verifiers.length === 0) {
+    return { state: "need_details", hasReference: Boolean(query.reference) };
+  }
+  if (!rateLimit(`widget-order:${ip}`, 12, 60 * 60 * 1000)) return { state: "no_match" };
+
+  const cred = await loadCredentials(site.id);
+  // Switched on but never connected — say nothing about orders at all rather
+  // than inviting details we cannot check.
+  if (!cred) return null;
+
+  const result = await lookupOrder(cred, query.reference, query.verifiers);
+  if (result.ok) return { state: "found", order: result.order };
+  return { state: result.reason === "unavailable" ? "unavailable" : "no_match" };
+}
 
 /**
  * The lead nobody filled in a form for.
@@ -101,7 +151,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
   const site = await prisma.widgetSite.findUnique({
     where: { siteToken: params.token },
     select: {
-      id: true, enabled: true, domain: true, checkoutPath: true, storeKind: true,
+      id: true, enabled: true, domain: true, checkoutPath: true, storeKind: true, orderLookup: true,
       company: { select: { id: true, name: true, ownerUserId: true, plan: true } },
     },
   });
@@ -151,18 +201,37 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
         // Before anything else, because the answer is written knowing the
         // outcome: an assistant that says "I've passed that to the team"
         // must be describing something that already happened.
-        const captured = await captureFromChat(site!, history, ip);
+        // Are they chasing an order? First, because it changes what an email
+        // in this conversation MEANS.
+        const order = await orderContext(site!, history, ip);
+
+        // An address handed over to prove who you are is not a sales lead.
+        // Someone chasing a parcel typed their email because we asked them to
+        // — turning that into a new enquiry puts an existing customer in the
+        // owner's lead inbox and thanks them for getting in touch about
+        // nothing. If the lookup FAILED on our side, that's different: we owe
+        // them a person, so the lead stands.
+        const identityOnly =
+          order?.state === "found" || order?.state === "no_match" || order?.state === "need_details";
+        const captured = identityOnly ? null : await captureFromChat(site!, history, ip);
 
         // Budget spent → honest message-taker mode, not a dead bubble. The
         // lead above still went through: the AI is what's capped, never the
         // path from a visitor to the company.
         if (!(await consumeAiReply(site!.id))) {
+          // An order status is a fact we already hold — no model involved —
+          // so it keeps working when the month's AI budget doesn't. Same
+          // principle as the lead flow: what's capped is the writing, never
+          // the answer someone actually needs.
+          const plain = order?.state === "found" ? plainOrderReply(order.order) : null;
           send({
             t: "done",
-            reply: captured
-              ? "Thanks — your details are with the team and they'll come back to you by email. Our automatic answers are resting this month, so a person will pick this up."
-              : "Our automatic answers are resting this month — but a person isn't. Leave your email and your question and the team will reply directly.",
-            sources: [], products: [], handoff: !captured, capped: true,
+            reply: plain
+              ? plain
+              : captured
+                ? "Thanks — your details are with the team and they'll come back to you by email. Our automatic answers are resting this month, so a person will pick this up."
+                : "Our automatic answers are resting this month — but a person isn't. Leave your email and your question and the team will reply directly.",
+            sources: [], products: [], handoff: !captured && !plain, capped: true,
             captured: captured ?? undefined,
           });
           return;
@@ -170,7 +239,12 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
         const answer = await answerFromSite(
           { id: site!.id, domain: site!.domain, companyName: site!.company.name, checkoutPath: site!.checkoutPath, storeKind: site!.storeKind },
           history,
-          { pageUrl, onDelta: (text) => send({ t: "delta", text }), contactCaptured: captured ? { name: captured.name, already: captured.already } : null }
+          {
+            pageUrl,
+            onDelta: (text) => send({ t: "delta", text }),
+            contactCaptured: captured ? { name: captured.name, already: captured.already } : null,
+            order,
+          }
         );
         // Their details are already with the team — offering the message
         // form on top of that is a dead end, not a handoff.

@@ -2077,3 +2077,51 @@ widget shipped.
   names a conversation, not a person, and does not survive a reload.
 - 🟡 There is still **no UI for browsing conversations that never became a
   lead**. The data is now there; nothing reads it back yet.
+
+## Order tracking in the chat (added 2026-08-02, migration 066)
+
+WooCommerce, Shopify and BigCommerce, read-only, so a visitor can ask "where
+is my order?" and get a real answer.
+
+- 🔴 **AN ORDER NUMBER IS NOT A SECRET.** They are short, sequential and
+  printed on every confirmation email — #1042 is one keystroke from #1043.
+  Looking an order up by number alone, or by name or phone, would let anyone
+  walk a shop's customer list out through a public chat bubble. The visitor
+  must also produce the EMAIL or POSTCODE on the order. Never relax this.
+- 🔴 **A failed lookup must never say WHICH half failed.** "No such order" and
+  "wrong email" both return `not_found`, and the assistant is told to give one
+  answer. Distinguishing them is an oracle for which order numbers exist.
+- 🟡 **`unavailable` is not `not_found`.** A shop that is down must never be
+  reported to a customer as "your order doesn't exist".
+- 🟡 **The order reference is stripped from the verifier candidates.** The
+  token sweep picks it up otherwise, so "where is order #1042" would count as
+  having supplied proof — the lookup would run, fail, and tell someone their
+  order can't be matched when they were never asked for anything.
+- 🔴 **An email given to verify an order is NOT a lead.** Chat lead capture is
+  suppressed on those turns. Without it, every customer chasing a parcel
+  landed in the owner's sales inbox and got thanked for getting in touch. It
+  is NOT suppressed when the lookup fails on our side — then we owe them a
+  person.
+- 🟡 **Credentials live in their own table, encrypted** (AES-256-GCM,
+  `TOPEZIA_SECRET_KEY`). Off `WidgetSite` on purpose: no existing `select`,
+  endpoint or log line can reach them by accident. They are never returned to
+  a browser — only a four-character hint. No key set = the feature says so
+  rather than storing plaintext.
+- 🟡 **Tested before saved.** A key that doesn't work must fail on the
+  settings page, not at a customer asking about their parcel.
+- 🟡 **Per-IP ceiling of 12 lookups an hour** is the brute-force guard, and it
+  fails to `no_match` — indistinguishable from a wrong verifier.
+- 🟡 **Only status, dates, item names and tracking leave the store.** No
+  addresses, no phone, no prices: a status question is not a request for
+  someone's receipt. Tracking URLs are only ever ones the SHOP recorded —
+  never assembled from a carrier name.
+- 🟡 **Woo `completed` is ambiguous** (shipped, for most shops; "done" for
+  digital goods). It maps to `shipped` and the store's own label rides along
+  so the reply says what the merchant says. Woo core has no tracking at all —
+  the Shipment Tracking plugin's meta is read when present.
+- 🟡 **Shopify's `read_orders` only reaches the last 60 days.** An older order
+  looks exactly like a wrong order number. The connection test says so.
+- 🟡 **`SHOPIFY_API_VERSION`** is pinned and env-overridable — Shopify retires
+  versions yearly and rejects unknown ones outright.
+- 🟡 Order status still answers **when the month's AI budget is spent** — it's
+  a fact we hold, not something written by a model.

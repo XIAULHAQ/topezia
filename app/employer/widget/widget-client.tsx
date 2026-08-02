@@ -26,6 +26,7 @@ type Site = {
   proactiveDelay: number;
   proactiveSound: boolean;
   askContact: boolean;
+  orderLookup: boolean;
   usage: { used: number; limit: number; pooled: boolean };
   stats: SiteStats;
 };
@@ -33,6 +34,42 @@ type Site = {
 type Limits = { id: string; sites: number; pages: number; aiRepliesPerMonth: number; facts: number };
 
 type SiteStats = { leads: number; won: number; revenue: number };
+type Platform = "woocommerce" | "shopify" | "bigcommerce";
+type StoreState = {
+  connected: boolean;
+  /** Which platform and which key — never the key itself. */
+  store: { platform: string; hint: string | null; lastCheckedAt: string | null; lastError: string | null } | null;
+  orderLookup: boolean;
+  /** False when the deployment has no encryption key and so cannot hold
+   *  credentials at all. Better said out loud than discovered on save. */
+  available: boolean;
+};
+
+/** What each platform asks the merchant for, and where they find it. */
+const STORE_FIELDS: Record<Platform, { name: string; label: string; placeholder: string; secret?: boolean }[]> = {
+  woocommerce: [
+    { name: "storeUrl", label: "Store address", placeholder: "https://yourshop.com" },
+    { name: "consumerKey", label: "Consumer key", placeholder: "ck_…" },
+    { name: "consumerSecret", label: "Consumer secret", placeholder: "cs_…", secret: true },
+  ],
+  shopify: [
+    { name: "shopDomain", label: "Shop domain", placeholder: "yourshop.myshopify.com" },
+    { name: "accessToken", label: "Admin API access token", placeholder: "shpat_…", secret: true },
+  ],
+  bigcommerce: [
+    { name: "storeHash", label: "Store hash", placeholder: "abc123" },
+    { name: "accessToken", label: "Access token", placeholder: "your token", secret: true },
+  ],
+};
+
+const STORE_HELP: Record<Platform, string> = {
+  woocommerce:
+    "In WooCommerce: Settings → Advanced → REST API → Add key. Set permissions to Read — nothing here ever writes, and a read-only key can't be used to change an order.",
+  shopify:
+    "In Shopify admin: Settings → Apps → Develop apps → create an app and give it the read_orders scope. That scope only reaches the last 60 days; ask Shopify for read_all_orders if customers chase older ones.",
+  bigcommerce:
+    "In BigCommerce: Settings → API accounts → Create V2/V3 token, with Orders set to read-only. The store hash is the code in your control panel URL.",
+};
 type Fact = { id: string; question: string; answer: string; updatedAt: string };
 type Gap = { question: string; count: number };
 
@@ -54,6 +91,14 @@ export default function WidgetClient() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Order tracking: which store is connected, and the connect form.
+  const [store, setStore] = useState<StoreState | undefined>(undefined);
+  const [platform, setPlatform] = useState<Platform>("woocommerce");
+  const [storeForm, setStoreForm] = useState<Record<string, string>>({});
+  const [storeBusy, setStoreBusy] = useState(false);
+  const [storeError, setStoreError] = useState<string | null>(null);
+  const [storeNote, setStoreNote] = useState<string | null>(null);
 
   // Teach the bot
   const [facts, setFacts] = useState<Fact[]>([]);
@@ -138,6 +183,53 @@ export default function WidgetClient() {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) { setSettingsError(data.error ?? "Couldn't save that."); return; }
     setSites((cur) => (cur ?? []).map((x) => (x.id === site.id ? { ...x, ...optimistic } : x)));
+  }
+
+  /** Load the connected store for whichever site is selected. Credentials
+   *  never come back — only which platform, and whether it still works. */
+  useEffect(() => {
+    if (!selectedId) { setStore(undefined); return; }
+    let stale = false;
+    (async () => {
+      const res = await fetch(`/api/company/store?siteId=${encodeURIComponent(selectedId)}`, { cache: "no-store" });
+      const data = (await res.json().catch(() => ({}))) as StoreState;
+      if (!stale && res.ok) setStore(data);
+    })();
+    return () => { stale = true; };
+  }, [selectedId]);
+
+  /** Connect a store. The server tests the credentials before saving, so a
+   *  failure here means nothing was stored — not that it half-worked. */
+  async function connectStore() {
+    if (!site || storeBusy) return;
+    setStoreBusy(true); setStoreError(null); setStoreNote(null);
+    try {
+      const res = await fetch("/api/company/store", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...storeForm, platform, siteId: site.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; note?: string };
+      if (!res.ok || !data.ok) { setStoreError(data.error ?? "Couldn't connect that store."); return; }
+      setStoreNote(data.note ?? "Connected and tested.");
+      setStoreForm({});
+      const fresh = await fetch(`/api/company/store?siteId=${site.id}`, { cache: "no-store" });
+      if (fresh.ok) setStore((await fresh.json()) as StoreState);
+    } finally {
+      setStoreBusy(false);
+    }
+  }
+
+  async function disconnectStore() {
+    if (!site || storeBusy) return;
+    setStoreBusy(true); setStoreError(null); setStoreNote(null);
+    try {
+      await fetch(`/api/company/store?siteId=${site.id}`, { method: "DELETE" });
+      setStore({ connected: false, store: null, orderLookup: false, available: store?.available ?? true });
+      setSites((cur) => (cur ?? []).map((x) => (x.id === site.id ? { ...x, orderLookup: false } : x)));
+    } finally {
+      setStoreBusy(false);
+    }
   }
 
   /** Scan a new website, or re-scan the selected one. */
@@ -423,6 +515,88 @@ export default function WidgetClient() {
                 either way — and anyone who fills it in lands in your inbox straight away.
               </span>
             </div>
+
+            {/* ── Order tracking ──────────────────────────────────────────
+                Visitors ask "where is my order?" more than anything else on a
+                shop. This answers from the store's own records — read-only —
+                and only when the person can produce the email or postcode on
+                the order, because order numbers are sequential and guessable. */}
+            <label style={ES.label}>Order tracking</label>
+            <p style={{ ...ES.empty, margin: "0 0 10px" }}>
+              Let the chat answer &ldquo;where is my order?&rdquo; from your store. It asks for the order number
+              <em> and </em> the email or postcode on the order before it says anything — a number on its own
+              could be anyone&apos;s. It reads orders and never changes them, and it never guesses a delivery date.
+            </p>
+
+            {store?.available === false ? (
+              <p style={{ ...ES.empty, margin: "0 0 18px" }}>
+                Not available on this deployment yet — the encryption key for storing store credentials isn&apos;t set.
+              </p>
+            ) : store?.connected ? (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                  <span style={ES.pillLive}>
+                    {store.store?.platform === "woocommerce" ? "WooCommerce" : store.store?.platform === "shopify" ? "Shopify" : "BigCommerce"} connected
+                  </span>
+                  {store.store?.hint && <span style={ES.empty}>key {store.store.hint}</span>}
+                  <button type="button" style={{ ...ES.btnGhost, padding: "6px 12px", fontSize: 11.5 }}
+                    onClick={disconnectStore} disabled={storeBusy}>
+                    Disconnect
+                  </button>
+                </div>
+                {store.store?.lastError && (
+                  <p style={{ ...ES.empty, color: "#B91C1C", margin: "0 0 8px" }}>
+                    Last check failed: {store.store.lastError}
+                  </p>
+                )}
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <button type="button" style={site.orderLookup ? ES.btnGhost : ES.btn}
+                    onClick={() => patchSite({ orderLookup: !site.orderLookup }, { orderLookup: !site.orderLookup })}>
+                    {site.orderLookup ? "Stop answering order questions" : "Answer order questions"}
+                  </button>
+                  <span style={{ ...ES.empty, flex: 1, minWidth: 200 }}>
+                    {site.orderLookup
+                      ? "Live on your site now."
+                      : "Connected but not switched on — visitors won't be asked for an order number."}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                  {(["woocommerce", "shopify", "bigcommerce"] as Platform[]).map((p) => (
+                    <button key={p} type="button" style={platform === p ? ES.btn : ES.btnGhost}
+                      onClick={() => { setPlatform(p); setStoreForm({}); setStoreError(null); setStoreNote(null); }}>
+                      {p === "woocommerce" ? "WooCommerce" : p === "shopify" ? "Shopify" : "BigCommerce"}
+                    </button>
+                  ))}
+                </div>
+                <p style={{ ...ES.empty, margin: "0 0 10px" }}>{STORE_HELP[platform]}</p>
+                {STORE_FIELDS[platform].map((f) => (
+                  <div key={f.name} style={{ marginBottom: 8 }}>
+                    <label style={{ ...ES.empty, display: "block", marginBottom: 3 }}>{f.label}</label>
+                    <input
+                      style={{ ...ES.input, maxWidth: 420 }}
+                      type={f.secret ? "password" : "text"}
+                      autoComplete="off"
+                      placeholder={f.placeholder}
+                      value={storeForm[f.name] ?? ""}
+                      onChange={(e) => setStoreForm((cur) => ({ ...cur, [f.name]: e.target.value }))}
+                    />
+                  </div>
+                ))}
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <button type="button" style={ES.btn} onClick={connectStore} disabled={storeBusy}>
+                    {storeBusy ? "Testing…" : "Connect and test"}
+                  </button>
+                  <span style={{ ...ES.empty, flex: 1, minWidth: 200 }}>
+                    We test the connection before saving anything, so you find out here rather than from a customer.
+                  </span>
+                </div>
+              </div>
+            )}
+            {storeError && <p style={{ ...ES.empty, color: "#B91C1C", margin: "-10px 0 18px" }}>{storeError}</p>}
+            {storeNote && <p style={{ ...ES.empty, margin: "-10px 0 18px" }}>{storeNote}</p>}
 
             <label style={ES.label}>When your team is around</label>
             <p style={{ ...ES.empty, margin: "0 0 10px" }}>

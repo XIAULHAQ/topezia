@@ -63,7 +63,55 @@ export type AnswerOptions = {
    *  (the chat route takes the lead first, precisely so this can be stated
    *  as fact). Null when we have nothing — never set it hopefully. */
   contactCaptured?: { name: string | null; already: boolean } | null;
+  /** The order the visitor asked about, already looked up in the merchant's
+   *  own store — or why it couldn't be. The model NEVER calls the store; it
+   *  phrases what it is handed, exactly as with the product shelf. */
+  order?: OrderContext | null;
 };
+
+/** Everything the reply may say about an order, decided server-side. */
+export type OrderContext =
+  | { state: "found"; order: import("./orders/types").OrderStatus }
+  /** Wrong number, wrong verifier, or both — deliberately indistinguishable. */
+  | { state: "no_match" }
+  /** Asking about an order but hasn't given a number and a verifier yet. */
+  | { state: "need_details"; hasReference: boolean }
+  /** The shop didn't answer. Not the visitor's fault and not their problem. */
+  | { state: "unavailable" };
+
+/**
+ * How to talk about an order, per outcome.
+ *
+ * `no_match` is the one that matters. It must read the same whether the order
+ * number was wrong, the email was wrong, or the order does not exist —
+ * anything that distinguishes them tells someone probing which order numbers
+ * are real. The wording also has to stay kind: most people who land here made
+ * a typo, not an attempt.
+ */
+const ORDER_RULES: Record<string, string> = {
+  found: `5d. THE VISITOR'S ORDER HAS BEEN LOOKED UP IN THE STORE and the details are below under <order>. Lead with it. Say the status in the store's own words, when it was placed, and — only if a tracking number is listed — the carrier and that number, with the tracking link if one is given. NEVER estimate or promise a delivery date, never say "it should arrive" by any day, and never describe a step the record doesn't show. If they ask something the record doesn't answer (why it is late, whether it can be changed or cancelled), say the team will pick it up and set "handoff" to true.`,
+  no_match: `5d. THE ORDER LOOKUP FOUND NO MATCH. Say — once, warmly, without blaming them — that you can't match that order number with that email or postcode, and ask them to double-check both against their confirmation email. DO NOT say whether the order number exists, DO NOT say which of the two didn't match, and DO NOT guess at either. If they've already tried twice, offer to pass it to the team and set "handoff" to true.`,
+  need_details: `5d. THEY ARE ASKING ABOUT AN ORDER and you don't have enough to look it up. In one short sentence, ask for their order number AND the email address or postcode on the order — both, together, because you need both to check. Do not pretend to look anything up, and do not ask for anything else. Leave "handoff" FALSE — you are waiting on them, not on the team, and opening a message form here just asks for the same details twice.`,
+  unavailable: `5d. THE STORE COULD NOT BE REACHED just now, which is our end and not theirs. Say plainly that you can't check the order this minute, offer to have the team look it up, and set "handoff" to true. Never guess a status.`,
+};
+
+/** The order record, as fact, for the model to phrase. Prices are absent by
+ *  design — a status question is not a request for someone's receipt. */
+function orderFacts(order: import("./orders/types").OrderStatus): string {
+  const shipments = order.shipments
+    .map((s) =>
+      `<shipment${s.carrier ? ` carrier="${s.carrier.replace(/"/g, "'")}"` : ""}${
+        s.trackingNumber ? ` tracking="${s.trackingNumber.replace(/"/g, "'")}"` : ""
+      }${s.trackingUrl ? ` url="${s.trackingUrl.replace(/"/g, "'")}"` : ""}${s.shippedAt ? ` shipped="${s.shippedAt}"` : ""} />`
+    )
+    .join("\n");
+  return `<order reference="${order.reference.replace(/"/g, "'")}" status="${order.stageLabel.replace(/"/g, "'")}"${
+    order.placedAt ? ` placed="${order.placedAt}"` : ""
+  }>
+${order.items.map((i) => `<item name="${i.name.replace(/"/g, "'")}" quantity="${i.quantity}" />`).join("\n")}
+${shipments || "<!-- the store has recorded no tracking for this order -->"}
+</order>`;
+}
 
 const HANDOFF_FALLBACK: Omit<WidgetAnswer, "sources" | "products"> = {
   reply: "I don't want to guess at that one. Leave your email and a quick message and the team will get back to you directly.",
@@ -143,7 +191,12 @@ export async function answerFromSite(
   // you'd silently break "I taught it that and it still doesn't know".
   const taughtRows = facts.filter((f) => f.distance < 0.7);
 
-  if (chunks.length === 0 && productRows.length === 0 && taughtRows.length === 0) return { ...HANDOFF_FALLBACK, ...EMPTY };
+  // Nothing retrieved and nothing to say — unless there IS something: an
+  // order we already looked up is an answer on its own, and handing it back
+  // as "leave your email" would be absurd when we know where the parcel is.
+  if (chunks.length === 0 && productRows.length === 0 && taughtRows.length === 0 && !opts.order) {
+    return { ...HANDOFF_FALLBACK, ...EMPTY };
+  }
 
   const taught = taughtRows
     .map((f) => `<owner_answer question="${f.question.replace(/"/g, "'")}">\n${f.answer}\n</owner_answer>`)
@@ -196,6 +249,9 @@ export async function answerFromSite(
     opts.contactCaptured
       ? `5c. THE TEAM HAS THIS VISITOR'S CONTACT DETAILS${opts.contactCaptured.already ? ` — they left them earlier in this conversation and their message is already waiting` : ` — they have just given them and the message has gone through`}. This is DONE, not pending. ${opts.contactCaptured.already ? `Reassure them in one short sentence that the team has their details and will reply by email` : `Thank them once${opts.contactCaptured.name ? ` by name (${opts.contactCaptured.name})` : ""} and say the team will follow up by email, in ONE short sentence`}, then answer whatever else they asked. IF THEIR MESSAGE WAS ONLY CONTACT DETAILS and asked nothing, stop after that sentence and offer to keep answering questions — do not pitch a product, do not link a page and do not raise a topic they never mentioned. NEVER ask for their name, email or phone number again, and never tell them to fill in a form or leave their details.`
       : `5c. NEVER ask for a name, email and phone number as a list of fields — you are a conversation, not a form, and the panel below the chat already invites their details. If they want a person or a quote and there is no way to reach them, ask for the best EMAIL only, in one short sentence at the end of your reply. Ask once; if they'd rather not, drop it.`,
+    // ORDER STATUS. The lookup already happened; this only decides wording.
+    // Every branch has one job: never imply we know more than the shop said.
+    opts.order ? ORDER_RULES[opts.order.state] : ``,
     `6. When the visitor is describing a real job of their own that CANNOT simply be bought from the buttons (a custom project, a quote, a bulk or rush order — not a general question, and not something a buy-now product already covers), be a good front desk: answer what they asked FIRST, then ask ONE short qualifying question at the end of your reply. Ask about whatever matters most and hasn't been said yet — what exactly they need, when they need it, roughly what budget they have in mind, or how many. One per reply, never a list, and never twice about the same thing. If they'd rather not say, drop it and move on — the team can ask later.`,
     ``,
     `Output format, exactly: first the reply as plain conversational text — no JSON and no markdown of any kind (no **bold**, headings, or bullet lists; the chat renders plain text). Then a new line containing exactly ${META_MARKER} immediately followed by one single-line JSON object: {"sources": string[], "products": number[], "handoff": boolean}. Nothing after that object.`,
@@ -210,7 +266,11 @@ export async function answerFromSite(
   // The excerpts ride on the latest user turn so caching-hostile long context
   // stays out of the system prompt's way.
   const last = messages.pop()!;
-  messages.push({ role: "user", content: `${taught ? `${taught}\n` : ""}${excerpts}${shelf ? `\n${shelf}` : ""}\n\nVisitor's message: ${last.content}` });
+  const orderBlock = opts.order?.state === "found" ? `${orderFacts(opts.order.order)}\n` : "";
+  messages.push({
+    role: "user",
+    content: `${orderBlock}${taught ? `${taught}\n` : ""}${excerpts}${shelf ? `\n${shelf}` : ""}\n\nVisitor's message: ${last.content}`,
+  });
 
   try {
     const text = opts.onDelta

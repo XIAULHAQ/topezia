@@ -35,7 +35,7 @@ const PLAN_SELECT = { plan: true, aiMonthKey: true, aiRepliesUsed: true } as con
 const SITE_SELECT = {
   id: true, domain: true, siteToken: true, enabled: true, branded: true,
   digestEnabled: true, pagesCrawled: true, crawledAt: true, crawlError: true,
-  accentColor: true, replyHours: true, storeKind: true,
+  accentColor: true, replyHours: true, storeKind: true, orderLookup: true,
   greeting: true, proactive: true, proactiveDelay: true, proactiveSound: true, askContact: true,
   monthKey: true, messagesUsed: true,
 } as const;
@@ -215,6 +215,17 @@ export async function PATCH(req: NextRequest) {
   }
   if (typeof body.proactiveSound === "boolean") data.proactiveSound = body.proactiveSound;
   if (typeof body.askContact === "boolean") data.askContact = body.askContact;
+  if (typeof body.orderLookup === "boolean") {
+    // Turning it ON requires a store that is actually connected — otherwise
+    // the chat would invite order numbers it has no way to check.
+    if (body.orderLookup) {
+      const store = await prisma.siteStoreCredential.findUnique({ where: { siteId }, select: { id: true } });
+      if (!store) {
+        return NextResponse.json({ error: "Connect your store first — there's nothing to look orders up in yet." }, { status: 400 });
+      }
+    }
+    data.orderLookup = body.orderLookup;
+  }
   if ("replyHours" in body) {
     if (body.replyHours === null) data.replyHours = Prisma.DbNull;
     else {
