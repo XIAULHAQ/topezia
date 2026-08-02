@@ -32,6 +32,9 @@ type State = {
   plan: Limits;
   planUntil: string | null;
   hasBillingHistory: boolean;
+  /** A live subscription exists. Distinct from plan — a comped company is
+   *  on PRO with nothing behind it. */
+  subscribed: boolean;
   billingLive: boolean;
   free: Limits;
   plans: SellablePlan[];
@@ -103,6 +106,8 @@ export default function BillingClient() {
   const current = state.plan;
   const onFree = current.id === "FREE";
   const anyForSale = state.plans.some((p) => p.forSale);
+  /** On a paid plan we granted by hand — everything works, nobody is billed. */
+  const comped = !onFree && !state.subscribed;
 
   const rows = (p: Limits) => [
     `${p.sites === 1 ? "1 website" : `${p.sites} websites`}`,
@@ -126,9 +131,11 @@ export default function BillingClient() {
           <span style={{ ...ES.empty, flex: 1, minWidth: 200 }}>
             {onFree
               ? "You're on the free plan. Everything below the AI limits keeps working forever."
-              : state.planUntil
-                ? `Renews ${new Date(state.planUntil).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}.`
-                : "Active."}
+              : comped
+                ? "On the house — everything below works and nothing is being billed. Buying a plan replaces it."
+                : state.planUntil
+                  ? `Renews ${new Date(state.planUntil).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}.`
+                  : "Active."}
           </span>
           {state.hasBillingHistory && (
             <button type="button" style={ES.btnGhost} disabled={busy === "portal"} onClick={() => go({ action: "portal" }, "portal")}>
@@ -198,12 +205,17 @@ export default function BillingClient() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 14 }}>
             {state.plans.map((p) => {
               const price = period === "year" ? p.yearly : p.monthly;
-              const isCurrent = p.id === current.id;
+              // "Current" means a subscription to THIS plan. A comped plan is
+              // marked as such and stays buyable — being given something is
+              // not a reason to be blocked from paying for it.
+              const isCurrent = state.subscribed && p.id === current.id;
+              const isComped = comped && p.id === current.id;
               return (
                 <div key={p.id} style={{ ...ES.card, margin: 0, opacity: p.forSale ? 1 : 0.6 }}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                     <b style={{ fontSize: 15 }}>{p.name}</b>
                     {isCurrent && <span style={ES.pillLive}>Current</span>}
+                    {isComped && <span style={ES.pillDraft}>On the house</span>}
                   </div>
                   <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.5px", margin: "8px 0 2px" }}>
                     {price ? price.label : "—"}
@@ -221,7 +233,7 @@ export default function BillingClient() {
                       onClick={() => go({ plan: p.id, period, keepBranding }, p.id)}>
                       {busy === p.id
                         ? "Opening…"
-                        : onFree ? `Choose ${p.name}` : `Switch to ${p.name}`}
+                        : state.subscribed ? `Switch to ${p.name}` : `Choose ${p.name}`}
                     </button>
                   )}
                 </div>
@@ -229,9 +241,9 @@ export default function BillingClient() {
             })}
           </div>
           <p style={{ ...ES.empty, marginTop: 14 }}>
-            {onFree
-              ? "Payment is handled by Stripe — your card never touches Topezia. Cancel any time from Manage billing; you keep the plan until the period you paid for ends."
-              : "Switching moves your existing subscription rather than starting a second one — Stripe shows you the exact amount, with the unused part of this period credited, before anything is charged."}
+            {state.subscribed
+              ? "Switching moves your existing subscription rather than starting a second one — Stripe shows you the exact amount, with the unused part of this period credited, before anything is charged."
+              : "Payment is handled by Stripe — your card never touches Topezia. Cancel any time from Manage billing; you keep the plan until the period you paid for ends."}
           </p>
         </>
       ) : (

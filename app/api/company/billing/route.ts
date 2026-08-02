@@ -36,6 +36,27 @@ const RETURN = `${SITE}/employer/billing`;
  */
 const SWITCHABLE = new Set(["active", "trialing", "past_due", "unpaid"]);
 
+/**
+ * Does Stripe hold a live subscription for this customer? Asked because a
+ * customer id proves only that someone once opened checkout — it is minted
+ * before the session, so an abandoned checkout leaves one behind.
+ *
+ * Answers FALSE when Stripe can't be reached. That direction is the safe
+ * one for a read: the page offers a purchase, and the POST re-checks and
+ * fails closed rather than creating a second subscription.
+ */
+async function hasLiveSubscription(customerId: string | null): Promise<boolean> {
+  const stripe = getStripe();
+  if (!stripe || !customerId) return false;
+  try {
+    const subs = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 });
+    return subs.data.some((s) => SWITCHABLE.has(s.status));
+  } catch (err) {
+    console.error("[company/billing] subscription check failed:", err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
 export async function GET() {
   const auth = await requireCompanyOwner();
   if (!auth.ok) return auth.response;
@@ -57,6 +78,12 @@ export async function GET() {
     plan: planFor(company),
     planUntil: company?.planUntil ?? null,
     hasBillingHistory: Boolean(company?.stripeCustomerId),
+    // Whether a SUBSCRIPTION exists, which is not the same question as which
+    // plan they're on. A comped company is PRO with nothing behind it, and
+    // labelling that "Current · On this plan" both misleads them and locks
+    // them out of buying the plan they're being given for free. The page
+    // needs both facts to say anything true.
+    subscribed: await hasLiveSubscription(company?.stripeCustomerId ?? null),
     billingLive: billingConfigured(),
     free: PLANS.FREE,
     plans,
