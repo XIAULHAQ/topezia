@@ -1,4 +1,4 @@
-import { parseRobots } from "./lib/widget/robots";
+import { parseRobots } from "@/lib/widget/robots";
 
 let pass = 0, fail = 0;
 const check = (name: string, got: unknown, want: unknown) => {
@@ -64,6 +64,32 @@ check("agent match is case-insensitive", upper.allows("/x/1"), false);
 const messy = parseRobots("# hi\nUser-agent: *   # all\nDisallow: /a/ # nope\ngarbage line\n");
 check("comments stripped", messy.allows("/a/1"), false);
 check("junk ignored", messy.allows("/b/1"), true);
+
+// Real file from rodeo.graphics: WordPress rules, then a Yoast block that
+// opens a SECOND "User-agent: *" record. Both must apply.
+const yoast = parseRobots(`
+User-agent: *
+Disallow: /wp-content/uploads/wc-logs/
+Disallow: /*?add-to-cart=
+Disallow: /wp-admin/
+Allow: /wp-admin/admin-ajax.php
+
+# START YOAST BLOCK
+User-agent: *
+Disallow:
+
+Sitemap: https://rodeo.graphics/sitemap_index.xml
+`);
+check("yoast: content pages still allowed", yoast.allows("/portfolio/thing/"), true);
+check("yoast: first block still enforced", yoast.allows("/wp-admin/options.php"), false);
+check("yoast: add-to-cart query blocked", yoast.allows("/shop/x/?add-to-cart=12"), false);
+check("yoast: admin-ajax allowed", yoast.allows("/wp-admin/admin-ajax.php"), true);
+check("yoast: sitemap read", yoast.sitemaps, ["https://rodeo.graphics/sitemap_index.xml"]);
+
+// Crawl-delay declared in a later record of the same agent still counts.
+const split = parseRobots("User-agent: *\nDisallow: /a/\n\nUser-agent: *\nCrawl-delay: 5");
+check("merged: delay from second record", split.crawlDelay, 5);
+check("merged: rule from first record", split.allows("/a/x"), false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

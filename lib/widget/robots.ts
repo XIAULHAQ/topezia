@@ -93,12 +93,23 @@ export function parseRobots(text: string): Robots {
     }
   }
 
-  // Most specific group wins: our own name beats the wildcard. A group naming
-  // us but saying nothing still wins — an empty group is a deliberate
+  // Records naming the SAME agent are one group (RFC 9309 §2.2.1), and real
+  // files rely on it — Yoast appends its own "User-agent: *" block to a
+  // WordPress robots.txt that already has one, so taking only the first
+  // would silently ignore half the file.
+  const merge = (token: string) => {
+    const mine = groups.filter((g) => g.agents.includes(token));
+    if (!mine.length) return null;
+    return {
+      rules: mine.flatMap((g) => g.rules),
+      delay: mine.map((g) => g.delay).find((d) => d !== null) ?? null,
+    };
+  };
+
+  // Most specific wins: our own name beats the wildcard. A group naming us
+  // but saying nothing still wins — an empty group is a deliberate
   // "everything is fine for you", not a fallthrough to the wildcard.
-  const mine = groups.find((g) => g.agents.includes(UA_TOKEN));
-  const star = groups.find((g) => g.agents.includes("*"));
-  const group = mine ?? star;
+  const group = merge(UA_TOKEN) ?? merge("*");
   if (!group) return { ...ALLOW_ALL, sitemaps };
 
   const rules = group.rules;
