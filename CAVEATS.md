@@ -1886,3 +1886,27 @@ Migration 054 (`WidgetSite.branded`, default true).
   It is the host the crawler proved it could fetch. An earlier version
   stripped "www.", which would have redirected shoppers on every store
   whose canonical domain includes it.
+
+## Company billing portal configuration (added 2026-08-02)
+
+- 🔴 **NEVER enable "customers can switch plans" on the Stripe Dashboard's
+  default portal configuration.** It is shared with member Premium, and the
+  member webhook grants PREMIUM for any active subscription regardless of
+  price — so a $29 member could switch to the $39 business price and keep a
+  membership while paying business money. Companies use their own
+  configuration (lib/billing/portal.ts); members keep the default.
+- 🟡 **The company configuration is created lazily on first portal open**,
+  built from the business prices that are actually configured, and matched
+  back by metadata (`topezia_kind=company`, `topezia_prices=<fingerprint>`)
+  so parallel deploys reuse one. Change the price set and a new
+  configuration is built automatically — Studio joins the moment its price
+  IDs are set. There is no Dashboard step to remember.
+- 🟡 **Building it must never break the portal.** A failure is caught and
+  the session opens on the default configuration: plan switching is a
+  convenience, access to invoices and card details is not.
+- 🟡 Proration is `create_prorations` (credit against the next invoice), and
+  cancellation is `at_period_end`, matching membership. Don't switch to
+  `always_invoice` without deciding you want upgrades to charge instantly.
+- 🟡 Verified with a stubbed Stripe only — no company has opened the portal
+  yet and there is no secret key outside Vercel. First real open is the
+  remaining check.

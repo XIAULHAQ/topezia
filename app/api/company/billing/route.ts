@@ -17,6 +17,7 @@ import { requireCompanyOwner, userEmail } from "@/lib/company/owner";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 import { getStripe, billingConfigured, BUSINESS_INTEGRATION_ID } from "@/lib/billing/stripe";
 import { planCatalogue } from "@/lib/billing/catalogue";
+import { companyPortalConfigId } from "@/lib/billing/portal";
 import { PLANS, planFor, priceIdFor, isPlanId, brandingCouponFor, brandingDiscountOffered, type BillingPeriod } from "@/lib/billing/plans";
 import { getCoupon } from "@/lib/billing/stripe";
 
@@ -88,9 +89,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No billing history for this company yet." }, { status: 404 });
     }
     try {
+      // A configuration that only ever lists BUSINESS plans, so switching
+      // here can't offer a member's product. Failing to build it must not
+      // cost the customer their invoices and card details, so the portal
+      // still opens on the default configuration.
+      let configuration: string | null = null;
+      try {
+        configuration = await companyPortalConfigId(stripe);
+      } catch (err) {
+        console.error("[company/billing] portal config failed, using default:", err instanceof Error ? err.message : err);
+      }
+
       const session = await stripe.billingPortal.sessions.create({
         customer: company.stripeCustomerId,
         return_url: RETURN,
+        ...(configuration ? { configuration } : {}),
       });
       return NextResponse.json({ url: session.url });
     } catch (err) {
