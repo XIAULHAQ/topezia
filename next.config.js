@@ -77,6 +77,14 @@ const WIDGET_HEADERS = SECURITY_HEADERS.filter(
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  /**
+   * /site-chat shipped first and is already linked and in the sitemap. The
+   * page now lives at /free-ai-chatbot, so the old path moves permanently
+   * rather than 404ing — a 301 keeps whatever ranking and links it collected.
+   */
+  async redirects() {
+    return [{ source: "/site-chat", destination: "/free-ai-chatbot", permanent: true }];
+  },
   async headers() {
     return [
       { source: "/((?!widget/).*)", headers: SECURITY_HEADERS },

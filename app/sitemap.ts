@@ -29,7 +29,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${base}/waitlist`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
     // The site chat is a product someone can buy today, so it belongs here
     // at a weight to match — unlike the waitlist pages above it.
-    { url: `${base}/site-chat`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${base}/free-ai-chatbot`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     { url: `${base}/pricing/business`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
   ];
 
