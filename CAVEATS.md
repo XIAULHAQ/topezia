@@ -2029,3 +2029,51 @@ widget shipped.
   list of fields. It did exactly that ("Name: / Email: / Phone: / Service: /
   Budget:") which is what produced the lost lead: a form in prose, with
   nothing behind it.
+
+## The lead email carries the whole chat (added 2026-08-02, migration 065)
+
+- 🔴 **`quoteBlock` truncates at 180 characters**, and the new-lead email used
+  it for a blob that had the message, the brief AND the phone number joined
+  into it. Owners were getting the first 180 characters of a lead and nothing
+  else — the contact details fell off the end. `fullQuote` (no snippet,
+  `white-space:pre-wrap`) is now used for the message; the reply-notification
+  emails still snippet deliberately, because they exist to pull you into the
+  thread.
+- 🟡 **`renderNewInquiryEmail` takes structured parts now** — `contact`,
+  `brief`, `transcript` — instead of one pre-joined string. Never go back to
+  concatenating: that is how the phone number ended up inside a truncation.
+- 🟡 **The full conversation is in the email, both sides.** Gmail clips around
+  102KB and a clipped email hides the end of a chat without saying so, so the
+  transcript is budgeted (~36KB), the OLDEST turns are dropped first, and the
+  email says plainly how many were left out.
+- 🟡 **`WidgetQuestion` now stores the answer and a `sessionId`** (migration
+  065, both nullable). It only ever kept the visitor's question, so when a
+  lead was dropped, our half of the conversation did not exist anywhere and
+  could not be reconstructed. `sessionId` is random per chat session — it
+  names a conversation, not a person, and does not survive a reload.
+- 🟡 There is still **no UI for browsing conversations that never became a
+  lead**. The data is now there; nothing reads it back yet.
+
+## The lead email carries the whole chat (added 2026-08-02, migration 065)
+
+- 🔴 **`quoteBlock` truncates at 180 characters**, and the new-lead email used
+  it for a blob that had the message, the brief AND the phone number joined
+  into it. Owners were getting the first 180 characters of a lead and nothing
+  else — the contact details fell off the end. `fullQuote` (no snippet,
+  `white-space:pre-wrap`) is now used for the message; the reply-notification
+  emails still snippet deliberately, because they exist to pull you into the
+  thread.
+- 🟡 **`renderNewInquiryEmail` takes structured parts now** — `contact`,
+  `brief`, `transcript` — instead of one pre-joined string. Never go back to
+  concatenating: that is how the phone number ended up inside a truncation.
+- 🟡 **The full conversation is in the email, both sides.** Gmail clips around
+  102KB and a clipped email hides the end of a chat without saying so, so the
+  transcript is budgeted (~36KB), the OLDEST turns are dropped first, and the
+  email says plainly how many were left out.
+- 🟡 **`WidgetQuestion` now stores the answer and a `sessionId`** (migration
+  065, both nullable). It only ever kept the visitor's question, so when a
+  lead was dropped, our half of the conversation did not exist anywhere and
+  could not be reconstructed. `sessionId` is random per chat session — it
+  names a conversation, not a person, and does not survive a reload.
+- 🟡 There is still **no UI for browsing conversations that never became a
+  lead**. The data is now there; nothing reads it back yet.

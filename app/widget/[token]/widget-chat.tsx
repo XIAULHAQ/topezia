@@ -115,6 +115,11 @@ export default function WidgetChat({
   const [threadToken, setThreadToken] = useState<string | null>(null);
   // True after a human replied — from then on the input feeds the thread.
   const [humanMode, setHumanMode] = useState(false);
+  // Names this conversation so the log can put it back together — the chat,
+  // not the visitor. Minted per mount, never stored, gone on reload.
+  const session = useRef<string>(
+    typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID().replace(/-/g, "") : `${Math.random()}`.slice(2)
+  );
   const composer = useRef<HTMLTextAreaElement>(null);
   const seenMsgIds = useRef<Set<string>>(new Set());
   const scroller = useRef<HTMLDivElement>(null);
@@ -276,6 +281,7 @@ export default function WidgetChat({
         body: JSON.stringify({
           history: history.filter((t) => t.role !== "team").map(({ role, text: t }) => ({ role, text: t })),
           page: pageUrl ?? undefined,
+          session: session.current,
         }),
       });
       if (!res.ok || !res.body) {

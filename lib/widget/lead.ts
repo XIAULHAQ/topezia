@@ -142,24 +142,17 @@ export async function createWidgetLead(site: LeadSite, input: LeadInput): Promis
   try {
     const to = await userEmail(site.company.ownerUserId);
     if (to) {
-      // The brief goes in the email too — the owner often decides whether to
-      // act from their phone, before they ever open the inbox.
-      const briefLines = brief
-        ? [
-            ``,
-            `— What they're after —`,
-            brief.summary,
-            ...(brief.wants.length ? [`Wants: ${brief.wants.join(", ")}`] : []),
-            ...(brief.budget ? [`Budget: ${brief.budget}`] : []),
-            ...(brief.timeline ? [`Timing: ${brief.timeline}`] : []),
-            ...(brief.openQuestions.length ? [`Still to ask: ${brief.openQuestions.join(" · ")}`] : []),
-          ].join("\n")
-        : "";
+      // Everything the owner needs to judge this without opening a browser:
+      // the message in full, how to reach them, the brief, and THE WHOLE
+      // CONVERSATION — both sides. They decide from their phone.
       const { subject, html } = renderNewInquiryEmail({
         companyName: site.company.name,
         senderName: name || email,
         reason: "Website chat",
-        message: `${message}\n${briefLines}\n\nReach them: ${email}${phone ? ` · ${phone}` : ""}`,
+        message,
+        contact: { email, phone },
+        brief,
+        transcript,
       });
       await sendEmail({ to, subject, html, from: INQUIRY_FROM });
       emailed = true;

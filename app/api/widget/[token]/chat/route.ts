@@ -109,9 +109,15 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     return NextResponse.json({ error: "This widget is turned off." }, { status: 404 });
   }
 
-  let body: { history?: unknown; page?: unknown };
-  try { body = (await req.json()) as { history?: unknown; page?: unknown }; }
+  let body: { history?: unknown; page?: unknown; session?: unknown };
+  try { body = (await req.json()) as { history?: unknown; page?: unknown; session?: unknown }; }
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
+
+  // Groups this turn with the rest of its conversation. Minted by the widget
+  // per session and never persisted there, so it names a chat, not a person;
+  // anything else that arrives is ignored rather than trusted.
+  const sessionId =
+    typeof body.session === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(body.session) ? body.session : null;
 
   const history: ChatTurn[] = (Array.isArray(body.history) ? body.history : [])
     .slice(-MAX_TURNS)
@@ -169,12 +175,24 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
         // Their details are already with the team — offering the message
         // form on top of that is a dead end, not a handoff.
         send({ t: "done", ...answer, handoff: answer.handoff && !captured, capped: false, captured: captured ?? undefined });
-        // Remember what was asked (feeds the weekly digest). After the send,
-        // and a failure here must never break the answer the visitor got.
-        const question = history.filter((t) => t.role === "visitor").at(-1)?.text.slice(0, 280);
+        // Remember BOTH SIDES of the exchange. A lead carries its own full
+        // transcript; this is the only record of the conversations that never
+        // leave an address — which is most of them — and the reason one of
+        // them could only be half-reconstructed. After the send, and a
+        // failure here must never break the answer the visitor got.
+        const question = history.filter((t) => t.role === "visitor").at(-1)?.text.slice(0, 1000);
         if (question) {
           await prisma.widgetQuestion
-            .create({ data: { siteId: site!.id, question, answered: !answer.handoff, pageUrl } })
+            .create({
+              data: {
+                siteId: site!.id,
+                question,
+                answer: answer.reply.slice(0, 2000),
+                sessionId,
+                answered: !answer.handoff,
+                pageUrl,
+              },
+            })
             .catch(() => { /* telemetry, not the product */ });
         }
       } catch (err) {

@@ -1257,12 +1257,21 @@ model WidgetQuestion {
   siteId    String
   site      WidgetSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
   question  String
+  /// What the assistant said back (migration 065). Null on rows written
+  /// before it existed, and on the turns where nothing was generated.
+  /// A lead carries its own full transcript; this is how the conversations
+  /// that never leave an address stay readable too.
+  answer    String?
+  /// Groups the rows of ONE chat (migration 065). Random per session — it
+  /// identifies a conversation, not a person, and does not survive a reload.
+  sessionId String?
   // false = the bot handed off — the site's content couldn't answer it.
   answered  Boolean    @default(true)
   pageUrl   String?
   createdAt DateTime   @default(now())
 
   @@index([siteId, createdAt])
+  @@index([sessionId, createdAt])
 }
 
 // A chunk of the customer's own site, embedded for retrieval. Wiped and
