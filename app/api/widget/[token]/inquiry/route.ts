@@ -72,8 +72,10 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
   const verdict = scoreUgcFields([name, message]);
   if (isSpam(verdict)) return NextResponse.json({ error: spamMessage(verdict) }, { status: 422 });
 
+  // Per SITE, not per company: on an agency account, writing to two
+  // different client sites is two conversations, not a duplicate.
   const open = await prisma.companyInquiry.findFirst({
-    where: { companyId: site.company.id, visitorEmail: email, status: "NEW", source: "WIDGET" },
+    where: { siteId: site.id, visitorEmail: email, status: "NEW", source: "WIDGET" },
     select: { id: true },
   });
   if (open) {
@@ -95,6 +97,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     inquiry = await prisma.companyInquiry.create({
       data: {
         companyId: site.company.id,
+        siteId: site.id,
         source: "WIDGET",
         visitorEmail: email,
         visitorName: name || null,

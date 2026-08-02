@@ -17,15 +17,19 @@ import { saveFact, listFacts, deleteFact, unansweredQuestions, factCap, FACT_LIM
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function siteFor(companyId: string) {
-  return prisma.widgetSite.findUnique({ where: { companyId }, select: { id: true } });
+/** The named site, or the company's only one when it has just the one.
+ *  Scoped by companyId, so another company's site id reads as absent. */
+async function siteFor(companyId: string, siteId?: string | null) {
+  if (siteId) return prisma.widgetSite.findFirst({ where: { id: siteId, companyId }, select: { id: true } });
+  const sites = await prisma.widgetSite.findMany({ where: { companyId }, take: 2, select: { id: true } });
+  return sites.length === 1 ? sites[0] : null;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const auth = await requireCompanyOwner();
   if (!auth.ok) return auth.response;
 
-  const site = await siteFor(auth.owner.companyId);
+  const site = await siteFor(auth.owner.companyId, new URL(req.url).searchParams.get("siteId"));
   if (!site) return NextResponse.json({ facts: [], unanswered: [], limits: { ...FACT_LIMITS, perSite: 0 } });
 
   const [facts, unanswered, perSite] = await Promise.all([listFacts(site.id), unansweredQuestions(site.id), factCap(site.id)]);
@@ -42,12 +46,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(RATE_LIMITED, { status: 429 });
   }
 
-  const site = await siteFor(auth.owner.companyId);
-  if (!site) return NextResponse.json({ error: "Set up the widget first." }, { status: 404 });
-
   let body: Record<string, unknown>;
   try { body = (await req.json()) as Record<string, unknown>; }
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
+
+  const site = await siteFor(auth.owner.companyId, typeof body.siteId === "string" ? body.siteId : null);
+  if (!site) return NextResponse.json({ error: "Which website is this answer for?" }, { status: 404 });
 
   const question = typeof body.question === "string" ? body.question : "";
   const answer = typeof body.answer === "string" ? body.answer : "";
@@ -76,8 +80,9 @@ export async function DELETE(req: NextRequest) {
   const auth = await requireCompanyOwner();
   if (!auth.ok) return auth.response;
 
-  const site = await siteFor(auth.owner.companyId);
-  const id = new URL(req.url).searchParams.get("id") ?? "";
+  const url = new URL(req.url);
+  const site = await siteFor(auth.owner.companyId, url.searchParams.get("siteId"));
+  const id = url.searchParams.get("id") ?? "";
   if (!site || !id || !(await deleteFact(site.id, id))) {
     return NextResponse.json({ error: "That answer no longer exists." }, { status: 404 });
   }

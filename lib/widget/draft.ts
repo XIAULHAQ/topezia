@@ -24,6 +24,9 @@ export type DraftThread = {
   answers: { question: string; answer: string }[];
   transcript: { role: "visitor" | "bot"; text: string }[];
   messages: { sender: "COMPANY" | "CANDIDATE"; body: string }[];
+  /** Which website the lead came through, when known — grounds the draft
+   *  in the right client's site on a multi-site account. */
+  siteId?: string | null;
   /** Concierge brief, when the chat produced one (lib/widget/intake.ts). */
   brief?: {
     summary: string;
@@ -49,7 +52,7 @@ export async function draftReply(
   const lastInbound =
     thread.messages.filter((m) => m.sender === "CANDIDATE").at(-1)?.body ?? thread.message;
 
-  const excerpts = await siteExcerpts(company.id, `${thread.message}\n${lastInbound}`.slice(0, 2000));
+  const excerpts = await siteExcerpts(company.id, `${thread.message}\n${lastInbound}`.slice(0, 2000), thread.siteId);
 
   const firstName = thread.senderName.trim().split(/\s+/)[0] || "";
   const system = [
@@ -117,11 +120,13 @@ export async function draftReply(
  * or when nothing is close. The draft still works; it just grounds on the
  * conversation alone.
  */
-async function siteExcerpts(companyId: string, query: string): Promise<string> {
-  const site = await prisma.widgetSite.findUnique({
-    where: { companyId },
-    select: { id: true, pagesCrawled: true },
-  });
+async function siteExcerpts(companyId: string, query: string, siteId?: string | null): Promise<string> {
+  // The site the lead actually came through, when we know it — on a
+  // ten-site agency account, grounding a reply in the wrong client's
+  // website would be worse than not grounding it at all.
+  const site = siteId
+    ? await prisma.widgetSite.findFirst({ where: { id: siteId, companyId }, select: { id: true, pagesCrawled: true } })
+    : await prisma.widgetSite.findFirst({ where: { companyId }, orderBy: { createdAt: "asc" }, select: { id: true, pagesCrawled: true } });
   if (!site || site.pagesCrawled === 0) return "";
 
   const qEmbedding = await embedText(query);

@@ -25,7 +25,7 @@ async function main() {
     process.exit(1);
   }
 
-  const existing = await prisma.widgetSite.findUnique({ where: { companyId: company.id } });
+  const existing = await prisma.widgetSite.findFirst({ where: { companyId: company.id } });
   const norm = normalizeDomain(domainArg ?? existing?.domain);
   if (!norm.ok) {
     console.error(norm.error);

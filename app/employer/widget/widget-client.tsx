@@ -20,13 +20,16 @@ type Site = {
   pagesCrawled: number;
   crawledAt: string | null;
   crawlError: string | null;
-  usage: { used: number; limit: number };
-  limits: { pages: number; aiRepliesPerMonth: number };
+  storeKind: string | null;
+  usage: { used: number; limit: number; pooled: boolean };
+  stats: SiteStats;
 };
 
+type Limits = { id: string; sites: number; pages: number; aiRepliesPerMonth: number; facts: number };
+
+type SiteStats = { leads: number; won: number; revenue: number };
 type Fact = { id: string; question: string; answer: string; updatedAt: string };
 type Gap = { question: string; count: number };
-type Stats = { leads: number; won: number; revenue: number };
 
 const DAYS = [
   { n: 1, label: "Mon" }, { n: 2, label: "Tue" }, { n: 3, label: "Wed" }, { n: 4, label: "Thu" },
@@ -36,7 +39,12 @@ const SWATCHES = ["#8B5CF6", "#2563EB", "#0E7490", "#059669", "#B45309", "#DC262
 
 export default function WidgetClient() {
   const [gate, setGate] = useState<"auth" | "company" | null>(null);
-  const [site, setSite] = useState<Site | null | undefined>(undefined); // undefined = loading
+  const [sites, setSites] = useState<Site[] | undefined>(undefined); // undefined = loading
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [limits, setLimits] = useState<Limits | null>(null);
+  const [canAddSite, setCanAddSite] = useState(false);
+  const [addingSite, setAddingSite] = useState(false);
+  const [totals, setTotals] = useState<SiteStats | null>(null);
   const [domain, setDomain] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,34 +57,44 @@ export default function WidgetClient() {
   const [teachBusy, setTeachBusy] = useState(false);
   const [teachError, setTeachError] = useState<string | null>(null);
 
-  const [stats, setStats] = useState<Stats | null>(null);
   const [hoursDraft, setHoursDraft] = useState<NonNullable<Site["replyHours"]> | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/company/widget", { cache: "no-store" })
-      .then(async (res) => {
-        if (res.status === 401) { setGate("auth"); return null; }
-        if (res.status === 409) { setGate("company"); return null; }
-        if (!res.ok) throw new Error();
-        return res.json() as Promise<{ site: Site | null; stats: Stats }>;
-      })
-      .then((d) => {
-        if (!d) return;
-        setSite(d.site);
-        setStats(d.stats ?? null);
-        if (d.site) setDomain(d.site.domain);
-      })
-      .catch(() => setError("Couldn't load the widget status."));
-  }, []);
+  useEffect(() => { loadSites(true); }, []);
 
-  useEffect(() => { loadFacts(); }, []);
-
-  async function loadFacts() {
+  async function loadSites(first = false) {
     try {
-      const res = await fetch("/api/company/facts", { cache: "no-store" });
+      const res = await fetch("/api/company/widget", { cache: "no-store" });
+      if (res.status === 401) { setGate("auth"); return; }
+      if (res.status === 409) { setGate("company"); return; }
+      if (!res.ok) throw new Error();
+      const d = (await res.json()) as {
+        sites: Site[]; stats: SiteStats; plan: string; limits: Limits; pooled: boolean; canAddSite: boolean;
+      };
+      setSites(d.sites);
+      setTotals(d.stats ?? null);
+      setLimits(d.limits ?? null);
+      setCanAddSite(d.canAddSite);
+      if (first || !selectedId) {
+        const firstSite = d.sites[0] ?? null;
+        setSelectedId(firstSite?.id ?? null);
+        setDomain(firstSite?.domain ?? "");
+        setAddingSite(d.sites.length === 0);
+      }
+    } catch {
+      setError("Couldn't load the widget status.");
+      setSites([]);
+    }
+  }
+
+  // Facts, gaps and the teaching cap all belong to the SELECTED site.
+  useEffect(() => { if (selectedId) loadFacts(selectedId); }, [selectedId]);
+
+  async function loadFacts(siteId: string) {
+    try {
+      const res = await fetch(`/api/company/facts?siteId=${encodeURIComponent(siteId)}`, { cache: "no-store" });
       if (!res.ok) return;
-      const d = (await res.json()) as { facts: Fact[]; unanswered: Gap[] };
+      const d = (await res.json()) as { facts: Fact[]; unanswered: Gap[]; limits: { perSite: number } };
       setFacts(d.facts ?? []);
       setGaps(d.unanswered ?? []);
     } catch { /* the section just stays empty */ }
@@ -89,12 +107,12 @@ export default function WidgetClient() {
       const res = await fetch("/api/company/facts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(teaching),
+        body: JSON.stringify({ ...teaching, siteId: selectedId }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) { setTeachError(data.error ?? "Couldn't save that."); return; }
       setTeaching(null);
-      await loadFacts();
+      if (selectedId) await loadFacts(selectedId);
     } catch {
       setTeachError("Couldn't save that.");
     } finally {
@@ -109,31 +127,29 @@ export default function WidgetClient() {
     const res = await fetch("/api/company/widget", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
+      body: JSON.stringify({ ...patch, siteId: site.id }),
     });
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) { setSettingsError(data.error ?? "Couldn't save that."); return; }
-    setSite({ ...site, ...optimistic });
+    setSites((cur) => (cur ?? []).map((x) => (x.id === site.id ? { ...x, ...optimistic } : x)));
   }
 
-  async function forgetFact(id: string) {
-    const res = await fetch(`/api/company/facts?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-    if (res.ok) setFacts((cur) => cur.filter((f) => f.id !== id));
-  }
-
-  async function scan() {
-    if (busy) return;
+  /** Scan a new website, or re-scan the selected one. */
+  async function scanSite() {
+    if (busy || !domain.trim()) return;
     setBusy(true); setError(null);
     try {
       const res = await fetch("/api/company/widget", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain }),
+        body: JSON.stringify({ domain, siteId: addingSite ? undefined : selectedId }),
       });
       const data = (await res.json().catch(() => ({}))) as { site?: Site; error?: string };
       if (!res.ok || !data.site) { setError(data.error ?? "Scan failed — try again."); return; }
-      setSite(data.site);
+      setAddingSite(false);
+      setSelectedId(data.site.id);
       setDomain(data.site.domain);
+      await loadSites();
     } catch {
       setError("Scan failed — try again.");
     } finally {
@@ -141,32 +157,30 @@ export default function WidgetClient() {
     }
   }
 
-  async function toggle() {
-    if (!site) return;
-    const res = await fetch("/api/company/widget", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: !site.enabled }),
-    });
-    if (res.ok) setSite({ ...site, enabled: !site.enabled });
+  async function removeSite(s: Site) {
+    if (!confirm(`Remove ${s.domain}? Its chat stops answering. Messages it already brought you stay in your inbox.`)) return;
+    const res = await fetch(`/api/company/widget?siteId=${encodeURIComponent(s.id)}`, { method: "DELETE" });
+    if (!res.ok) { setError("Couldn't remove that website."); return; }
+    setSelectedId(null);
+    await loadSites(true);
   }
 
-  async function toggleDigest() {
-    if (!site) return;
-    const res = await fetch("/api/company/widget", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ digestEnabled: !site.digestEnabled }),
-    });
-    if (res.ok) setSite({ ...site, digestEnabled: !site.digestEnabled });
+  async function forgetFact(id: string) {
+    const res = await fetch(`/api/company/facts?id=${encodeURIComponent(id)}&siteId=${encodeURIComponent(selectedId ?? "")}`, { method: "DELETE" });
+    if (res.ok) setFacts((cur) => cur.filter((f) => f.id !== id));
   }
+
+  const site = sites?.find((x) => x.id === selectedId) ?? null;
+
+  const toggle = () => site && patchSite({ enabled: !site.enabled }, { enabled: !site.enabled });
+  const toggleDigest = () => site && patchSite({ digestEnabled: !site.digestEnabled }, { digestEnabled: !site.digestEnabled });
 
   const snippet = site
     ? `<script src="https://www.topezia.com/widget.js" data-topezia="${site.siteToken}" async></script>`
     : "";
 
   if (gate) return <EmployerGate title="Site chat" reason={gate} what="the site chat widget" />;
-  if (site === undefined) {
+  if (sites === undefined) {
     return (
       <EmployerSection title="Site chat">
         <div style={ES.card}><p style={ES.empty}>{error ?? "Loading…"}</p></div>
@@ -181,8 +195,53 @@ export default function WidgetClient() {
     >
       {error && <p style={ES.error}>{error}</p>}
 
+      {/* One website or ten: the switcher only earns its space once there
+          is a choice to make, or a plan that allows one. */}
+      {(sites.length > 1 || canAddSite) && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
+          {sites.map((s) => {
+            const on = s.id === selectedId && !addingSite;
+            return (
+              <button key={s.id} type="button"
+                onClick={() => { setSelectedId(s.id); setDomain(s.domain); setAddingSite(false); setError(null); }}
+                style={{
+                  border: "1px solid", borderColor: on ? "#C7D2FE" : "#E2E8F0", background: on ? "#EEF2FF" : "#fff",
+                  color: on ? "#4F46E5" : "#334155", borderRadius: 999, padding: "8px 15px",
+                  fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                }}>
+                {s.domain}
+                {!s.enabled && <span style={{ color: "#94A3B8", fontWeight: 600 }}> · off</span>}
+              </button>
+            );
+          })}
+          {canAddSite ? (
+            <button type="button"
+              onClick={() => { setAddingSite(true); setDomain(""); setError(null); }}
+              style={{ ...ES.btnGhost, borderStyle: "dashed", padding: "8px 15px", fontSize: 12.5 }}>
+              + Add a website
+            </button>
+          ) : (
+            limits && limits.sites > 1 && (
+              <span style={{ ...ES.empty }}>{sites.length} of {limits.sites} websites used.</span>
+            )
+          )}
+        </div>
+      )}
+
+      {/* Whole-account totals, only when there's more than one site to add up. */}
+      {sites.length > 1 && totals && totals.leads > 0 && (
+        <div style={{ ...ES.card, marginBottom: 18 }}>
+          <label style={ES.label}>Across all your websites</label>
+          <div style={{ display: "flex", gap: 26, flexWrap: "wrap", margin: "6px 0 0" }}>
+            <span><b style={S2.stat}>{totals.leads}</b><span style={S2.statLabel}>leads from chat</span></span>
+            <span><b style={S2.stat}>{totals.won}</b><span style={S2.statLabel}>became work</span></span>
+            <span><b style={{ ...S2.stat, color: totals.revenue > 0 ? "#047857" : "#0F172A" }}>${totals.revenue.toLocaleString()}</b><span style={S2.statLabel}>you marked won</span></span>
+          </div>
+        </div>
+      )}
+
       <div style={{ ...ES.card, marginBottom: 18 }}>
-        <label style={ES.label}>Your website</label>
+        <label style={ES.label}>{addingSite ? "Add a website" : "Your website"}</label>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <input
             style={{ ...ES.input, flex: 1, minWidth: 220 }}
@@ -190,9 +249,15 @@ export default function WidgetClient() {
             onChange={(e) => setDomain(e.target.value)}
             placeholder="yourcompany.com"
           />
-          <button type="button" style={ES.btn} onClick={scan} disabled={busy || !domain.trim()}>
-            {busy ? "Scanning…" : site ? "Re-scan site" : "Scan my site"}
+          <button type="button" style={ES.btn} onClick={scanSite} disabled={busy || !domain.trim()}>
+            {busy ? "Scanning…" : addingSite ? "Add and scan" : "Re-scan site"}
           </button>
+          {addingSite && sites.length > 0 && (
+            <button type="button" style={ES.btnGhost}
+              onClick={() => { setAddingSite(false); setDomain(site?.domain ?? ""); setError(null); }}>
+              Cancel
+            </button>
+          )}
         </div>
         {busy && (
           <p style={{ ...ES.empty, marginTop: 10 }}>
@@ -205,24 +270,30 @@ export default function WidgetClient() {
               ? `Last scan: ${site.crawlError}`
               : `Knows ${site.pagesCrawled} page${site.pagesCrawled === 1 ? "" : "s"} of ${site.domain}` +
                 (site.crawledAt ? `, scanned ${new Date(site.crawledAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : "") +
-                `. Re-scan after you change the site. Free plan reads up to ${site.limits.pages} pages.`}
+                `. Re-scan after you change the site${limits ? `. Your plan reads up to ${limits.pages.toLocaleString()} pages` : ""}.`}
           </p>
         )}
       </div>
 
-      {site && (
+      {site && !addingSite && (
         <>
           <div style={{ ...ES.card, marginBottom: 18 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 12 }}>
               <span style={site.enabled ? ES.pillLive : ES.pillDraft}>{site.enabled ? "Widget is on" : "Widget is off"}</span>
               <span style={{ ...ES.empty, flex: 1, minWidth: 180 }}>
-                {site.usage.used} of {site.usage.limit} AI replies used this month. After that the chat keeps
+                {site.usage.used} of {site.usage.limit} AI replies used this month
+                {site.usage.pooled ? " across all your websites" : ""}. After that the chat keeps
                 taking messages — it just stops answering automatically.
                 {site.branded && " On the free plan the chat shows a small “Add AI chat to your site. Free with Topezia.” line at the bottom."}
               </span>
               <button type="button" style={site.enabled ? ES.btnDanger : ES.btn} onClick={toggle}>
                 {site.enabled ? "Turn off" : "Turn on"}
               </button>
+              {sites.length > 1 && (
+                <button type="button" style={{ ...ES.btnGhost, color: "#B91C1C" }} onClick={() => removeSite(site)}>
+                  Remove
+                </button>
+              )}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", borderTop: "1px solid #F1F5F9", paddingTop: 12 }}>
               <span style={{ ...ES.empty, flex: 1, minWidth: 180 }}>
@@ -238,16 +309,16 @@ export default function WidgetClient() {
           {/* What the chat has produced. Leads are counted; won and revenue
               are only ever what the owner marked in Messages — we have no
               payment rail, so nothing here is estimated. */}
-          {stats && stats.leads > 0 && (
+          {site.stats.leads > 0 && (
             <div style={{ ...ES.card, marginBottom: 18 }}>
-              <label style={ES.label}>What the chat has brought in</label>
+              <label style={ES.label}>What {sites.length > 1 ? site.domain : "the chat"} has brought in</label>
               <div style={{ display: "flex", gap: 26, flexWrap: "wrap", margin: "6px 0 10px" }}>
-                <span><b style={S2.stat}>{stats.leads}</b><span style={S2.statLabel}>leads from chat</span></span>
-                <span><b style={S2.stat}>{stats.won}</b><span style={S2.statLabel}>became work</span></span>
-                <span><b style={{ ...S2.stat, color: stats.revenue > 0 ? "#047857" : "#0F172A" }}>${stats.revenue.toLocaleString()}</b><span style={S2.statLabel}>you marked won</span></span>
+                <span><b style={S2.stat}>{site.stats.leads}</b><span style={S2.statLabel}>leads from chat</span></span>
+                <span><b style={S2.stat}>{site.stats.won}</b><span style={S2.statLabel}>became work</span></span>
+                <span><b style={{ ...S2.stat, color: site.stats.revenue > 0 ? "#047857" : "#0F172A" }}>${site.stats.revenue.toLocaleString()}</b><span style={S2.statLabel}>you marked won</span></span>
               </div>
               <p style={{ ...ES.empty, margin: 0 }}>
-                {stats.won === 0
+                {site.stats.won === 0
                   ? "Mark a conversation “won” in Messages when it turns into work — these totals only ever count what you tell them, never a guess."
                   : "Counted from the conversations you marked won in Messages. Only your own numbers appear here."}
               </p>

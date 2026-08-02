@@ -1910,3 +1910,31 @@ Migration 054 (`WidgetSite.branded`, default true).
 - 🟡 Verified with a stubbed Stripe only — no company has opened the portal
   yet and there is no secret key outside Vercel. First real open is the
   remaining check.
+
+## Multi-site (added 2026-08-02, migration 062)
+
+- 🔴 **How many sites a company may run is a PLAN decision, not a database
+  one.** WidgetSite.companyId is no longer unique; the ceiling is enforced
+  in POST /api/company/widget from lib/billing/plans.ts. Raising an
+  allowance is an edit to the plan table — never add the constraint back.
+- 🔴 **CompanyInquiry.siteId is ON DELETE SET NULL and must stay that way.**
+  A lead belongs to the COMPANY and has to outlive the website it arrived
+  through; removing a site must never delete the business it produced.
+  Verified by deleting a site out from under a real lead.
+- 🔴 **The open-widget-inquiry guard is per SITE, not per company**
+  (`CompanyInquiry_open_one_per_visitor` on (siteId, visitorEmail)). Per
+  company would block a visitor who wrote to two different client sites of
+  one agency. Note NULL siteIds are distinct to Postgres, so the guard only
+  binds rows that have a site — every new widget lead does.
+- 🟡 Everything site-shaped now takes an explicit siteId, scoped by
+  companyId so another company's id reads as absent: facts, settings,
+  re-scan, delete. Drafted replies ground in the lead's OWN site — on an
+  agency account, grounding in the wrong client's website would be worse
+  than not grounding at all.
+- 🟡 The AI budget stays POOLED across sites on multi-site plans (caps.ts
+  spends against the Company row). The usage line says "across all your
+  websites" — don't render a pooled number as if it were per site.
+- 🟡 Studio prices exist in Stripe but its env vars are still unset, so it
+  is not yet on sale. Multi-site removes the reason for that; setting
+  STRIPE_STUDIO_{MONTHLY,YEARLY}_PRICE_ID is now a business decision, not a
+  technical block.

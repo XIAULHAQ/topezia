@@ -1,11 +1,19 @@
 /**
- * GET   /api/company/widget — widget status, usage, and the embed snippet.
- * POST  /api/company/widget — set the domain and (re)scan the site.
- * PATCH /api/company/widget — turn the widget on/off.
+ * GET    /api/company/widget            — every site this company runs.
+ * POST   /api/company/widget            — add a site, or re-scan one.
+ * PATCH  /api/company/widget            — change one site's settings.
+ * DELETE /api/company/widget?siteId=    — remove a site.
  *
- * Owner only. The crawl runs inside the POST — capped hard enough
- * (lib/widget/crawl.ts) to fit a serverless invocation; a bigger site gets
- * its first 40 pages, which is the free tier anyway.
+ * Owner only. A company may run as many sites as its plan allows
+ * (lib/billing/plans.ts) — one on Free and Pro, ten on Studio — and that
+ * ceiling is enforced HERE rather than by the database, so raising it is an
+ * edit to the plan table.
+ *
+ * Every write takes an explicit siteId and scopes it by companyId: the
+ * `where` IS the authorization, so another company's site id reads as
+ * absent rather than as a permission error.
+ *
+ * The crawl runs inside the POST, capped to fit a serverless invocation.
  */
 import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
@@ -27,48 +35,77 @@ const PLAN_SELECT = { plan: true, aiMonthKey: true, aiRepliesUsed: true } as con
 const SITE_SELECT = {
   id: true, domain: true, siteToken: true, enabled: true, branded: true,
   digestEnabled: true, pagesCrawled: true, crawledAt: true, crawlError: true,
-  accentColor: true, replyHours: true,
+  accentColor: true, replyHours: true, storeKind: true,
   monthKey: true, messagesUsed: true,
 } as const;
 
-async function view(
-  site: { monthKey: string; messagesUsed: number } & Record<string, unknown>,
-  company: { plan: string; aiMonthKey: string; aiRepliesUsed: number } | null
-) {
+type Company = { plan: string; aiMonthKey: string; aiRepliesUsed: number } | null;
+
+async function view(site: { monthKey: string; messagesUsed: number } & Record<string, unknown>, company: Company) {
   const usage = await usageThisMonth(site, company);
-  const plan = planFor(company);
   const { monthKey: _mk, messagesUsed: _mu, ...rest } = site;
-  return { ...rest, usage, limits: plan, plan: plan.id };
+  return { ...rest, usage };
 }
 
 /**
- * What the chat has actually produced. Leads are counted rows; won and
- * revenue are ONLY what the owner marked and typed — nothing here is
- * estimated, and a company that never marks anything sees zeros, which is
- * the truth about what we know.
+ * What the chat has produced, per site AND in total. Leads are counted rows;
+ * won and revenue are ONLY what the owner marked and typed — nothing here is
+ * estimated, and a company that marks nothing sees zeros, which is the truth
+ * about what we know.
+ *
+ * Grouped in one pass rather than per site: an agency on ten sites shouldn't
+ * cost thirty queries to render one page.
  */
 async function attribution(companyId: string) {
-  const [leads, won, sum] = await Promise.all([
-    prisma.companyInquiry.count({ where: { companyId, source: "WIDGET" } }),
-    prisma.companyInquiry.count({ where: { companyId, source: "WIDGET", outcome: "WON" } }),
-    prisma.companyInquiry.aggregate({
-      where: { companyId, source: "WIDGET", outcome: "WON" },
-      _sum: { dealValue: true },
-    }),
-  ]);
-  return { leads, won, revenue: sum._sum.dealValue ?? 0 };
+  const rows = await prisma.companyInquiry.groupBy({
+    by: ["siteId", "outcome"],
+    where: { companyId, source: "WIDGET" },
+    _count: { _all: true },
+    _sum: { dealValue: true },
+  });
+
+  const bySite = new Map<string, { leads: number; won: number; revenue: number }>();
+  const total = { leads: 0, won: 0, revenue: 0 };
+  for (const r of rows) {
+    const key = r.siteId ?? "";
+    const cur = bySite.get(key) ?? { leads: 0, won: 0, revenue: 0 };
+    cur.leads += r._count._all;
+    total.leads += r._count._all;
+    if (r.outcome === "WON") {
+      cur.won += r._count._all;
+      cur.revenue += r._sum.dealValue ?? 0;
+      total.won += r._count._all;
+      total.revenue += r._sum.dealValue ?? 0;
+    }
+    bySite.set(key, cur);
+  }
+  return { bySite, total };
 }
 
 export async function GET() {
   const auth = await requireCompanyOwner();
   if (!auth.ok) return auth.response;
+  const { companyId } = auth.owner;
 
-  const [site, stats, company] = await Promise.all([
-    prisma.widgetSite.findUnique({ where: { companyId: auth.owner.companyId }, select: SITE_SELECT }),
-    attribution(auth.owner.companyId),
-    prisma.company.findUnique({ where: { id: auth.owner.companyId }, select: PLAN_SELECT }),
+  const [sites, stats, company] = await Promise.all([
+    prisma.widgetSite.findMany({ where: { companyId }, orderBy: { createdAt: "asc" }, select: SITE_SELECT }),
+    attribution(companyId),
+    prisma.company.findUnique({ where: { id: companyId }, select: PLAN_SELECT }),
   ]);
-  return NextResponse.json({ site: site ? await view(site, company) : null, stats, plan: planFor(company).id });
+  const plan = planFor(company);
+
+  return NextResponse.json({
+    sites: await Promise.all(
+      sites.map(async (s) => ({ ...(await view(s, company)), stats: stats.bySite.get(s.id) ?? { leads: 0, won: 0, revenue: 0 } }))
+    ),
+    stats: stats.total,
+    plan: plan.id,
+    limits: plan,
+    // Pooled budgets are a whole-account number, so the page can show one
+    // bar for the company rather than a misleading one per site.
+    pooled: plan.sites > 1,
+    canAddSite: sites.length < plan.sites,
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -78,7 +115,7 @@ export async function POST(req: NextRequest) {
 
   // Crawls fetch tens of pages of someone's site — a tight window is basic
   // manners toward the crawled host as much as toward our compute bill.
-  if (!rateLimit(`widget-crawl:${userId}`, 5, 60 * 60 * 1000)) {
+  if (!rateLimit(`widget-crawl:${userId}`, 8, 60 * 60 * 1000)) {
     return NextResponse.json(RATE_LIMITED, { status: 429 });
   }
 
@@ -86,12 +123,43 @@ export async function POST(req: NextRequest) {
   try { body = (await req.json()) as Record<string, unknown>; }
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const existing = await prisma.widgetSite.findUnique({ where: { companyId }, select: { id: true, domain: true } });
+  const company = await prisma.company.findUnique({ where: { id: companyId }, select: PLAN_SELECT });
+  const plan = planFor(company);
 
-  // Re-scan keeps the saved domain when none is sent.
-  const domainInput = body.domain ?? existing?.domain;
-  const norm = normalizeDomain(domainInput);
+  // Re-scan an existing site, or add a new one.
+  const siteId = typeof body.siteId === "string" && body.siteId ? body.siteId : null;
+  const existing = siteId
+    ? await prisma.widgetSite.findFirst({ where: { id: siteId, companyId }, select: { id: true, domain: true } })
+    : null;
+  if (siteId && !existing) {
+    return NextResponse.json({ error: "That website is no longer set up." }, { status: 404 });
+  }
+
+  if (!existing) {
+    const count = await prisma.widgetSite.count({ where: { companyId } });
+    if (count >= plan.sites) {
+      return NextResponse.json(
+        {
+          error: plan.sites === 1
+            ? "Your plan covers one website. Studio covers ten."
+            : `Your plan covers ${plan.sites} websites.`,
+          upgrade: true,
+        },
+        { status: 402 }
+      );
+    }
+  }
+
+  const norm = normalizeDomain(body.domain ?? existing?.domain);
   if (!norm.ok) return NextResponse.json({ error: norm.error }, { status: 400 });
+
+  // The same domain twice would mean two sets of answers for one website and
+  // two budgets to reconcile — almost certainly a mistake, not an intent.
+  const clash = await prisma.widgetSite.findFirst({
+    where: { companyId, domain: norm.host, ...(existing ? { id: { not: existing.id } } : {}) },
+    select: { id: true },
+  });
+  if (clash) return NextResponse.json({ error: `${norm.host} is already set up.` }, { status: 409 });
 
   const site = existing
     ? await prisma.widgetSite.update({ where: { id: existing.id }, data: { domain: norm.host }, select: { id: true } })
@@ -100,8 +168,7 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
 
-  const company = await prisma.company.findUnique({ where: { id: companyId }, select: PLAN_SELECT });
-  const crawl = await crawlSite(site.id, norm.host, planFor(company).pages);
+  const crawl = await crawlSite(site.id, norm.host, plan.pages);
 
   const fresh = await prisma.widgetSite.findUnique({ where: { id: site.id }, select: SITE_SELECT });
   return NextResponse.json({ site: fresh ? await view(fresh, company) : null, crawl });
@@ -110,17 +177,21 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const auth = await requireCompanyOwner();
   if (!auth.ok) return auth.response;
+  const { companyId } = auth.owner;
 
   let body: Record<string, unknown>;
   try { body = (await req.json()) as Record<string, unknown>; }
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
+
+  const siteId = typeof body.siteId === "string" ? body.siteId : "";
+  if (!siteId) return NextResponse.json({ error: "Which website?" }, { status: 400 });
 
   // Prisma spells "write SQL NULL into a Json column" as DbNull, not null.
   const data: Prisma.WidgetSiteUpdateManyMutationInput = {};
   if (typeof body.enabled === "boolean") data.enabled = body.enabled;
   if (typeof body.digestEnabled === "boolean") data.digestEnabled = body.digestEnabled;
   if ("accentColor" in body) {
-    const company = await prisma.company.findUnique({ where: { id: auth.owner.companyId }, select: { plan: true } });
+    const company = await prisma.company.findUnique({ where: { id: companyId }, select: { plan: true } });
     if (!planFor(company).theming) {
       return NextResponse.json({ error: "Custom colours are part of Pro.", upgrade: true }, { status: 402 });
     }
@@ -145,12 +216,28 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
   }
 
-  const updated = await prisma.widgetSite.updateMany({
-    where: { companyId: auth.owner.companyId },
-    data,
-  });
+  // Scoped by companyId as well as id — the where IS the authorization.
+  const updated = await prisma.widgetSite.updateMany({ where: { id: siteId, companyId }, data });
   if (updated.count === 0) {
-    return NextResponse.json({ error: "Set up the widget first." }, { status: 404 });
+    return NextResponse.json({ error: "That website is no longer set up." }, { status: 404 });
   }
   return NextResponse.json(data);
+}
+
+export async function DELETE(req: NextRequest) {
+  const auth = await requireCompanyOwner();
+  if (!auth.ok) return auth.response;
+
+  const siteId = new URL(req.url).searchParams.get("siteId") ?? "";
+  if (!siteId) return NextResponse.json({ error: "Which website?" }, { status: 400 });
+
+  // Cascades take the crawl, the products, the taught answers and the
+  // question log with it — all of which are about that site. The LEADS are
+  // not: CompanyInquiry.siteId is ON DELETE SET NULL, so the business the
+  // site produced stays in the inbox.
+  const deleted = await prisma.widgetSite.deleteMany({ where: { id: siteId, companyId: auth.owner.companyId } });
+  if (deleted.count === 0) {
+    return NextResponse.json({ error: "That website is no longer set up." }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true });
 }

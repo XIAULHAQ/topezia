@@ -1133,7 +1133,7 @@ model Company {
   inquiries        CompanyInquiry[]
   // The embeddable site chat widget (migration 051). One per company — the
   // unique IS the free-tier cap.
-  widgetSite       WidgetSite?
+  widgetSites      WidgetSite[]
 
   // /hq override for the spam scorer, exactly as Profile.spamCleared: the
   // scorer has known false positives and the only other remedy would be
@@ -1173,7 +1173,10 @@ enum InquirySource {
 // One company's installed chat widget (migration 051).
 model WidgetSite {
   id           String   @id @default(uuid())
-  companyId    String   @unique
+  /// NOT unique since migration 062 — a company may run the chat on several
+  /// websites. The allowance is enforced in code from the company's plan, so
+  /// changing it never needs a migration.
+  companyId    String
   company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   domain       String
   // Public key in the embed snippet. Identifies, never authorizes — every
@@ -1209,6 +1212,7 @@ model WidgetSite {
   products     SiteProduct[]
   questions    WidgetQuestion[]
   facts        SiteFact[]
+  inquiries    CompanyInquiry[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -1322,6 +1326,11 @@ model CompanyInquiry {
   visitorPhone String?
   threadToken  String? @unique
   transcript   Json?
+  /// Which website this lead came through (migration 062). Null for contact
+  /// -form inquiries and for widget leads predating the column. SET NULL on
+  /// site delete — a lead belongs to the company and outlives the site.
+  siteId       String?
+  site         WidgetSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
   // Concierge intake: what the chat established about the job, extracted at
   // submission — { summary, wants, budget, timeline, openQuestions }. Every
   // field is null unless the visitor actually said it.
@@ -1354,9 +1363,15 @@ model CompanyInquiry {
   // partial unique index in raw SQL — Prisma can't express WHERE clauses:
   //   CREATE UNIQUE INDEX "CompanyInquiry_open_one_per_sender"
   //     ON "CompanyInquiry"("companyId", "profileId") WHERE status = 'NEW';
+  // and for widget visitors, per SITE since migration 062 (a visitor writing
+  // to two client sites of one agency is two conversations, not a duplicate):
+  //   CREATE UNIQUE INDEX "CompanyInquiry_open_one_per_visitor"
+  //     ON "CompanyInquiry"("siteId", "visitorEmail")
+  //     WHERE status = 'NEW' AND source = 'WIDGET';
   @@index([companyId, status, createdAt])
   @@index([profileId, createdAt])
   @@index([companyId, outcome])
+  @@index([siteId])
 }
 
 // A message inside an opened thread. The first row is always the company's

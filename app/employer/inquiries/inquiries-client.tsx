@@ -36,6 +36,7 @@ type Inquiry = {
   visitorPhone: string | null;
   transcript: { role: "visitor" | "bot"; text: string }[] | null;
   brief: Brief | null;
+  site: { id: string; domain: string } | null;
   outcome: "WON" | "LOST" | null;
   dealValue: number | null;
   profile: {
@@ -151,7 +152,7 @@ export default function InquiriesClient() {
         filter === "All" ? i.status === "NEW" || i.status === "REPLIED" :
         i.status === ({ New: "NEW", Replied: "REPLIED", Archived: "ARCHIVED", Spam: "SPAM" } as const)[filter as Exclude<Filter, "All">]
       )
-      .filter((i) => !q || `${senderName(i)} ${senderEmail(i) ?? ""} ${i.reason ?? ""} ${i.message}`.toLowerCase().includes(q))
+      .filter((i) => !q || `${senderName(i)} ${senderEmail(i) ?? ""} ${i.reason ?? ""} ${i.site?.domain ?? ""} ${i.message}`.toLowerCase().includes(q))
       .sort((a, b) => lastActivity(b).localeCompare(lastActivity(a)));
   }, [items, filter, query]);
 
@@ -434,6 +435,9 @@ export default function InquiriesClient() {
                         <span style={{ ...S.chanTag, background: active.source === "WIDGET" ? "#F5F3FF" : "#ECFDF5", color: active.source === "WIDGET" ? "#6D28D9" : "#047857" }}>
                           {active.source === "WIDGET" ? "Website chat" : "Contact form"}
                         </span>
+                        {/* Which of your websites — the first thing anyone
+                            running several of them wants to know. */}
+                        {active.site && <span style={S.siteTag}>{active.site.domain}</span>}
                         {active.profile?.openToWork && <span style={ES.pillLive}>Open to work</span>}
                       </span>
                       <span style={{ display: "block", fontSize: 11.5, color: "#64748B", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub || when(active.createdAt)}</span>
@@ -571,6 +575,7 @@ export default function InquiriesClient() {
                           <span style={S.contactRow}><b style={S.contactKey}>Profile</b><a href={profileHref} target="_blank" rel="noreferrer" style={S.contactLink}>topezia.com{profileHref} ↗</a></span>
                         )}
                         {active.reason && <span style={S.contactRow}><b style={S.contactKey}>Reason</b>{active.reason}</span>}
+                        {active.site && <span style={S.contactRow}><b style={S.contactKey}>Site</b>{active.site.domain}</span>}
                       </div>
 
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 5 }}>
@@ -732,6 +737,7 @@ const S: Record<string, CSSProperties> = {
   rowName: { flex: 1, minWidth: 0, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   rowTime: { flex: "none", fontSize: 10.5, color: "#64748B" },
   chanTag: { flex: "none", borderRadius: 5, padding: "2px 7px", fontSize: 9.5, fontWeight: 700, letterSpacing: 0.3 },
+  siteTag: { flex: "none", borderRadius: 5, padding: "2px 7px", fontSize: 9.5, fontWeight: 700, letterSpacing: 0.3, background: "#F1F5F9", color: "#475569" },
   preview: { flex: 1, minWidth: 0, fontSize: 11.8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   unreadDot: { flex: "none", width: 9, height: 9, borderRadius: "50%", background: GRAD },
   emptyList: { padding: "44px 26px", textAlign: "center", color: "#64748B" },

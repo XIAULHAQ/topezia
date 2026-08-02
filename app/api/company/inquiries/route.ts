@@ -39,6 +39,7 @@ export async function GET() {
         status: true, repliedAt: true, createdAt: true,
         source: true, visitorEmail: true, visitorName: true, visitorPhone: true, transcript: true, brief: true,
         outcome: true, dealValue: true,
+        site: { select: { id: true, domain: true } },
         profile: {
           select: {
             fullName: true, publicSlug: true, publicVisible: true,
