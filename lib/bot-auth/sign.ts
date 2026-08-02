@@ -34,6 +34,39 @@ export const DIRECTORY_URL = `${SITE}/.well-known/http-message-signatures-direct
 
 type Key = { priv: KeyObject; jwk: { kty: "OKP"; crv: "Ed25519"; x: string }; thumbprint: string };
 
+/**
+ * Find the PEM private key inside whatever was pasted into the environment.
+ *
+ * Deliberately forgiving. This value is typed by a human into a dashboard
+ * text box, and the ways it arrives slightly wrong are boring and endless:
+ * a trailing newline, surrounding quotes, the base64 with a helpful line of
+ * console output copied along with it, the PEM itself pasted raw. None of
+ * those are the operator's mistake to pay for — a key that is present and
+ * recoverable should work.
+ *
+ * What it will NOT do is guess. If there is no complete BEGIN/END block
+ * after decoding, it returns null and the crawler stays unsigned, because a
+ * half-recovered key would fail later and further from the cause.
+ */
+function extractPem(raw: string): string | null {
+  const block = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/;
+
+  const direct = raw.match(block);
+  if (direct) return direct[0];
+
+  // Not a PEM, so it should be base64 OF a PEM. Keep only base64 characters
+  // — this is what drops an accidentally-copied "LENGTH: 236" tail, stray
+  // quotes, and any wrapping whitespace — then decode and look again.
+  const b64 = raw.replace(/[^A-Za-z0-9+/=]/g, "");
+  if (b64.length < 100) return null;
+  try {
+    const decoded = Buffer.from(b64, "base64").toString("utf8");
+    return decoded.match(block)?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 let cached: Key | null | undefined;
 
 /**
@@ -51,7 +84,11 @@ function key(): Key | null {
   if (!raw) return cached;
 
   try {
-    const pem = raw.includes("BEGIN") ? raw : Buffer.from(raw, "base64").toString("utf8");
+    const pem = extractPem(raw);
+    if (!pem) {
+      console.error("[bot-auth] TOPEZIA_BOT_PRIVATE_KEY contains no PEM private key block — requests will be unsigned");
+      return cached;
+    }
     const priv = createPrivateKey(pem);
     if (priv.asymmetricKeyType !== "ed25519") {
       console.error("[bot-auth] TOPEZIA_BOT_PRIVATE_KEY is not an Ed25519 key — requests will be unsigned");
