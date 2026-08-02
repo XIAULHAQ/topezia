@@ -20,6 +20,8 @@ import { prisma } from "@/lib/prisma";
 import { decodeHtmlEntities } from "@/lib/sanitize";
 import { embedBatch } from "@/lib/ingestion/embed";
 import { FREE_LIMITS } from "./caps";
+import { loadRobots, pathOf, type Robots } from "./robots";
+import { signedHeaders } from "@/lib/bot-auth/sign";
 
 const PAGE_TIMEOUT_MS = 10_000;
 /** Long enough that a rate limiter has forgotten us, short enough that a
@@ -106,7 +108,7 @@ async function fetchPage(url: string, stats?: FetchStats, retry = true): Promise
     const res = await fetch(url, {
       signal: ctrl.signal,
       redirect: "follow",
-      headers: { "User-Agent": "TopeziaWidget/1.0 (+https://www.topezia.com)" },
+      headers: { "User-Agent": "TopeziaWidget/1.0 (+https://www.topezia.com)", ...signedHeaders(url) },
     });
     const type = res.headers.get("content-type") ?? "";
     if (!res.ok || (!type.includes("html") && !type.includes("xml") && !type.includes("text"))) {
@@ -183,11 +185,17 @@ const sameHost = (url: string, host: string) => {
 };
 
 /** Sitemap <loc> entries on this host, else a shallow BFS from the homepage. */
-async function discoverUrls(host: string, maxPages: number, stats?: FetchStats): Promise<string[]> {
+async function discoverUrls(host: string, maxPages: number, stats?: FetchStats, robots?: Robots): Promise<string[]> {
   const base = `https://${host}`;
   const seen = new Set<string>([base, `${base}/`]);
   const keep = (u: string) =>
-    sameHost(u, host) && !/\.(png|jpe?g|gif|svg|webp|pdf|zip|mp4|css|js|ico|xml)(\?|$)/i.test(u) && !u.includes("#");
+    sameHost(u, host) &&
+    !/\.(png|jpe?g|gif|svg|webp|pdf|zip|mp4|css|js|ico|xml)(\?|$)/i.test(u) &&
+    !u.includes("#") &&
+    // robots.txt is checked at DISCOVERY, so a disallowed page is never even
+    // requested — obeying it by throwing the response away afterwards would
+    // still have hit a server that asked us not to.
+    (!robots || robots.allows(pathOf(u)));
 
   const sitemap = await fetchPage(`${base}/sitemap.xml`, stats);
   if (sitemap) {
@@ -501,7 +509,11 @@ export async function crawlSite(siteId: string, host: string, maxPages = FREE_LI
   const stats = newFetchStats();
 
   try {
-    const urls = await discoverUrls(host, maxPages, stats);
+    // Asked once, before anything else is fetched. A site that says "not
+    // here" gets to mean it, and its declared sitemaps are usually more
+    // complete than guessing /sitemap.xml.
+    const robots = await loadRobots(host, signedHeaders(`https://${host}/robots.txt`));
+    const urls = await discoverUrls(host, maxPages, stats, robots);
     for (let i = 0; i < urls.length; i += FETCH_CONCURRENCY) {
       const batch = await Promise.all(urls.slice(i, i + FETCH_CONCURRENCY).map(async (url) => ({ url, html: await fetchPage(url, stats) })));
       for (const { url, html } of batch) {
