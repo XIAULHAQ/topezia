@@ -282,6 +282,16 @@ export default function ConnectClient({ view }: { view: ConnectView }) {
   const d = v.detected;
   const fresh = !v.company;
 
+  // Exactly the fields that will render below. Computed once so the heading
+  // and the block can't disagree about whether there is anything to show.
+  const offers = [
+    fresh ? d.name : null,
+    !v.company?.hasTagline ? d.tagline : null,
+    !v.company?.hasAbout ? d.about : null,
+    !v.company?.hasLocation ? d.address : null,
+    !v.company?.hasLogo ? d.logoUrl : null,
+  ].filter(Boolean);
+
   async function approve() {
     if (busy) return;
     setBusy(true);
@@ -319,6 +329,10 @@ export default function ConnectClient({ view }: { view: ConnectView }) {
 
           {error && <p style={{ ...S.err, marginTop: 16 }}>{error}</p>}
 
+          {/* Only shown when there is genuinely something to offer. A company
+              whose profile is already written has every field suppressed, and
+              a heading over nothing reads as a page that failed to load. */}
+          {offers.length > 0 && (
           <div style={{ marginTop: 20 }}>
             <div style={S.label}>What your site told us</div>
             <div style={{ marginTop: 4 }}>
@@ -356,13 +370,17 @@ export default function ConnectClient({ view }: { view: ConnectView }) {
                 fields are offered here.
               </p>
             )}
-            {d.store === "woocommerce" && (
-              <p style={{ ...S.sub, fontSize: 12.5, marginTop: 10 }}>
-                WooCommerce detected. The chat can recommend products and hand shoppers to your own checkout —
-                order tracking stays off until you connect the store yourself.
-              </p>
-            )}
           </div>
+          )}
+
+          {/* Outside the block above: a shop is worth mentioning whether or
+              not there was anything left to prefill. */}
+          {d.store === "woocommerce" && (
+            <p style={{ ...S.sub, fontSize: 12.5, marginTop: 14 }}>
+              WooCommerce detected. The chat can recommend products and hand shoppers to your own checkout —
+              order tracking stays off until you connect the store yourself.
+            </p>
+          )}
 
           <div style={{ marginTop: 22 }}>
             <button type="button" style={{ ...S.btn, opacity: busy ? 0.7 : 1 }} disabled={busy} onClick={approve}>

@@ -307,6 +307,12 @@ function topezia_chat_render_header( $key ) {
 		<?php endif; ?>
 	</div>
 	<?php
+	// WordPress MOVES admin notices at runtime — common.js relocates every
+	// .notice to just after the first h1 unless a .wp-header-end marker says
+	// where the header stops. Without this, our own notices land inside the
+	// brand block and are invisible. Found by pressing Connect and getting a
+	// silent page instead of an error.
+	echo '<hr class="wp-header-end" />';
 }
 
 /** State one: nothing connected yet. */

@@ -23,6 +23,19 @@
 
 /* Header ---------------------------------------------------------------- */
 
+/* The marker WordPress uses to decide where notices go. It must exist in the
+   DOM, and it must not be seen. */
+.topezia-wrap .wp-header-end {
+	visibility: hidden;
+	margin: 0;
+	border: 0;
+	height: 0;
+}
+
+.topezia-wrap .notice {
+	margin: 0 0 16px;
+}
+
 .topezia-head {
 	display: flex;
 	align-items: center;

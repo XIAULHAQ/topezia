@@ -22,6 +22,9 @@ import { embedBatch } from "@/lib/ingestion/embed";
 import { FREE_LIMITS } from "./caps";
 
 const PAGE_TIMEOUT_MS = 10_000;
+/** Long enough that a rate limiter has forgotten us, short enough that a
+ *  whole crawl of retries still fits in one serverless invocation. */
+const RETRY_PAUSE_MS = 1_500;
 const PAGE_MAX_BYTES = 1_500_000;
 const FETCH_CONCURRENCY = 5;
 const CHUNK_TARGET = 1600; // chars per chunk, split on paragraph boundaries
@@ -55,7 +58,42 @@ export function normalizeDomain(raw: unknown): { ok: true; host: string } | { ok
   return { ok: true, host };
 }
 
-async function fetchPage(url: string): Promise<string | null> {
+/**
+ * Why a fetch didn't produce a page. Counted rather than logged one by one:
+ * a crawl that reads 1 of 200 pages used to report success, and the owner
+ * was told "1 page scanned" as though their site only had one. What the
+ * dashboard needs is not a stack trace, it's "your site refused us 199
+ * times" — see crawlSite's summary.
+ */
+type FetchStats = { tried: number; ok: number; blocked: number; missing: number; timeout: number; other: number };
+
+/**
+ * Is this an interstitial rather than the page we asked for?
+ *
+ * Matched on the fingerprints the big protection services put in their own
+ * challenge markup, and only in the first few KB where that markup lives —
+ * a blog post ABOUT Cloudflare must not read as a Cloudflare challenge.
+ * Being wrong in that direction drops a real page; being wrong the other way
+ * teaches the chat nonsense. Small and short is the point.
+ */
+function looksLikeChallenge(html: string): boolean {
+  const head = html.slice(0, 4000).toLowerCase();
+  return (
+    head.includes("cf-browser-verification") ||
+    head.includes("cf_chl_opt") ||
+    head.includes("challenge-platform") ||
+    head.includes("<title>just a moment") ||
+    head.includes("attention required! | cloudflare") ||
+    head.includes("checking your browser before accessing") ||
+    head.includes("<title>access denied") ||
+    head.includes("ddos-guard") ||
+    (head.includes("captcha-delivery.com") && head.includes("<script"))
+  );
+}
+
+export const newFetchStats = (): FetchStats => ({ tried: 0, ok: 0, blocked: 0, missing: 0, timeout: 0, other: 0 });
+
+async function fetchPage(url: string, stats?: FetchStats, retry = true): Promise<string | null> {
   // The timer must cover the BODY read, not just the headers, and an
   // early-returned response must have its body cancelled: an abandoned
   // undici stream that later errors (remote reset, timeout) throws an
@@ -63,6 +101,7 @@ async function fetchPage(url: string): Promise<string | null> {
   // crashed the first live crawl, not a request that was awaited.
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), PAGE_TIMEOUT_MS);
+  if (stats) stats.tried++;
   try {
     const res = await fetch(url, {
       signal: ctrl.signal,
@@ -72,15 +111,66 @@ async function fetchPage(url: string): Promise<string | null> {
     const type = res.headers.get("content-type") ?? "";
     if (!res.ok || (!type.includes("html") && !type.includes("xml") && !type.includes("text"))) {
       await res.body?.cancel().catch(() => {});
+      // 403/429/503 from a firewall is the one failure worth trying again:
+      // it usually means "too fast", not "never". One retry, after a pause
+      // long enough to matter, and only one — a crawler that hammers a site
+      // that just asked it to stop deserves the block it gets.
+      if (retry && (res.status === 429 || res.status === 503)) {
+        clearTimeout(timer);
+        await new Promise((r) => setTimeout(r, RETRY_PAUSE_MS));
+        if (stats) stats.tried--; // the retry counts it
+        return fetchPage(url, stats, false);
+      }
+      if (stats) {
+        if (res.status === 403 || res.status === 401 || res.status === 429 || res.status === 503) stats.blocked++;
+        else if (res.status === 404 || res.status === 410) stats.missing++;
+        else stats.other++;
+      }
       return null;
     }
     const text = await res.text();
+    // A bot challenge answers 200 with real HTML, so status alone can't see
+    // it. Left undetected it is the WORST failure mode this crawler has: the
+    // chat quietly learns "Just a moment… enable JavaScript" as though it
+    // were the customer's homepage, and every answer is drawn from that.
+    if (looksLikeChallenge(text)) {
+      if (stats) stats.blocked++;
+      return null;
+    }
+    if (stats) stats.ok++;
     return text.length > PAGE_MAX_BYTES ? text.slice(0, PAGE_MAX_BYTES) : text;
-  } catch {
+  } catch (err) {
+    if (stats) {
+      const aborted = err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError");
+      if (aborted) stats.timeout++;
+      else stats.other++;
+    }
     return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * What to tell the owner when most of their site wouldn't open. Null when
+ * the crawl went well enough to be worth nothing being said.
+ *
+ * The threshold is deliberately generous — a few 404s in a stale sitemap are
+ * normal and not worth alarming anyone over. Losing most of the site is not.
+ */
+export function crawlWarning(s: FetchStats): string | null {
+  const failed = s.tried - s.ok;
+  if (s.tried < 5 || failed <= s.tried / 2) return null;
+  if (s.blocked > failed / 2) {
+    return `Your site refused ${s.blocked} of ${s.tried} requests, so most pages couldn't be read. A firewall or security plugin is probably blocking our reader — allow the user agent "TopeziaWidget" and scan again.`;
+  }
+  if (s.timeout > failed / 2) {
+    return `${s.timeout} of ${s.tried} pages timed out, so most of your site couldn't be read. It may be slow right now — try scanning again later.`;
+  }
+  if (s.missing > failed / 2) {
+    return `${s.missing} of ${s.tried} pages in your sitemap no longer exist. The chat still works from the rest, but your sitemap is out of date.`;
+  }
+  return `Only ${s.ok} of ${s.tried} pages could be read. The chat answers from those, but it is missing most of your site.`;
 }
 
 const sameHost = (url: string, host: string) => {
@@ -93,13 +183,13 @@ const sameHost = (url: string, host: string) => {
 };
 
 /** Sitemap <loc> entries on this host, else a shallow BFS from the homepage. */
-async function discoverUrls(host: string, maxPages: number): Promise<string[]> {
+async function discoverUrls(host: string, maxPages: number, stats?: FetchStats): Promise<string[]> {
   const base = `https://${host}`;
   const seen = new Set<string>([base, `${base}/`]);
   const keep = (u: string) =>
     sameHost(u, host) && !/\.(png|jpe?g|gif|svg|webp|pdf|zip|mp4|css|js|ico|xml)(\?|$)/i.test(u) && !u.includes("#");
 
-  const sitemap = await fetchPage(`${base}/sitemap.xml`);
+  const sitemap = await fetchPage(`${base}/sitemap.xml`, stats);
   if (sitemap) {
     // Child sitemaps in useful-first order: a WP index lists post-sitemap
     // (the blog) before page- and product-sitemaps, and a page cap filled
@@ -115,7 +205,7 @@ async function discoverUrls(host: string, maxPages: number): Promise<string[]> {
     for (const loc of locs) {
       if (pages.length >= maxPages) break;
       if (/sitemap[^/]*\.xml(\?|$)/i.test(loc)) {
-        const child = await fetchPage(loc);
+        const child = await fetchPage(loc, stats);
         if (child) {
           for (const m of child.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)) {
             if (pages.length >= maxPages) break;
@@ -131,7 +221,7 @@ async function discoverUrls(host: string, maxPages: number): Promise<string[]> {
   }
 
   // No sitemap: homepage links, one level deep.
-  const home = await fetchPage(`${base}/`);
+  const home = await fetchPage(`${base}/`, stats);
   if (!home) return [`${base}/`];
   const found: string[] = [`${base}/`];
   for (const m of home.matchAll(/href=["']([^"']+)["']/gi)) {
@@ -408,11 +498,12 @@ export async function crawlSite(siteId: string, host: string, maxPages = FREE_LI
   const seenProductNames = new Set<string>();
   let checkoutPath: string | null = null;
   let storeKind: string | null = null;
+  const stats = newFetchStats();
 
   try {
-    const urls = await discoverUrls(host, maxPages);
+    const urls = await discoverUrls(host, maxPages, stats);
     for (let i = 0; i < urls.length; i += FETCH_CONCURRENCY) {
-      const batch = await Promise.all(urls.slice(i, i + FETCH_CONCURRENCY).map(async (url) => ({ url, html: await fetchPage(url) })));
+      const batch = await Promise.all(urls.slice(i, i + FETCH_CONCURRENCY).map(async (url) => ({ url, html: await fetchPage(url, stats) })));
       for (const { url, html } of batch) {
         if (!html) continue;
         // Products first — listing pages can carry Product JSON-LD while
@@ -444,6 +535,9 @@ export async function crawlSite(siteId: string, host: string, maxPages = FREE_LI
       if (rows.length >= MAX_CHUNKS) break;
     }
     if (pages === 0) error = "Couldn't read any pages — is the site up and public?";
+    // A crawl that reached one page out of two hundred is not a success with
+    // a small number in it. Say what happened, in words the owner can act on.
+    else error = crawlWarning(stats);
   } catch (err) {
     error = err instanceof Error ? err.message : "Crawl failed.";
   }
