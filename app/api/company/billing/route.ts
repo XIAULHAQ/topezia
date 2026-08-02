@@ -27,6 +27,15 @@ export const dynamic = "force-dynamic";
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com").replace(/\/$/, "");
 const RETURN = `${SITE}/employer/billing`;
 
+/**
+ * Subscription states a plan switch may be offered from. `past_due` and
+ * `unpaid` are in deliberately — someone whose card bounced can still move
+ * to a cheaper plan, and blocking that is how you turn a billing hiccup into
+ * a cancellation. `canceled`/`incomplete_expired` are not: there is nothing
+ * left to update, so those fall through to a fresh Checkout.
+ */
+const SWITCHABLE = new Set(["active", "trialing", "past_due", "unpaid"]);
+
 export async function GET() {
   const auth = await requireCompanyOwner();
   if (!auth.ok) return auth.response;
@@ -79,7 +88,7 @@ export async function POST(req: NextRequest) {
 
   const company = await prisma.company.findUnique({
     where: { id: companyId },
-    select: { id: true, plan: true, stripeCustomerId: true },
+    select: { id: true, plan: true, stripeCustomerId: true, brandingDiscount: true },
   });
   if (!company) return NextResponse.json({ error: "Set up your company first." }, { status: 404 });
 
@@ -153,16 +162,112 @@ export async function POST(req: NextRequest) {
   const priceId = priceIdFor(plan, period);
   if (!priceId) return NextResponse.json({ error: `${PLANS[plan].name} isn't on sale yet.` }, { status: 503 });
 
-  // Already on this plan? The portal is where you change or cancel it —
-  // a second Checkout would create a second subscription.
-  if (company.plan === plan) {
-    return NextResponse.json({ error: `You're already on ${PLANS[plan].name}.`, portal: true }, { status: 409 });
+  // NOTE: there is deliberately no "you're already on that plan" check
+  // against our own column here. A comped company reads as PRO with nothing
+  // behind it, and turning that comp into a real subscription is a purchase
+  // we should accept. Whether this is a switch or a purchase is decided
+  // below, by what Stripe says exists.
+
+  // ── Already subscribed: this is a SWITCH, not a new subscription ──────
+  //
+  // WHICH BRANCH WE TAKE IS DECIDED BY STRIPE, NOT BY OUR PLAN COLUMN. The
+  // column says PRO for a comped company and for a stale customer left over
+  // from an abandoned checkout, neither of which has anything to switch —
+  // sending those to the portal is the dead end this replaced. Only a live
+  // subscription gets the update flow; everything else buys normally below,
+  // reusing the customer we already minted.
+  //
+  // The deep link lands on Stripe's confirmation for the exact plan clicked
+  // — "Studio, $129/month, less the unused part of your Pro month". Stripe
+  // owns the proration and the receipt; the webhook still writes the plan
+  // when the subscription actually changes.
+  let existing: { subscription: string; item: string; priceId: string | null } | null = null;
+  if (company.stripeCustomerId) {
+    try {
+      const subs = await stripe.subscriptions.list({
+        customer: company.stripeCustomerId,
+        status: "all",
+        limit: 20,
+      });
+      const sub = subs.data.find((s) => SWITCHABLE.has(s.status));
+      // The update flow takes exactly one item; a multi-item subscription
+      // isn't ours and must not be rewritten from here.
+      const item = sub && sub.items.data.length === 1 ? sub.items.data[0] : null;
+      if (sub && item) existing = { subscription: sub.id, item: item.id, priceId: item.price?.id ?? null };
+    } catch (err) {
+      console.error("[company/billing] subscription lookup failed:", err instanceof Error ? err.message : err);
+      // Fail CLOSED: we don't know whether they're subscribed, and guessing
+      // wrong means a second subscription on the same card.
+      return NextResponse.json({ error: "Couldn't check your subscription — try again shortly." }, { status: 502 });
+    }
   }
-  if (company.stripeCustomerId && company.plan !== "FREE") {
-    return NextResponse.json(
-      { error: "Change your plan from the billing portal so it's a switch, not a second subscription.", portal: true },
-      { status: 409 }
-    );
+
+  if (existing) {
+    if (existing.priceId === priceId) {
+      return NextResponse.json({ error: `You're already on that ${PLANS[plan].name} price.`, portal: true }, { status: 409 });
+    }
+    try {
+      // Carry the badge discount across the switch. It is per-interval, so
+      // a monthly→yearly move needs the OTHER coupon; sending nothing would
+      // quietly bill them full price while their chat still shows our line.
+      const keepsBadge = company.brandingDiscount || body.keepBranding === true;
+      const coupon = keepsBadge ? brandingCouponFor(period) : null;
+      if (keepsBadge && !coupon) {
+        return NextResponse.json(
+          { error: "That billing period isn't available with the branding discount right now." },
+          { status: 503 }
+        );
+      }
+
+      // The update flow needs a configuration listing the target price. If
+      // one can't be built, open the plain portal rather than erroring —
+      // their card and invoices matter more than the shortcut, and the
+      // switch is two clicks away once they're there.
+      let configuration: string | null = null;
+      try {
+        configuration = await companyPortalConfigId(stripe);
+      } catch (err) {
+        console.error("[company/billing] portal config failed:", err instanceof Error ? err.message : err);
+      }
+
+      const base = {
+        customer: company.stripeCustomerId!,
+        return_url: RETURN,
+        ...(configuration ? { configuration } : {}),
+      };
+
+      let url: string | null = null;
+      if (configuration) {
+        try {
+          const flow = await stripe.billingPortal.sessions.create({
+            ...base,
+            flow_data: {
+              type: "subscription_update_confirm",
+              subscription_update_confirm: {
+                subscription: existing.subscription,
+                items: [{ id: existing.item, price: priceId, quantity: 1 }],
+                ...(coupon ? { discounts: [{ coupon }] } : {}),
+              },
+              after_completion: {
+                type: "redirect",
+                redirect: { return_url: `${RETURN}?switched=1` },
+              },
+            },
+          });
+          url = flow.url;
+        } catch (err) {
+          // A subscription on a price the configuration doesn't list (a
+          // legacy or member price) can't be deep-linked. Don't strand
+          // them on an error — open the portal itself.
+          console.error("[company/billing] update flow rejected, opening plain portal:", err instanceof Error ? err.message : err);
+        }
+      }
+      if (!url) url = (await stripe.billingPortal.sessions.create(base)).url;
+      return NextResponse.json({ url });
+    } catch (err) {
+      console.error("[company/billing] plan switch failed:", err instanceof Error ? err.message : err);
+      return NextResponse.json({ error: "Couldn't open the plan change — try again shortly." }, { status: 502 });
+    }
   }
 
   try {

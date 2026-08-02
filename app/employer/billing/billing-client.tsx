@@ -69,9 +69,20 @@ export default function BillingClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string; portal?: boolean };
       if (data.url) { window.location.href = data.url; return; }
       if (res.ok) { window.location.reload(); return; }
+      // The answer to this one is "go to the portal" — so go, rather than
+      // printing a sentence that leaves them looking for the door.
+      if (data.portal && payload.action !== "portal") {
+        const p = await fetch("/api/company/billing", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "portal" }),
+        });
+        const pd = (await p.json().catch(() => ({}))) as { url?: string };
+        if (pd.url) { window.location.href = pd.url; return; }
+      }
       setError(data.error ?? "That didn't work — try again.");
     } catch {
       setError("That didn't work — try again.");
@@ -208,7 +219,9 @@ export default function BillingClient() {
                     <button type="button" style={{ ...ES.btn, width: "100%" }}
                       disabled={busy === p.id}
                       onClick={() => go({ plan: p.id, period, keepBranding }, p.id)}>
-                      {busy === p.id ? "Opening checkout…" : `Choose ${p.name}`}
+                      {busy === p.id
+                        ? "Opening…"
+                        : onFree ? `Choose ${p.name}` : `Switch to ${p.name}`}
                     </button>
                   )}
                 </div>
@@ -216,8 +229,9 @@ export default function BillingClient() {
             })}
           </div>
           <p style={{ ...ES.empty, marginTop: 14 }}>
-            Payment is handled by Stripe — your card never touches Topezia. Cancel any time from Manage billing;
-            you keep the plan until the period you paid for ends.
+            {onFree
+              ? "Payment is handled by Stripe — your card never touches Topezia. Cancel any time from Manage billing; you keep the plan until the period you paid for ends."
+              : "Switching moves your existing subscription rather than starting a second one — Stripe shows you the exact amount, with the unused part of this period credited, before anything is charged."}
           </p>
         </>
       ) : (
