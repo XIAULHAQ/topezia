@@ -29,6 +29,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { embedText } from "@/lib/ingestion/embed";
+import { buyOptions, type BuyOption } from "./checkout";
 
 const ANSWER_MODEL = "claude-haiku-4-5-20251001"; // same tier as the reranker
 const TOP_K = 8;
@@ -36,7 +37,12 @@ const HISTORY_TURNS = 8;
 const META_MARKER = "<<<META>>>";
 
 export type ChatTurn = { role: "visitor" | "bot"; text: string };
-export type ProductCard = { name: string; price: string | null; image: string | null; url: string };
+export type ProductCard = {
+  name: string; price: string | null; image: string | null; url: string;
+  /** Ways to buy this right now, straight into the store's own checkout.
+   *  Built server-side from crawled data — the model never composes one. */
+  buy: BuyOption[];
+};
 export type WidgetAnswer = {
   reply: string;
   sources: string[];
@@ -61,10 +67,10 @@ const HANDOFF_FALLBACK: Omit<WidgetAnswer, "sources" | "products"> = {
 };
 const EMPTY = { sources: [] as string[], products: [] as ProductCard[] };
 
-type ProductRow = { url: string; name: string; price: string | null; image: string | null; description: string };
+type ProductRow = { url: string; name: string; price: string | null; image: string | null; description: string; externalId: string | null; buyable: boolean; variations: unknown };
 
 export async function answerFromSite(
-  site: { id: string; domain: string; companyName: string },
+  site: { id: string; domain: string; companyName: string; checkoutPath: string | null },
   history: ChatTurn[],
   opts: AnswerOptions = {}
 ): Promise<WidgetAnswer> {
@@ -94,7 +100,7 @@ export async function answerFromSite(
     // The shelf: this site's products nearest the question. Empty on a
     // purely informational site, which is the whole ecommerce detection.
     prisma.$queryRawUnsafe<(ProductRow & { distance: number })[]>(
-      `SELECT url, name, price, image, description, (embedding <=> $1::vector) AS distance
+      `SELECT url, name, price, image, description, "externalId", buyable, variations, (embedding <=> $1::vector) AS distance
          FROM "SiteProduct"
         WHERE "siteId" = $2 AND embedding IS NOT NULL
         ORDER BY embedding <=> $1::vector
@@ -108,7 +114,7 @@ export async function answerFromSite(
     opts.pageUrl
       ? prisma.siteProduct.findFirst({
           where: { siteId: site.id, url: { in: [opts.pageUrl, opts.pageUrl.replace(/\/$/, ""), `${opts.pageUrl.replace(/\/$/, "")}/`] } },
-          select: { url: true, name: true, price: true, image: true, description: true },
+          select: { url: true, name: true, price: true, image: true, description: true, externalId: true, buyable: true, variations: true },
         })
       : Promise.resolve(null),
     // Answers the owner taught by hand. Retrieved like everything else, but
@@ -142,7 +148,13 @@ export async function answerFromSite(
     .map((c, i) => `<excerpt index="${i + 1}" url="${c.url}">\n${c.content.slice(0, 1800)}\n</excerpt>`)
     .join("\n");
   const shelf = productRows
-    .map((p, i) => `<product index="${i + 1}" name="${p.name.replace(/"/g, "'")}"${p.price ? ` price="${p.price}"` : ""}>\n${p.description.slice(0, 300)}\n</product>`)
+    .map((p, i) => {
+      const opts = buyOptions(site, p);
+      const buyable = opts.length
+        ? ` buy-now="yes" options="${opts.map((o) => `${o.label}${o.price ? ` ${o.price}` : ""}`).join(" | ").replace(/"/g, "'")}"`
+        : "";
+      return `<product index="${i + 1}" name="${p.name.replace(/"/g, "'")}"${p.price ? ` price="${p.price}"` : ""}${buyable}>\n${p.description.slice(0, 300)}\n</product>`;
+    })
     .join("\n");
 
   const system = [
@@ -171,6 +183,9 @@ export async function answerFromSite(
     // CONCIERGE INTAKE: qualify in conversation, one question at a time.
     // The brief the owner receives is built from what gets said here, so a
     // single well-placed question is worth more than any form field.
+    productRows.some((p) => p.buyable)
+      ? `5b. SOME PRODUCTS CAN BE BOUGHT ON THE SPOT (marked buy-now). When you list one of those, you may say they can order it right here and that the buttons under your reply take them straight to checkout. If it has several options, name them and their prices so they can choose. Never invent an option, a price, a delivery date or a discount, and never claim an order has been placed — tapping a button is what starts it.`
+      : ``,
     `6. When the visitor is describing a real job of their own (a custom project, a quote, a bulk or rush order — not a general question), be a good front desk: answer what they asked FIRST, then ask ONE short qualifying question at the end of your reply. Ask about whatever matters most and hasn't been said yet — what exactly they need, when they need it, roughly what budget they have in mind, or how many. One per reply, never a list, and never twice about the same thing. If they'd rather not say, drop it and move on — the team can ask later.`,
     ``,
     `Output format, exactly: first the reply as plain conversational text — no JSON and no markdown of any kind (no **bold**, headings, or bullet lists; the chat renders plain text). Then a new line containing exactly ${META_MARKER} immediately followed by one single-line JSON object: {"sources": string[], "products": number[], "handoff": boolean}. Nothing after that object.`,
@@ -208,7 +223,7 @@ export async function answerFromSite(
     const productCards: ProductCard[] = (Array.isArray(meta.products) ? meta.products : [])
       .flatMap((n) => {
         const p = typeof n === "number" ? productRows[n - 1] : undefined;
-        return p ? [{ name: p.name, price: p.price, image: p.image, url: p.url }] : [];
+        return p ? [{ name: p.name, price: p.price, image: p.image, url: p.url, buy: buyOptions(site, p) }] : [];
       })
       .slice(0, 3);
     return {

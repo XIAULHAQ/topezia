@@ -1834,3 +1834,33 @@ Migration 054 (`WidgetSite.branded`, default true).
   (`topezia_branding`), so it survives renewals and plan switches, and a
   cancelled subscription clears it. The mid-subscription toggle writes
   Stripe first, then our column — never the other way round.
+
+## In-chat ordering — handoff to the store's own checkout (added 2026-08-02)
+
+- 🔴 **WE NEVER TAKE THE MONEY, and nothing here should change that.** The
+  buy buttons link to the MERCHANT's checkout with the item pre-added; they
+  pay the merchant, under the merchant's tax/shipping/stock/refund rules.
+  No card data touches Topezia and no Stripe Connect is involved. Taking
+  payment ourselves would make us a marketplace with KYC and liability —
+  a business decision, not a refactor.
+- 🔴 **The model never composes a buy URL, a price, a quantity or a
+  variation.** lib/widget/checkout.ts builds every link server-side from
+  crawled data, with the host taken from WidgetSite.domain — never from
+  page content or the model. The visitor picks the variation by tapping.
+  This is the product-card rule, and it matters more now the link ends at
+  a payment form.
+- 🟡 **No plugin needed.** WooCommerce exposes the post id on <body> and
+  the whole variation list in data-product_variations, so the crawler reads
+  purchase data from markup we already fetch. Woo double-encodes that
+  attribute — decode twice, same as product names. Shopify would need its
+  own extractor (/cart/{variant}:1); not built.
+- 🟡 **Stale by construction.** Prices, stock and variation ids come from
+  the last crawl, so a product can go out of stock between crawls; buyable
+  is false for anything not purchasable/in-stock at crawl time, and the
+  store itself is the final authority at checkout. If merchants want live
+  data, that's the WordPress plugin talking to the Woo REST API — a real
+  integration, not a tweak here.
+- 🟡 checkoutPath is detected from the store's own links and falls back to
+  /checkout/ (verified correct on the pilot). Buttons target _top — the
+  cart cookie belongs to the merchant's page, and nobody should type card
+  details inside an iframe.

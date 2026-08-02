@@ -14,7 +14,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { T, pickLocale } from "./strings";
 
-type Product = { name: string; price: string | null; image: string | null; url: string };
+type BuyOption = { label: string; price: string; url: string };
+type Product = { name: string; price: string | null; image: string | null; url: string; buy?: BuyOption[] };
 type Turn = { role: "visitor" | "bot" | "team"; text: string; sources?: string[]; products?: Product[] };
 
 const DEFAULT_GRAD = "linear-gradient(135deg,#8B5CF6,#3B82F6)";
@@ -391,6 +392,21 @@ export default function WidgetChat({
                     <span style={{ ...S.productGo, color: ink }}>View →</span>
                   </a>
                 ))}
+                {/* Straight into the store's own checkout, item already in
+                    the basket. target="_top" because the merchant's cart
+                    cookie belongs to their page, not to this iframe — and
+                    paying inside a frame is something no one should do. */}
+                {turn.products.map((p) =>
+                  (p.buy ?? []).length === 0 ? null : (
+                    <span key={`buy-${p.url}`} style={S.buyRow}>
+                      {(p.buy ?? []).map((b) => (
+                        <a key={b.url} href={b.url} target="_top" style={{ ...S.buyBtn, background: grad }}>
+                          {b.label}{b.price ? ` · ${b.price}` : ""}
+                        </a>
+                      ))}
+                    </span>
+                  )
+                )}
               </span>
             )}
             {turn.sources && turn.sources.length > 0 && (
@@ -535,6 +551,8 @@ const S: Record<string, CSSProperties> = {
   productName: { display: "block", fontSize: 12.8, fontWeight: 700, lineHeight: 1.35, overflow: "hidden", textOverflow: "ellipsis" },
   productPrice: { display: "block", fontSize: 12, fontWeight: 800, color: "#4F46E5", marginTop: 2 },
   productGo: { flex: "none", fontSize: 11.5, fontWeight: 700, color: "#4F46E5" },
+  buyRow: { display: "flex", gap: 7, flexWrap: "wrap", marginTop: 8 },
+  buyBtn: { display: "inline-block", color: "#fff", borderRadius: 999, padding: "8px 14px", fontSize: 12.3, fontWeight: 700, textDecoration: "none" },
   sources: { display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" },
   sourceLink: { fontSize: 11, color: "#4F46E5", fontWeight: 700, textDecoration: "none", background: "#EEF2FF", borderRadius: 999, padding: "2px 9px" },
   leadCard: { border: "1px solid #E2E8F0", borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 8, background: "#F8FAFC" },

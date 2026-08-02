@@ -1187,6 +1187,8 @@ model WidgetSite {
   pagesCrawled Int      @default(0)
   crawledAt    DateTime?
   crawlError   String?
+  /// Detected from the store's own links; the checkout slug is customisable.
+  checkoutPath String?
   // Monthly AI budget as (which month, used) — rolls over by comparison at
   // read time, no cron reset. See lib/widget/caps.ts.
   monthKey     String   @default("")
@@ -1263,6 +1265,9 @@ model SiteChunk {
 // (migration 052). Products found = the site sells things = the widget may
 // answer buy-intent with product cards instead of prose. Same cache
 // semantics as SiteChunk: wiped and rewritten every crawl.
+/// A product harvested from the site's own markup. externalId/variations/
+/// buyable exist so the chat can hand a visitor to the STORE'S OWN checkout
+/// with the item in the cart — we never take the payment (migration 060).
 model SiteProduct {
   id          String     @id @default(uuid())
   siteId      String
@@ -1272,6 +1277,14 @@ model SiteProduct {
   price       String? // display string ("$99", "From $49") — never arithmetic
   image       String?
   description String     @default("")
+  /// The store's own product id, read from the product page's markup.
+  externalId  String?
+  /// Purchasable options: [{ id, label, price, attributes }]. A "From $150"
+  /// page is several real prices; the visitor picks one before checkout.
+  variations  Json?
+  /// Purchasable AND in stock at crawl time — false hides the buy button
+  /// rather than sending someone to a dead checkout.
+  buyable     Boolean    @default(false)
   // embedding Unsupported("vector(1024)")? — raw SQL, as everywhere
   createdAt   DateTime   @default(now())
 

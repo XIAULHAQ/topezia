@@ -162,7 +162,90 @@ function pageToText(html: string): { title: string; text: string } {
   return { title, text };
 }
 
-export type CrawledProduct = { url: string; name: string; price: string | null; image: string | null; description: string };
+export type CrawledProduct = {
+  url: string; name: string; price: string | null; image: string | null; description: string;
+  /** The store's own product id, for handing a filled cart to its checkout. */
+  externalId: string | null;
+  /** Purchasable options behind one "From $X" page. */
+  variations: { id: string; label: string; price: string; attributes: Record<string, string> }[];
+  buyable: boolean;
+};
+
+/**
+ * WooCommerce puts everything needed to build a real checkout link in the
+ * product page's own markup — the post id on <body>, and the full variation
+ * list (ids, prices, stock, attributes) in data-product_variations. Reading
+ * it here means in-chat ordering works on any Woo store with NO plugin and
+ * nothing for the merchant to install or configure.
+ *
+ * Anything not recognisably a store leaves these fields empty and the buy
+ * buttons simply never appear.
+ */
+export function extractPurchase(html: string): Pick<CrawledProduct, "externalId" | "variations" | "buyable"> {
+  const empty = { externalId: null, variations: [], buyable: false };
+
+  const id =
+    html.match(/\bpostid-(\d+)\b/)?.[1] ??
+    html.match(/data-product_id=["'](\d+)["']/)?.[1] ??
+    null;
+  if (!id) return empty;
+
+  // Simple product: purchasable if the page offers an add-to-cart at all.
+  const hasCart = /add-to-cart|single_add_to_cart_button/i.test(html);
+
+  const raw = html.match(/data-product_variations=["']([^"']+)["']/)?.[1];
+  if (!raw) return { externalId: id, variations: [], buyable: hasCart };
+
+  try {
+    // Woo double-encodes this attribute, exactly like product names.
+    const parsed = JSON.parse(decodeHtmlEntities(decodeHtmlEntities(raw)));
+    if (!Array.isArray(parsed)) return { externalId: id, variations: [], buyable: hasCart };
+
+    const variations = parsed
+      .filter((v) => v && typeof v === "object" && v.is_purchasable !== false && v.is_in_stock !== false)
+      .slice(0, 6)
+      .flatMap((v) => {
+        const vid = v.variation_id;
+        if (typeof vid !== "number" && typeof vid !== "string") return [];
+        const attributes: Record<string, string> = {};
+        for (const [k, val] of Object.entries((v.attributes ?? {}) as Record<string, unknown>)) {
+          if (typeof val === "string" && val) attributes[k] = val;
+        }
+        // The label the visitor picks by — the attribute values are what the
+        // store itself shows in its dropdown ("Basic", "Large / Red").
+        const label = Object.values(attributes).join(" / ") || "Buy";
+        const amount = typeof v.display_price === "number" ? v.display_price : null;
+        return [{
+          id: String(vid),
+          label: label.slice(0, 60),
+          price: amount != null ? formatAmount(amount, v.currency_symbol) : "",
+          attributes,
+        }];
+      });
+
+    return { externalId: id, variations, buyable: hasCart && variations.length > 0 };
+  } catch {
+    return { externalId: id, variations: [], buyable: hasCart };
+  }
+}
+
+/** Display only — never arithmetic, and the symbol comes from the store. */
+function formatAmount(amount: number, symbol: unknown): string {
+  const sym = typeof symbol === "string" && symbol.length <= 4 ? decodeHtmlEntities(symbol) : "$";
+  return `${sym}${amount % 1 === 0 ? amount : amount.toFixed(2)}`;
+}
+
+/** The store's checkout slug, which is customisable. Null = use the default. */
+export function extractCheckoutPath(html: string, host: string): string | null {
+  for (const m of html.matchAll(/href=["']([^"']*\/checkout[^"']*)["']/gi)) {
+    try {
+      const u = new URL(m[1], `https://${host}`);
+      if (u.hostname.replace(/^www\./, "") !== host.replace(/^www\./, "")) continue;
+      if (/\/checkout\/?$/.test(u.pathname)) return u.pathname.endsWith("/") ? u.pathname : `${u.pathname}/`;
+    } catch { /* not a URL */ }
+  }
+  return null;
+}
 
 const MAX_PRODUCTS = 100;
 
@@ -175,6 +258,11 @@ const MAX_PRODUCTS = 100;
  */
 export function extractProducts(html: string, pageUrl: string): CrawledProduct[] {
   const out: CrawledProduct[] = [];
+  // Purchase data belongs to the PAGE, not to each JSON-LD block: a product
+  // detail page describes one product and carries one add-to-cart form. On a
+  // listing page there is no form, so nothing becomes buyable — which is
+  // right, since a listing can't tell us which variation anyone wants.
+  const purchase = extractPurchase(html);
   // Numbers too: WooCommerce emits "price":249 as a JSON number, not a
   // string — verified on rodeo.graphics, where string-only parsing silently
   // dropped every price. Decode TWICE: Woo double-encodes ("&amp;amp;"), and
@@ -207,7 +295,7 @@ export function extractProducts(html: string, pageUrl: string): CrawledProduct[]
         const currency = offers ? asText(offers.priceCurrency) : "";
         const formatted = rawPrice ? (currency === "USD" || !currency ? `$${rawPrice.replace(/^\$/, "")}` : `${rawPrice} ${currency}`) : null;
         const price = formatted && low ? `From ${formatted}` : formatted;
-        out.push({
+        out.push({ ...purchase,
           url: firstStr(offers?.url) || firstStr(obj.url) || pageUrl,
           name,
           price,
@@ -253,6 +341,7 @@ export async function crawlSite(siteId: string, host: string, maxPages = FREE_LI
   const rows: { url: string; title: string; content: string }[] = [];
   const products: CrawledProduct[] = [];
   const seenProductNames = new Set<string>();
+  let checkoutPath: string | null = null;
 
   try {
     const urls = await discoverUrls(host, maxPages);
@@ -269,6 +358,7 @@ export async function crawlSite(siteId: string, host: string, maxPages = FREE_LI
           seenProductNames.add(key);
           products.push(p);
         }
+        if (!checkoutPath) checkoutPath = extractCheckoutPath(html, host);
         const { title, text } = pageToText(html);
         if (text.length < CHUNK_MIN) continue;
         pages++;
@@ -312,7 +402,11 @@ export async function crawlSite(siteId: string, host: string, maxPages = FREE_LI
   }
   await prisma.siteProduct.deleteMany({ where: { siteId } });
   for (let i = 0; i < products.length; i++) {
-    const created = await prisma.siteProduct.create({ data: { siteId, ...products[i] }, select: { id: true } });
+    const { variations, ...rest } = products[i];
+    const created = await prisma.siteProduct.create({
+      data: { siteId, ...rest, variations: variations.length ? variations : undefined },
+      select: { id: true },
+    });
     const e = productEmbeddings[i];
     if (e) {
       await prisma.$executeRawUnsafe(`UPDATE "SiteProduct" SET embedding = $1::vector WHERE id = $2`, `[${e.join(",")}]`, created.id);
@@ -320,7 +414,7 @@ export async function crawlSite(siteId: string, host: string, maxPages = FREE_LI
   }
   await prisma.widgetSite.update({
     where: { id: siteId },
-    data: { pagesCrawled: pages, crawledAt: new Date(), crawlError: error },
+    data: { pagesCrawled: pages, crawledAt: new Date(), crawlError: error, checkoutPath },
   });
 
   return { pages, chunks: rows.length, products: products.length, error };
