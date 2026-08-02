@@ -2252,3 +2252,48 @@ All three from one screenshot of a real visitor on an iPhone.
 - 🟡 **Run long crawls over DIRECT_URL, not the pooler.** A full crawl of a
   large site dies with P1017 "Server has closed the connection" partway
   through the chunk inserts when run through the pooled connection.
+
+## Billing reconcile: the webhook is not enough on its own (added 2026-08-03)
+
+- 🔴 **The first real business subscription did not land.** Brandon paid for
+  Pro, Stripe showed it active, and `Company.planUntil` was still NULL — the
+  row was never written. That path had only ever been exercised against
+  stubs. Check Stripe → Developers → Webhooks for delivery attempts before
+  assuming the code is at fault.
+- 🔴 **GET /api/company/billing now RECONCILES against Stripe.** The webhook
+  is still the primary writer; this is a net. It derives exactly what the
+  webhook derives from the same subscription object, so it is idempotent.
+- 🔴 **"No live subscription" is THREE situations and only one is a
+  downgrade.** Stripe unreachable → do nothing (never act on silence).
+  Customer has subscriptions but none live → cancelled → FREE. Customer has
+  no subscriptions at all → COMPED or a stale customer from an abandoned
+  checkout → leave the plan alone. Collapsing these is how a reconcile
+  cancels a comped customer because an API call timed out.
+- 🟡 `past_due`/`unpaid` are left alone — Stripe is still retrying, and
+  downgrading mid-retry turns a bounced card into a cancellation.
+- 🟢 Verified live: reconcile filled `planUntil = 2026-09-02` on the next
+  page load, and the Pro → Studio portal deep link then reached Stripe's
+  "Confirm your updates: Studio, $129, starting September 2" — the switch
+  branch's first real exercise, stopped before confirming.
+
+## Crawler manners: robots.txt and Web Bot Auth (added 2026-08-03)
+
+- 🔴 **robots.txt is checked at DISCOVERY, not after fetching.** Obeying a
+  rule by discarding the response still means hitting a server that asked
+  you not to.
+- 🔴 **Records naming the same agent MUST be merged** (RFC 9309 §2.2.1).
+  WordPress writes one `User-agent: *` block and Yoast appends another;
+  taking only the first ignores half the file. Found on rodeo.graphics.
+- 🟡 **Deliberate departure from RFC 9309:** an unreachable robots.txt (5xx)
+  is NOT treated as "disallow everything". Every site this crawler touches
+  belongs to someone who asked us to read it. Explicit Disallow is always
+  obeyed; only silence is permission. Don't "fix" this without deciding you
+  want a flaky host to block a consented scan.
+- 🔴 **Web Bot Auth needs `TOPEZIA_BOT_PRIVATE_KEY`** (base64 of a PKCS#8
+  Ed25519 PEM) in Vercel. Without it the crawler sends no signature headers
+  and `/.well-known/http-message-signatures-directory` 404s — deliberately,
+  because "I have no keys" would make a verifier treat every signature as
+  forged. Missing key degrades to the old unsigned behaviour, never an error.
+- 🟡 IP-based verification is NOT available to us: Vercel egress is shared
+  and not ours to publish. The signature route is the only one open.
+- 🟡 Rotating the key is one env var; the directory is cached for an hour.
