@@ -1189,6 +1189,9 @@ model WidgetSite {
   crawlError   String?
   /// Detected from the store's own links; the checkout slug is customisable.
   checkoutPath String?
+  /// "woocommerce" | "shopify" | null — the two hand off to checkout in
+  /// completely different ways, so the link builder must know which.
+  storeKind    String?
   // Monthly AI budget as (which month, used) — rolls over by comparison at
   // read time, no cron reset. See lib/widget/caps.ts.
   monthKey     String   @default("")

@@ -70,7 +70,7 @@ const EMPTY = { sources: [] as string[], products: [] as ProductCard[] };
 type ProductRow = { url: string; name: string; price: string | null; image: string | null; description: string; externalId: string | null; buyable: boolean; variations: unknown };
 
 export async function answerFromSite(
-  site: { id: string; domain: string; companyName: string; checkoutPath: string | null },
+  site: { id: string; domain: string; companyName: string; checkoutPath: string | null; storeKind: string | null },
   history: ChatTurn[],
   opts: AnswerOptions = {}
 ): Promise<WidgetAnswer> {

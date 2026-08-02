@@ -235,6 +235,71 @@ function formatAmount(amount: number, symbol: unknown): string {
   return `${sym}${amount % 1 === 0 ? amount : amount.toFixed(2)}`;
 }
 
+/** Shopify announces itself in every page it renders. */
+export function isShopify(html: string): boolean {
+  return /cdn\.shopify\.com|\/cdn\/shop\/|Shopify\.theme|ShopifyAnalytics/i.test(html);
+}
+
+const SYMBOLS: Record<string, string> = { USD: "$", EUR: "\u20AC", GBP: "\u00A3", CAD: "CA$", AUD: "A$", NZD: "NZ$" };
+
+/** The store's own currency, for displaying variant prices. */
+export function shopifyCurrencySymbol(html: string): string {
+  const code =
+    html.match(/Shopify\.currency\s*=\s*\{[^}]*"active"\s*:\s*"([A-Z]{3})"/)?.[1] ??
+    html.match(/"priceCurrency"\s*:\s*"([A-Z]{3})"/)?.[1] ??
+    "USD";
+  return SYMBOLS[code] ?? `${code} `;
+}
+
+/**
+ * Shopify's purchase data, from the public product JSON every storefront
+ * serves at /products/{handle}.js — no key, no plugin, no merchant action,
+ * exactly like reading Woo's markup. It carries the variant ids, their
+ * names, prices in cents and an explicit in-stock flag, which makes "don't
+ * offer what they can't buy" more reliable here than anywhere else.
+ *
+ * One extra small request per product page, and only on Shopify sites.
+ */
+export async function shopifyPurchase(
+  productUrl: string,
+  symbol: string
+): Promise<Pick<CrawledProduct, "externalId" | "variations" | "buyable">> {
+  const empty = { externalId: null, variations: [], buyable: false };
+  const base = productUrl.split(/[?#]/)[0].replace(/\/$/, "");
+  if (!/\/products\/[^/]+$/.test(base)) return empty; // not a product page
+
+  const body = await fetchPage(`${base}.js`);
+  if (!body) return empty;
+
+  try {
+    const d = JSON.parse(body) as Record<string, unknown>;
+    const id = d.id;
+    if (typeof id !== "number" && typeof id !== "string") return empty;
+
+    const variations = (Array.isArray(d.variants) ? d.variants : [])
+      .filter((v) => v && typeof v === "object" && (v as Record<string, unknown>).available !== false)
+      .slice(0, 6)
+      .flatMap((raw) => {
+        const v = raw as Record<string, unknown>;
+        const vid = v.id;
+        if (typeof vid !== "number" && typeof vid !== "string") return [];
+        const cents = typeof v.price === "number" ? v.price : null;
+        return [{
+          id: String(vid),
+          // "8" / "Large / Blue" — Shopify's own variant title.
+          label: (typeof v.title === "string" && v.title ? v.title : "Buy").slice(0, 60),
+          price: cents != null ? `${symbol}${(cents / 100) % 1 === 0 ? cents / 100 : (cents / 100).toFixed(2)}` : "",
+          // Shopify needs only the variant id; there are no attribute params.
+          attributes: {} as Record<string, string>,
+        }];
+      });
+
+    return { externalId: String(id), variations, buyable: variations.length > 0 };
+  } catch {
+    return empty;
+  }
+}
+
 /** The store's checkout slug, which is customisable. Null = use the default. */
 export function extractCheckoutPath(html: string, host: string): string | null {
   for (const m of html.matchAll(/href=["']([^"']*\/checkout[^"']*)["']/gi)) {
@@ -342,6 +407,7 @@ export async function crawlSite(siteId: string, host: string, maxPages = FREE_LI
   const products: CrawledProduct[] = [];
   const seenProductNames = new Set<string>();
   let checkoutPath: string | null = null;
+  let storeKind: string | null = null;
 
   try {
     const urls = await discoverUrls(host, maxPages);
@@ -351,11 +417,19 @@ export async function crawlSite(siteId: string, host: string, maxPages = FREE_LI
         if (!html) continue;
         // Products first — listing pages can carry Product JSON-LD while
         // having little readable text.
+        const shopify = isShopify(html);
+        if (shopify) storeKind = "shopify";
         for (const p of extractProducts(html, url)) {
           if (products.length >= MAX_PRODUCTS) break;
           const key = p.name.toLowerCase();
           if (seenProductNames.has(key)) continue; // same product on listing + detail page
           seenProductNames.add(key);
+          // Woo's data is already in the markup; Shopify's needs one small
+          // extra fetch, so it only happens on a Shopify product page.
+          if (shopify && !p.externalId) {
+            Object.assign(p, await shopifyPurchase(p.url, shopifyCurrencySymbol(html)));
+          }
+          if (!storeKind && p.externalId) storeKind = "woocommerce";
           products.push(p);
         }
         if (!checkoutPath) checkoutPath = extractCheckoutPath(html, host);
@@ -414,7 +488,7 @@ export async function crawlSite(siteId: string, host: string, maxPages = FREE_LI
   }
   await prisma.widgetSite.update({
     where: { id: siteId },
-    data: { pagesCrawled: pages, crawledAt: new Date(), crawlError: error, checkoutPath },
+    data: { pagesCrawled: pages, crawledAt: new Date(), crawlError: error, checkoutPath, storeKind },
   });
 
   return { pages, chunks: rows.length, products: products.length, error };

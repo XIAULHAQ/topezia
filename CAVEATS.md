@@ -1864,3 +1864,25 @@ Migration 054 (`WidgetSite.branded`, default true).
   /checkout/ (verified correct on the pilot). Buttons target _top — the
   cart cookie belongs to the merchant's page, and nobody should type card
   details inside an iframe.
+
+## Shopify ordering — built, shipped OFF (added 2026-08-02)
+
+- 🔴 **Shopify buy buttons are hidden until SHOPIFY_ORDERING=1.** The
+  extraction and permalink format match Shopify's documented behaviour but
+  have NOT been watched working on a real store — WooCommerce was, on the
+  pilot. Set the flag only after a real (or free dev) Shopify store has
+  been tested end to end. The gate is in buyOptions, at display time, so
+  flipping it needs no re-crawl.
+- 🟡 **Shopify's permalink goes straight to CHECKOUT**, not to a cart:
+  `https://{domain}/cart/{variantId}:1`. Multiple items are
+  `id:qty,id:qty`, and `?discount=CODE` works — both unused so far.
+  `?storefront=true` would divert to the cart page instead.
+- 🟡 **Purchase data comes from /products/{handle}.js**, a public JSON
+  endpoint every storefront serves (variant ids, titles, prices in CENTS,
+  and an explicit `available` flag). One extra small fetch per product
+  page, only on Shopify sites. Woo needs no extra fetch — its data is in
+  the markup.
+- 🟡 **Use WidgetSite.domain exactly as stored when building any buy URL.**
+  It is the host the crawler proved it could fetch. An earlier version
+  stripped "www.", which would have redirected shoppers on every store
+  whose canonical domain includes it.

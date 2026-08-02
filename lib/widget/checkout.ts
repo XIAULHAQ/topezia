@@ -46,28 +46,54 @@ export function parseVariations(value: unknown): Variation[] {
 }
 
 /**
+ * Shopify ordering ships OFF. The extraction and the link format are built
+ * and match Shopify's documented behaviour, but unlike WooCommerce they have
+ * not been watched working end to end on a real store — so no visitor sees a
+ * Shopify buy button until SHOPIFY_ORDERING=1 is set. Gated HERE rather than
+ * in the crawler on purpose: turning it on takes effect immediately, with no
+ * re-scan of anybody's site.
+ */
+export function shopifyOrderingEnabled(): boolean {
+  return process.env.SHOPIFY_ORDERING === "1";
+}
+
+/**
  * The buy options for one product — one per variation, or a single button
  * for a simple product. Empty when the product isn't purchasable, which is
  * how a sold-out item silently loses its button instead of sending someone
  * to a checkout that will refuse them.
  */
 export function buyOptions(
-  site: { domain: string; checkoutPath: string | null },
+  site: { domain: string; checkoutPath: string | null; storeKind?: string | null },
   product: { externalId: string | null; buyable: boolean; price: string | null; variations: unknown }
 ): BuyOption[] {
   if (!product.buyable || !product.externalId) return [];
+  if (site.storeKind === "shopify" && !shopifyOrderingEnabled()) return [];
 
   // The host is OURS to decide, never the model's or the crawl's: it is
-  // always the site we are the assistant for.
-  const base = `https://${site.domain.replace(/^www\./, "")}`;
-  const path = normalizePath(site.checkoutPath);
+  // always the site we are the assistant for — and used EXACTLY as stored,
+  // because that is the host the crawler proved it could fetch. Stripping
+  // "www." here would send shoppers on a redirect on stores whose canonical
+  // domain has it, for no gain.
+  const base = `https://${site.domain}`;
+  const variations = parseVariations(product.variations);
 
+  // Shopify: one cart permalink per variant, which goes straight to
+  // checkout — no cart page, no attribute params, nothing to assemble.
+  if (site.storeKind === "shopify") {
+    return variations.slice(0, 6).map((v) => ({
+      label: v.label,
+      price: v.price,
+      url: `${base}/cart/${encodeURIComponent(v.id)}:1`,
+    }));
+  }
+
+  const path = normalizePath(site.checkoutPath);
   const build = (params: Record<string, string>) => {
     const q = new URLSearchParams({ "add-to-cart": product.externalId!, quantity: "1", ...params });
     return `${base}${path}?${q.toString()}`;
   };
 
-  const variations = parseVariations(product.variations);
   if (variations.length > 0) {
     return variations.slice(0, 6).map((v) => ({
       label: v.label,

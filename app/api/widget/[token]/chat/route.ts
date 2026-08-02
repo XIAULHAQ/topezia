@@ -33,7 +33,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
 
   const site = await prisma.widgetSite.findUnique({
     where: { siteToken: params.token },
-    select: { id: true, enabled: true, domain: true, checkoutPath: true, company: { select: { name: true } } },
+    select: { id: true, enabled: true, domain: true, checkoutPath: true, storeKind: true, company: { select: { name: true } } },
   });
   if (!site || !site.enabled) {
     return NextResponse.json({ error: "This widget is turned off." }, { status: 404 });
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
           return;
         }
         const answer = await answerFromSite(
-          { id: site!.id, domain: site!.domain, companyName: site!.company.name, checkoutPath: site!.checkoutPath },
+          { id: site!.id, domain: site!.domain, companyName: site!.company.name, checkoutPath: site!.checkoutPath, storeKind: site!.storeKind },
           history,
           { pageUrl, onDelta: (text) => send({ t: "delta", text }) }
         );
