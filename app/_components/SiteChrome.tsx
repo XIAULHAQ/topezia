@@ -174,7 +174,9 @@ export function SiteHeader() {
 
 const FOOTER_COLS = [
   { head: "Product", links: [{ label: "Find jobs", href: "/jobs" }, { label: "Freelance Projects", href: "/projects" }, { label: "Portfolios", href: "/portfolio" }, { label: "AI Career Score", href: "/onboard" }, { label: "Skill assessments", href: "/onboard" }, { label: "Resume builder", href: "/onboard" }] },
-  { head: "Employers", links: [{ label: "Post a role", href: "/waitlist" }, { label: "Search talent", href: "/waitlist" }, { label: "Pricing", href: "/waitlist" }] },
+  // Site chat is the one thing here that is actually on sale, so it gets a
+  // real destination rather than the waitlist.
+  { head: "Employers", links: [{ label: "AI chat for your website", href: "/site-chat" }, { label: "Site chat pricing", href: "/pricing/business" }, { label: "Post a role", href: "/waitlist" }, { label: "Search talent", href: "/waitlist" }] },
   { head: "Company", links: [{ label: "About", href: "/about" }, { label: "Blog", href: "/blog" }, { label: "Contact", href: "/waitlist" }] },
   { head: "Legal", links: [{ label: "Privacy Policy", href: "/privacy" }, { label: "Terms of Service", href: "/terms" }, { label: "Cookie Policy", href: "/cookies" }] },
 ];
