@@ -2189,3 +2189,66 @@ All three from one screenshot of a real visitor on an iPhone.
   `**bold**` and visitors read the asterisks. `unmark()` strips paired
   emphasis and headings server-side. Only PAIRED markers around non-space
   text, so `2*4` and `5 * 3 metres` survive.
+
+## The WordPress connect handshake (added 2026-08-03, migrations 067, 068)
+
+- 🔴 **THE SITE KEY NEVER TRAVELS THROUGH A BROWSER URL.** The plugin
+  registers server-to-server (`/api/connect/wordpress/start`) and holds a
+  one-time claim token; the person's browser carries only `state`, which
+  authorizes nothing; the plugin exchanges the token for the key
+  server-to-server afterwards. Do not "simplify" this by putting the key in
+  the return redirect — a stolen `state` currently buys an attacker a consent
+  screen for someone else's website and nothing more.
+- 🔴 **`/start` is open to the internet on purpose.** It writes a pending row
+  and returns two random strings; the only thing it can produce is a consent
+  screen that a signed-in human must approve. Being open is what lets the
+  plugin work before the person has an account, which is the whole point.
+- 🔴 **Detected details only ever FILL BLANKS.** A company that has written
+  its own About text keeps it. A plugin that could overwrite a public company
+  page with whatever a WordPress install claimed is a defacement tool, and
+  "I reinstalled the plugin and it rewrote my profile" is not a ticket anyone
+  should file. The browser also sends CHOICES, never values — values are
+  re-read and re-sanitised from the stored row.
+- 🟡 `WidgetSite.siteToken` is PUBLIC — it is in every visitor's page source.
+  It identifies a site and must never authorize a question like "how many
+  leads this month?". That is what `pluginKeyHash` (migration 068) is for:
+  its own credential, stored as a hash, re-minted on every claim (so
+  reconnecting is a real rotation) and nulled by Disconnect (so disconnecting
+  is a real revocation).
+- 🟡 The logo is FETCHED into our bucket, never hotlinked: type by sniffing
+  magic bytes (an SVG is an executable document), 2MB on bytes actually read,
+  8s timeout, private/link-local addresses refused by name.
+- 🟡 **WordPress MOVES admin notices.** `common.js` relocates every `.notice`
+  to just after the first `h1` unless a `.wp-header-end` marker says where the
+  header ends. Without it our error messages landed inside the brand block and
+  were invisible — the plugin looked like it silently did nothing.
+- 🟢 Verified end to end in a real WordPress 7.0.2 / PHP 8.2 (SQLite drop-in):
+  activate → setup screen → Connect → approval on production → keys claimed →
+  dashboard with real figures → async loader tag on the front end → toggle off
+  removes it → toggle on restores it. The test connection to rodeo.graphics
+  was revoked afterwards (`pluginKeyHash` nulled, WpConnect row deleted).
+
+## A crawl that reads 1 of 200 pages is not a success (added 2026-08-03)
+
+- 🔴 **rodeo.graphics is behind Cloudflare and it blocks our crawler from
+  production.** The site serves a laptop its whole sitemap and serves Vercel
+  almost nothing. It had been scanning to ONE page — the chat was answering
+  from a single page while the dashboard said "1 of 500" as though the site
+  had one page. Fix is on the customer's side: allow the user agent
+  `TopeziaWidget` in Cloudflare, or add a WAF skip rule. Restored by running
+  `crawlSite` from a laptop (130 pages, 22 products) — a patch, not a fix.
+- 🔴 **A bot challenge answers 200 with real HTML.** Status codes cannot see
+  it, and undetected it is the worst failure this crawler has: the chat
+  learns "Just a moment… enable JavaScript" as the customer's homepage and
+  answers from it. `looksLikeChallenge()` matches the protection services'
+  own markers in the first 4KB only, so a blog post about Cloudflare isn't
+  mistaken for a Cloudflare challenge.
+- 🟡 Failures are counted by kind and turned into a sentence the owner can
+  act on (`crawlWarning`). The threshold is generous on purpose — a few 404s
+  in a stale sitemap are normal and not worth alarming anyone about.
+- 🟡 One retry, after 1.5s, on 429/503 only. Those mean "too fast", not
+  "never". Once — a crawler that hammers a site which just asked it to stop
+  deserves the block it gets.
+- 🟡 **Run long crawls over DIRECT_URL, not the pooler.** A full crawl of a
+  large site dies with P1017 "Server has closed the connection" partway
+  through the chunk inserts when run through the pooled connection.
