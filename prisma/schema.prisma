@@ -1195,6 +1195,16 @@ model WidgetSite {
   /// "woocommerce" | "shopify" | null — the two hand off to checkout in
   /// completely different ways, so the link builder must know which.
   storeKind    String?
+  /// The owner's own opening line, editable any time. Null keeps the
+  /// page-aware opener computed from the crawl (migration 063).
+  greeting       String?
+  /// Open the chat itself on dwell / deep scroll / exit intent — once per
+  /// visit. proactiveDelay is the dwell in seconds.
+  proactive      Boolean @default(true)
+  proactiveDelay Int     @default(20)
+  /// Invite name, email and phone after the first answer. An invite, never
+  /// a gate — the assistant keeps answering either way.
+  askContact     Boolean @default(true)
   // Monthly AI budget as (which month, used) — rolls over by comparison at
   // read time, no cron reset. See lib/widget/caps.ts.
   monthKey     String   @default("")

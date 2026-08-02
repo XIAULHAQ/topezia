@@ -36,6 +36,7 @@ const SITE_SELECT = {
   id: true, domain: true, siteToken: true, enabled: true, branded: true,
   digestEnabled: true, pagesCrawled: true, crawledAt: true, crawlError: true,
   accentColor: true, replyHours: true, storeKind: true,
+  greeting: true, proactive: true, proactiveDelay: true, askContact: true,
   monthKey: true, messagesUsed: true,
 } as const;
 
@@ -204,6 +205,15 @@ export async function PATCH(req: NextRequest) {
       data.accentColor = accent;
     }
   }
+  if ("greeting" in body) {
+    const g = typeof body.greeting === "string" ? body.greeting.replace(/\s+/g, " ").trim().slice(0, 300) : "";
+    data.greeting = g || null; // empty restores the page-aware opener
+  }
+  if (typeof body.proactive === "boolean") data.proactive = body.proactive;
+  if (typeof body.proactiveDelay === "number" && Number.isFinite(body.proactiveDelay)) {
+    data.proactiveDelay = Math.min(Math.max(Math.round(body.proactiveDelay), 3), 300);
+  }
+  if (typeof body.askContact === "boolean") data.askContact = body.askContact;
   if ("replyHours" in body) {
     if (body.replyHours === null) data.replyHours = Prisma.DbNull;
     else {

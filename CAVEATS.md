@@ -1955,3 +1955,31 @@ Migration 054 (`WidgetSite.branded`, default true).
 - 🟡 Both behaviours rule 6 exists for still work and should stay tested: a
   custom rebrand gets one qualifying question plus handoff, and an
   unanswerable question refuses honestly rather than guessing.
+
+## The panel must never be blank (added 2026-08-02, migration 063)
+
+- 🔴 **The loader paints a branded placeholder BEFORE the iframe exists.**
+  An iframe shows nothing until its HTML arrives and ours takes 0.6-1.5s;
+  that blank rectangle is what made people think the chat was broken.
+  Company name, round mark, colour and opening line come from the cached
+  /config call. Don't remove it to "simplify" the loader.
+- 🔴 **The swap waits for the chat's own `topezia:ready` postMessage, NOT
+  the iframe load event.** Load can fire before the document inside has
+  painted, which reinstates the blank flash. A 6s backstop drops the
+  placeholder regardless so a failed frame never strands anyone.
+- 🔴 **Topezia's own pages cannot embed the widget** — the site-wide CSP
+  limits frame-src to YouTube/Vimeo/Turnstile. Testing the loader from a
+  Topezia page produces a blocked frame whose `load` still fires, which
+  looks like success and proves nothing. Test from a CSP-free page on
+  another origin.
+- 🟡 **Spoken replies default OFF** and self-enable when the visitor uses
+  the mic. This runs on other people's sites; unprompted audio on a
+  stranger's page is a worse first impression than silence. There is a
+  header toggle either way.
+- 🟡 **NO SOUND on the proactive open.** Browsers block audio until the
+  page has a real user gesture, and dwell/scroll/exit-intent are not
+  gestures — a "beep" would fail silently on most first visits. Deliberately
+  not shipped rather than shipped broken.
+- 🟡 The proactive open fires once per visit (sessionStorage), on dwell,
+  half-page scroll, or exit intent. Owners set the line, the delay, and can
+  turn it off; the contact invite is separately toggleable.

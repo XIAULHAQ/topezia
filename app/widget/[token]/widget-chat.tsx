@@ -37,6 +37,7 @@ export default function WidgetChat({
   ready,
   branded,
   greeting,
+  askContact,
   pageUrl,
   badgeKind,
   accent,
@@ -55,6 +56,8 @@ export default function WidgetChat({
   badgeKind: "free" | "credit";
   /** Page-aware opener computed server-side; null = the default hello. */
   greeting: string | null;
+  /** Invite a name, email and phone after the first answer. */
+  askContact: boolean;
   /** The host page the visitor opened the chat from, for retrieval. */
   pageUrl: string | null;
   /** The company's brand colour (#rrggbb), or null for Topezia's gradient. */
@@ -69,6 +72,11 @@ export default function WidgetChat({
   // replies follow whatever language they type in (a prompt rule server-side).
   const [locale, setLocale] = useState("en");
   useEffect(() => { setLocale(pickLocale(navigator.language)); }, []);
+
+  // Tell the loader we are actually on screen, so it can drop its
+  // placeholder. An iframe's own load event can fire before its document
+  // paints — trusting it would put the blank panel back.
+  useEffect(() => { try { window.parent?.postMessage("topezia:ready", "*"); } catch { /* not framed */ } }, []);
   const t = T(locale);
 
   const grad = useMemo(() => {
@@ -107,6 +115,7 @@ export default function WidgetChat({
   const [threadToken, setThreadToken] = useState<string | null>(null);
   // True after a human replied — from then on the input feeds the thread.
   const [humanMode, setHumanMode] = useState(false);
+  const composer = useRef<HTMLTextAreaElement>(null);
   const seenMsgIds = useRef<Set<string>>(new Set());
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -118,6 +127,35 @@ export default function WidgetChat({
   const [micAvailable, setMicAvailable] = useState(false);
   // A mic that fails silently reads as a broken button. Say what happened.
   const [micNote, setMicNote] = useState<string | null>(null);
+  // Shown once, after the first answer: who are you, so a visitor who
+  // wanders off isn't lost. Dismissible, never a gate.
+  const [contactAsked, setContactAsked] = useState(false);
+  const [contactDone, setContactDone] = useState(false);
+  const [spokeToIt, setSpokeToIt] = useState(false);
+
+  // ── Speaking replies ───────────────────────────────────────────────────
+  // Browser-native speech, no upload and no cost. DEFAULT OFF: this chat
+  // lives on other people's websites, and a stranger's page that suddenly
+  // talks in an open-plan office is a worse first impression than a quiet
+  // one. It switches itself on the moment the visitor SPEAKS to it — if you
+  // talk to something, you expect it to talk back — and the header toggle
+  // is always there either way.
+  const [speak, setSpeak] = useState(false);
+  const [voiceAvailable, setVoiceAvailable] = useState(false);
+  useEffect(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) setVoiceAvailable(true);
+    return () => { try { window.speechSynthesis?.cancel(); } catch { /* nothing queued */ } };
+  }, []);
+
+  function say(text: string) {
+    if (!speak || !text.trim()) return;
+    try {
+      window.speechSynthesis.cancel(); // never let two replies overlap
+      const u = new SpeechSynthesisUtterance(text.slice(0, 900));
+      u.lang = navigator.language || "en-US";
+      window.speechSynthesis.speak(u);
+    } catch { /* the text is on screen regardless */ }
+  }
   const recognizer = useRef<SpeechRec | null>(null);
   useEffect(() => {
     const w = window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec };
@@ -161,6 +199,8 @@ export default function WidgetChat({
       rec.start();
       setMicOn(true);
       setMicNote(null);
+      setSpeak(true); // they spoke to it; it should speak back
+      setSpokeToIt(true);
     } catch {
       setMicOn(false);
       setMicNote(t.micFailed);
@@ -169,7 +209,15 @@ export default function WidgetChat({
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
-  }, [turns, leadOpen, leadDone]);
+  }, [turns, leadOpen, leadDone, contactAsked]);
+
+  // Grow with the text — up to a point, then scroll inside itself.
+  useEffect(() => {
+    const el = composer.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
+  }, [input]);
 
   // Poll the thread while the tab is open so the company's reply appears in
   // the box the visitor is actually looking at.
@@ -279,12 +327,54 @@ export default function WidgetChat({
         return;
       }
       patchLast({ text: finalText, sources: done?.sources, products: done?.products });
+      say(finalText);
+      // First answer done — invite their details, once, if the owner wants
+      // it. An invite: the assistant keeps working whether they fill it in
+      // or not.
+      if (askContact && !leadDone && !contactAsked) setContactAsked(true);
       if (done?.handoff) {
         setLeadMsg(text);
         setLeadOpen(true);
       }
     } catch {
       setTurns((cur) => [...cur, { role: "bot", text: "Something hiccuped — try that again." }]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Their details, kept before they wander off. It goes through the same
+   * lead endpoint as everything else — same spam checks, same email to the
+   * owner — with the visitor's own first question as the message, so what
+   * lands in the inbox is a real enquiry rather than a bare address.
+   */
+  async function saveContact(e: FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const asked = turns.find((x) => x.role === "visitor")?.text ?? "";
+    try {
+      const res = await fetch(`/api/widget/${token}/inquiry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          name,
+          phone,
+          message: asked.length >= 20 ? asked : `Shared their details while chatting. They asked: ${asked || "(nothing yet)"}`,
+          transcript: turns.filter((x) => x.role !== "team").map(({ role, text }) => ({ role, text })),
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { sent?: boolean; threadToken?: string; error?: string };
+      if (!res.ok || !data.sent) { setError(data.error ?? t.failed); return; }
+      setContactDone(true);
+      setLeadDone(true);
+      if (data.threadToken) setThreadToken(data.threadToken);
+      setTurns((cur) => [...cur, { role: "bot", text: t.contactThanks(name.trim().split(/\s+/)[0] || "") }]);
+    } catch {
+      setError(t.failed);
     } finally {
       setBusy(false);
     }
@@ -351,6 +441,24 @@ export default function WidgetChat({
         {/* Full-screen on phones hides the launcher bubble, so the chat has
             to carry its own way out. The parent page owns the iframe, hence
             postMessage rather than a local close. */}
+        {voiceAvailable && (
+          <button
+            type="button"
+            onClick={() => {
+              const next = !speak;
+              setSpeak(next);
+              if (!next) { try { window.speechSynthesis.cancel(); } catch { /* nothing queued */ } }
+            }}
+            aria-label={speak ? t.voiceOff : t.voiceOn}
+            title={speak ? t.voiceOff : t.voiceOn}
+            style={{ ...S.closeBtn, display: "grid", ...(speak ? { background: grad, color: "#fff", borderColor: "transparent" } : null) }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 5 6 9H3v6h3l5 4V5z" />
+              {speak ? <path d="M15.5 8.5a5 5 0 0 1 0 7" /> : <path d="m17 9 4 6M21 9l-4 6" />}
+            </svg>
+          </button>
+        )}
         <button
           type="button"
           className="tzw-close"
@@ -428,6 +536,25 @@ export default function WidgetChat({
         {/* Thinking dots only until the first streamed word arrives. */}
         {busy && !leadOpen && turns.at(-1)?.role === "visitor" && <div style={{ ...S.msg, ...S.msgBot, color: "#94A3B8" }}>…</div>}
 
+        {/* Who are you? Asked once, after the first answer, and skippable.
+            Submitting it creates the lead there and then — with their own
+            first question as the message — so someone who wanders off is
+            still someone the team can reach. */}
+        {contactAsked && !contactDone && !leadDone && !leadOpen && (
+          <form onSubmit={saveContact} style={S.leadCard}>
+            <b style={{ fontSize: 13 }}>{t.contactTitle}</b>
+            <span style={S.leadNote}>{t.contactWhy}</span>
+            <input style={S.input} type="text" placeholder={t.namePlaceholder} value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
+            <input style={S.input} type="email" placeholder={t.emailPlaceholder} value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={254} />
+            <input style={S.input} type="tel" placeholder={t.phonePlaceholder} value={phone} onChange={(e) => setPhone(e.target.value)} maxLength={30} />
+            {error && <span style={S.error}>{error}</span>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="submit" style={{ ...S.btn, background: grad }} disabled={busy}>{busy ? t.sending : t.contactSave}</button>
+              <button type="button" style={S.btnGhost} onClick={() => setContactDone(true)}>{t.contactSkip}</button>
+            </div>
+          </form>
+        )}
+
         {leadOpen && !leadDone && (
           <form onSubmit={sendLead} style={S.leadCard}>
             <b style={{ fontSize: 13 }}>{t.leadTitle}</b>
@@ -455,10 +582,18 @@ export default function WidgetChat({
       </div>
 
       <form onSubmit={send} style={S.inputRow}>
-        <input
-          style={{ ...S.input, flex: 1, margin: 0 }}
+        {/* A textarea, not an input: dictation runs long, and a single line
+            scrolls what you just said out of sight so you can't tell how
+            much was heard. It grows to a few lines and then scrolls. */}
+        <textarea
+          ref={composer}
+          rows={1}
+          style={{ ...S.input, ...S.composerBox, flex: 1, margin: 0 }}
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(e as unknown as FormEvent); }
+          }}
           placeholder={micOn ? t.listening : humanMode ? t.replyPlaceholder(companyName) : ready ? t.askPlaceholder : t.leadTitle}
           maxLength={1500}
           disabled={!ready && !leadDone && !humanMode}
@@ -536,7 +671,7 @@ const CSS = `
 const S: Record<string, CSSProperties> = {
   page: { fontFamily: "-apple-system, Segoe UI, Roboto, sans-serif", height: "100vh", display: "flex", flexDirection: "column", background: "#fff", color: "#0F172A" },
   head: { padding: "12px 16px 10px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", gap: 10 },
-  avatar: { flex: "none", width: 36, height: 36, borderRadius: 10, background: DEFAULT_GRAD, display: "grid", placeItems: "center", overflow: "hidden", padding: 2 },
+  avatar: { flex: "none", width: 36, height: 36, borderRadius: "50%", background: DEFAULT_GRAD, display: "grid", placeItems: "center", overflow: "hidden", padding: 2 },
   headSub: { fontSize: 11, color: "#94A3B8" },
   closeBtn: { flex: "none", width: 34, height: 34, borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", placeItems: "center", color: "#64748B", cursor: "pointer", fontSize: 15, fontFamily: "inherit" },
   scroll: { flex: 1, overflowY: "auto", padding: "14px 12px", display: "flex", flexDirection: "column", gap: 8 },
@@ -557,6 +692,7 @@ const S: Record<string, CSSProperties> = {
   sourceLink: { fontSize: 11, color: "#4F46E5", fontWeight: 700, textDecoration: "none", background: "#EEF2FF", borderRadius: 999, padding: "2px 9px" },
   leadCard: { border: "1px solid #E2E8F0", borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 8, background: "#F8FAFC" },
   input: { border: "1px solid #E2E8F0", borderRadius: 10, padding: "9px 11px", fontSize: 13, fontFamily: "inherit", background: "#fff", color: "#0F172A", boxSizing: "border-box", width: "100%" },
+  composerBox: { resize: "none", overflowY: "auto", lineHeight: 1.5, maxHeight: 132 },
   inputRow: { display: "flex", gap: 8, padding: "10px 12px 6px", borderTop: "1px solid #E2E8F0" },
   btn: { background: DEFAULT_GRAD, color: "#fff", border: "none", borderRadius: 10, padding: "9px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   btnGhost: { background: "#fff", color: "#334155", border: "1px solid #E2E8F0", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },

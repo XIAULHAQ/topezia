@@ -21,6 +21,10 @@ type Site = {
   crawledAt: string | null;
   crawlError: string | null;
   storeKind: string | null;
+  greeting: string | null;
+  proactive: boolean;
+  proactiveDelay: number;
+  askContact: boolean;
   usage: { used: number; limit: number; pooled: boolean };
   stats: SiteStats;
 };
@@ -59,6 +63,7 @@ export default function WidgetClient() {
 
   const [hoursDraft, setHoursDraft] = useState<NonNullable<Site["replyHours"]> | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [greetDraft, setGreetDraft] = useState<string | null>(null);
 
   useEffect(() => { loadSites(true); }, []);
 
@@ -351,6 +356,59 @@ export default function WidgetClient() {
                   Reset
                 </button>
               )}
+            </div>
+
+            <label style={ES.label}>How the chat opens</label>
+            <p style={{ ...ES.empty, margin: "0 0 10px" }}>
+              Your own opening line, and whether the chat introduces itself to someone who lingers, reads a long
+              way down, or moves to leave. It opens itself once per visit — never twice.
+            </p>
+            <textarea
+              style={{ ...ES.input, minHeight: 64, resize: "vertical", marginBottom: 10 }}
+              maxLength={300}
+              value={greetDraft ?? site.greeting ?? ""}
+              placeholder={`Hi — I'm the ${"{your company}"} assistant. Ask me anything, or leave a message and a real person will follow up.`}
+              onChange={(e) => setGreetDraft(e.target.value)}
+            />
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 18 }}>
+              <button type="button" style={ES.btn} disabled={greetDraft === null}
+                onClick={async () => { await patchSite({ greeting: greetDraft }, { greeting: greetDraft || null }); setGreetDraft(null); }}>
+                Save greeting
+              </button>
+              {(site.greeting || greetDraft) && (
+                <button type="button" style={ES.btnGhost}
+                  onClick={async () => { await patchSite({ greeting: "" }, { greeting: null }); setGreetDraft(null); }}>
+                  Use the automatic one
+                </button>
+              )}
+              <span style={{ ...ES.empty, flex: 1, minWidth: 200 }}>
+                Leave it empty and the chat names whatever page they&apos;re on — usually better than a generic hello.
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+              <button type="button" style={site.proactive ? ES.btnGhost : ES.btn}
+                onClick={() => patchSite({ proactive: !site.proactive }, { proactive: !site.proactive })}>
+                {site.proactive ? "Don't open by itself" : "Open by itself"}
+              </button>
+              {site.proactive && (
+                <label style={{ ...ES.empty, display: "flex", gap: 8, alignItems: "center" }}>
+                  after
+                  <input type="number" min={3} max={300} defaultValue={site.proactiveDelay}
+                    style={{ ...ES.input, width: 80 }}
+                    onBlur={(e) => patchSite({ proactiveDelay: Number(e.target.value) }, { proactiveDelay: Number(e.target.value) })} />
+                  seconds, a deep scroll, or a move to leave
+                </label>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 18 }}>
+              <button type="button" style={site.askContact ? ES.btnGhost : ES.btn}
+                onClick={() => patchSite({ askContact: !site.askContact }, { askContact: !site.askContact })}>
+                {site.askContact ? "Don't ask for contact details" : "Ask for contact details"}
+              </button>
+              <span style={{ ...ES.empty, flex: 1, minWidth: 200 }}>
+                After the first answer the chat asks for a name, email and phone. Skippable — it keeps answering
+                either way — and anyone who fills it in lands in your inbox straight away.
+              </span>
             </div>
 
             <label style={ES.label}>When your team is around</label>

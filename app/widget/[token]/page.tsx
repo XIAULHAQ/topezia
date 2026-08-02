@@ -40,7 +40,7 @@ export default async function WidgetPage({
     where: { siteToken: params.token },
     select: {
       id: true, domain: true, enabled: true, branded: true, pagesCrawled: true,
-      accentColor: true, replyHours: true,
+      accentColor: true, replyHours: true, greeting: true, askContact: true,
       company: { select: { id: true, name: true, logoPath: true, plan: true, brandingDiscount: true } },
     },
   });
@@ -64,8 +64,10 @@ export default async function WidgetPage({
     } catch { /* not a URL */ }
   }
 
-  let greeting: string | null = null;
-  if (pageUrl && site.pagesCrawled > 0) {
+  // The owner's own line wins over anything computed — it's their voice,
+  // and they can change it whenever they like.
+  let greeting: string | null = site.greeting?.trim() || null;
+  if (!greeting && pageUrl && site.pagesCrawled > 0) {
     const bare = pageUrl.replace(/\/$/, "");
     const urlForms = [pageUrl, bare, `${bare}/`];
     const isHome = new URL(pageUrl).pathname === "/";
@@ -110,6 +112,7 @@ export default async function WidgetPage({
       branded={showsBadge}
       badgeKind={plan.branded ? "free" : "credit"}
       greeting={greeting}
+      askContact={site.askContact}
       pageUrl={pageUrl}
       accent={plan.theming ? normalizeAccent(site.accentColor) : null}
       replyTime={replyTime}
