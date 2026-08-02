@@ -31,6 +31,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // at a weight to match — unlike the waitlist pages above it.
     { url: `${base}/free-ai-chatbot`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     { url: `${base}/pricing/business`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
+    // Linked from our user-agent string, so it has to be findable.
+    { url: `${base}/crawler`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
   ];
 
   // Published portfolios are real content pages with a named author — the
