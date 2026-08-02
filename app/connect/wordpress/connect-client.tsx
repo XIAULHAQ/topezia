@@ -180,7 +180,7 @@ export default function ConnectClient({ view }: { view: ConnectView }) {
   const [accept, setAccept] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ pages: number; company: string } | null>(null);
+  const [result, setResult] = useState<{ pages: number; company: string; warning: string | null } | null>(null);
 
   const on = (k: string) => accept[k] !== false;
   const set = (k: string) => (v: boolean) => setAccept((a) => ({ ...a, [k]: v }));
@@ -253,6 +253,33 @@ export default function ConnectClient({ view }: { view: ConnectView }) {
                   : "Your website is set up. The first scan didn't find pages it could read — you can run it again from your dashboard."
                 : "The chat is set up on this website."}
             </p>
+            {/* The site is connected either way — this is not a failure. But
+                a firewall that refused most of the scan means the chat will
+                answer thinly, and the moment to say so is now, while they are
+                looking at us, not in three months when the answers seem dim. */}
+            {result?.warning && (
+              <div
+                style={{
+                  background: "#FFFBEB",
+                  border: "1px solid #FDE68A",
+                  borderRadius: 12,
+                  padding: "13px 15px",
+                  margin: "14px 0 0",
+                }}
+              >
+                <b style={{ fontSize: 13, color: "#92400E", display: "block", marginBottom: 4 }}>
+                  Your site blocked most of the scan
+                </b>
+                <span style={{ fontSize: 12.5, color: "#B45309", lineHeight: 1.65, display: "block" }}>
+                  {result.warning}
+                </span>
+                <span style={{ fontSize: 12, color: "#B45309", lineHeight: 1.65, display: "block", marginTop: 7 }}>
+                  Using Cloudflare? This is usually <b>Bot Fight Mode</b>, under Security → Settings → Bot traffic.
+                  On the free plan it can&apos;t be allowlisted, so it has to be switched off. Fix it and press
+                  Re-scan on your dashboard — nothing else needs redoing.
+                </span>
+              </div>
+            )}
             <p style={{ ...S.sub, marginTop: 10 }}>
               Go back to WordPress and the plugin will finish the last step by itself. The chat bubble appears on
               your site straight away.
@@ -302,12 +329,12 @@ export default function ConnectClient({ view }: { view: ConnectView }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state: v.state, accept }),
       });
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; crawl?: { pages: number } | null; company?: { name: string } };
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; crawl?: { pages: number; error?: string | null } | null; company?: { name: string } };
       if (!res.ok || !data.ok) {
         setError(data.error ?? "That didn't work — try again.");
         return;
       }
-      setResult({ pages: data.crawl?.pages ?? 0, company: data.company?.name ?? "" });
+      setResult({ pages: data.crawl?.pages ?? 0, company: data.company?.name ?? "", warning: data.crawl?.error ?? null });
     } catch {
       setError("That didn't work — check your connection and try again.");
     } finally {

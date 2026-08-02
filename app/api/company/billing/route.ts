@@ -18,7 +18,7 @@ import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 import { getStripe, billingConfigured, BUSINESS_INTEGRATION_ID } from "@/lib/billing/stripe";
 import { planCatalogue } from "@/lib/billing/catalogue";
 import { companyPortalConfigId } from "@/lib/billing/portal";
-import { PLANS, planFor, priceIdFor, isPlanId, brandingCouponFor, brandingDiscountOffered, type BillingPeriod } from "@/lib/billing/plans";
+import { PLANS, planFor, priceIdFor, planForPriceId, isPlanId, brandingCouponFor, brandingDiscountOffered, type BillingPeriod } from "@/lib/billing/plans";
 import { getCoupon } from "@/lib/billing/stripe";
 
 export const runtime = "nodejs";
@@ -36,25 +36,117 @@ const RETURN = `${SITE}/employer/billing`;
  */
 const SWITCHABLE = new Set(["active", "trialing", "past_due", "unpaid"]);
 
+type LiveSub = {
+  live: boolean;
+  /** True for active/trialing — what actually entitles a plan. */
+  entitled: boolean;
+  priceId: string | null;
+  periodEnd: Date | null;
+  branding: boolean;
+};
+
 /**
- * Does Stripe hold a live subscription for this customer? Asked because a
- * customer id proves only that someone once opened checkout — it is minted
- * before the session, so an abandoned checkout leaves one behind.
+ * What Stripe knows about this customer.
  *
- * Answers FALSE when Stripe can't be reached. That direction is the safe
- * one for a read: the page offers a purchase, and the POST re-checks and
- * fails closed rather than creating a second subscription.
+ * `reachable` and `everSubscribed` exist because "no live subscription" is
+ * THREE different situations that must not be treated alike: Stripe was
+ * down, they cancelled, or they were comped and never had one. Collapsing
+ * those to a single null is how a reconcile ends up cancelling a comped
+ * customer's plan because an API call timed out.
  */
-async function hasLiveSubscription(customerId: string | null): Promise<boolean> {
+type StripeView = { reachable: boolean; everSubscribed: boolean; sub: LiveSub | null };
+
+/**
+ * The subscription this company is actually on, as Stripe sees it. Asked
+ * because a customer id proves only that someone once opened checkout — it
+ * is minted before the session, so an abandoned checkout leaves one behind.
+ *
+ * Returns null when Stripe can't be reached. That direction is the safe one
+ * for a read: the page offers a purchase, the POST re-checks and fails
+ * closed, and reconcile() declines to downgrade on a null.
+ */
+async function stripeView(customerId: string | null): Promise<StripeView> {
   const stripe = getStripe();
-  if (!stripe || !customerId) return false;
+  if (!stripe || !customerId) return { reachable: Boolean(stripe), everSubscribed: false, sub: null };
   try {
     const subs = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 });
-    return subs.data.some((s) => SWITCHABLE.has(s.status));
+    const sub = subs.data.find((s) => SWITCHABLE.has(s.status));
+    if (!sub) return { reachable: true, everSubscribed: subs.data.length > 0, sub: null };
+    const item = sub.items.data[0];
+    const end = item?.current_period_end ?? null;
+    return {
+      reachable: true,
+      everSubscribed: true,
+      sub: {
+        live: true,
+        entitled: sub.status === "active" || sub.status === "trialing",
+        priceId: item?.price?.id ?? null,
+        periodEnd: end ? new Date(end * 1000) : null,
+        branding: sub.metadata?.topezia_branding === "1",
+      },
+    };
   } catch (err) {
     console.error("[company/billing] subscription check failed:", err instanceof Error ? err.message : err);
-    return false;
+    return { reachable: false, everSubscribed: false, sub: null };
   }
+}
+
+/**
+ * Bring our row in line with Stripe when they disagree.
+ *
+ * THE WEBHOOK IS STILL THE PRIMARY WRITER. This is a safety net, and it
+ * exists because the net was needed: the first real business subscription
+ * ever taken did not land — Stripe had an active subscription and
+ * Company.planUntil was still null. A billing rail whose only path to the
+ * truth is one HTTP callback has a single point of failure, and the failure
+ * is silent and on the customer's side of the argument.
+ *
+ * Safe to run on a read: it derives everything from the subscription object
+ * exactly as the webhook does, so running it twice changes nothing, and it
+ * never invents a plan for a price we don't recognise.
+ */
+async function reconcile(
+  companyId: string,
+  current: { plan: string; planUntil: Date | null; brandingDiscount: boolean },
+  view: StripeView
+): Promise<{ plan: string; planUntil: Date | null; brandingDiscount: boolean }> {
+  // Stripe had no opinion to offer. Never act on that.
+  if (!view.reachable) return current;
+
+  // No live subscription is THREE situations, and only one of them is a
+  // downgrade. Comped companies (plan set by hand, nothing in Stripe) must
+  // survive this untouched; someone who cancelled must not.
+  if (!view.sub) {
+    if (!view.everSubscribed) return current; // comped, or a stale customer
+    if (current.plan === "FREE" && !current.planUntil) return current;
+    console.warn(`[billing] reconciling company ${companyId}: ${current.plan} → FREE (subscription ended)`);
+    const gone = { plan: "FREE", planUntil: null, brandingDiscount: false };
+    await prisma.company.updateMany({ where: { id: companyId }, data: gone });
+    return gone;
+  }
+
+  if (!view.sub.entitled) return current; // past_due / unpaid — Stripe is still trying
+
+  const plan = planForPriceId(view.sub.priceId);
+  if (!plan) {
+    // Active on a price we don't recognise: leave them alone and shout.
+    // Downgrading a payer because an env var is missing is the worst guess.
+    console.error(`[company/billing] active sub on unknown price ${view.sub.priceId} — plan left unchanged`);
+    return current;
+  }
+
+  const want = { plan, planUntil: view.sub.periodEnd, brandingDiscount: view.sub.branding };
+  const same =
+    want.plan === current.plan &&
+    want.brandingDiscount === current.brandingDiscount &&
+    (want.planUntil?.getTime() ?? null) === (current.planUntil?.getTime() ?? null);
+  if (same) return current;
+
+  console.warn(
+    `[billing] reconciling company ${companyId}: ${current.plan}/${current.planUntil?.toISOString() ?? "—"} → ${want.plan}/${want.planUntil?.toISOString() ?? "—"} (webhook missed it?)`
+  );
+  await prisma.company.updateMany({ where: { id: companyId }, data: want });
+  return want;
 }
 
 export async function GET() {
@@ -69,28 +161,39 @@ export async function GET() {
     planCatalogue(),
   ]);
 
-  const [monthOff, yearOff] = await Promise.all([
+  const [monthOff, yearOff, view] = await Promise.all([
     getCoupon(brandingCouponFor("month")),
     getCoupon(brandingCouponFor("year")),
+    stripeView(company?.stripeCustomerId ?? null),
   ]);
 
+  // Ask Stripe, and fix our row if it drifted. See reconcile() for why this
+  // exists at all — the webhook is still the primary writer.
+  const settled = company
+    ? await reconcile(
+        auth.owner.companyId,
+        { plan: company.plan, planUntil: company.planUntil, brandingDiscount: company.brandingDiscount },
+        view
+      )
+    : null;
+
   return NextResponse.json({
-    plan: planFor(company),
-    planUntil: company?.planUntil ?? null,
+    plan: planFor(settled),
+    planUntil: settled?.planUntil ?? null,
     hasBillingHistory: Boolean(company?.stripeCustomerId),
     // Whether a SUBSCRIPTION exists, which is not the same question as which
     // plan they're on. A comped company is PRO with nothing behind it, and
     // labelling that "Current · On this plan" both misleads them and locks
     // them out of buying the plan they're being given for free. The page
     // needs both facts to say anything true.
-    subscribed: await hasLiveSubscription(company?.stripeCustomerId ?? null),
+    subscribed: Boolean(view.sub?.live),
     billingLive: billingConfigured(),
     free: PLANS.FREE,
     plans,
     // The keep-our-badge trade, with the real amounts Stripe will apply.
     branding: {
       offered: brandingDiscountOffered(),
-      on: Boolean(company?.brandingDiscount),
+      on: Boolean(settled?.brandingDiscount),
       monthly: monthOff,
       yearly: yearOff,
     },
