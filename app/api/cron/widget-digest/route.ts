@@ -19,7 +19,21 @@ export const maxDuration = 120;
 
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
+  const auth = req.headers.get("authorization");
+
+  // The RESPONSE stays an indistinguishable 404 — a caller must never learn
+  // whether the endpoint exists, whether a secret is set, or whether theirs
+  // was close. The LOG says which, because this runs once a week and a
+  // silent rejection would look exactly like a quiet week: no email, no
+  // error, nobody the wiser until someone asks why the digest stopped.
+  if (!secret) {
+    console.warn("[cron/widget-digest] refused: CRON_SECRET is not set on this deployment");
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+  if (auth !== `Bearer ${secret}`) {
+    console.warn(
+      `[cron/widget-digest] refused: authorization ${auth ? "did not match CRON_SECRET" : "header absent"}`
+    );
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 
