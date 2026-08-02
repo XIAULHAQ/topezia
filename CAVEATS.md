@@ -2125,3 +2125,28 @@ is my order?" and get a real answer.
   versions yearly and rejects unknown ones outright.
 - 🟡 Order status still answers **when the month's AI budget is spent** — it's
   a fact we hold, not something written by a model.
+
+## Voice: iOS silence, a self-refilling box, and a bot that denied it (2026-08-02)
+
+All three from one screenshot of a real visitor on an iPhone.
+
+- 🔴 **iOS refuses `speechSynthesis.speak()` unless the FIRST call happens
+  inside a real tap — and it refuses silently.** Our replies are spoken when a
+  streamed answer finishes, which is long after any tap, so the assistant
+  never made a sound on an iPhone. Fixed by speaking one empty utterance
+  during the tap that turns voice on (`primeSpeech`). It MUST be called
+  straight from the handler: a promise or a timeout breaks the gesture chain
+  and the unlock is lost.
+- 🔴 **The model told a customer it had no voice** while a microphone and a
+  speaker button were both on screen. It cannot see the window it is inside,
+  so it guessed — and guessed the product down. Rule 4c now states both
+  buttons and, importantly, WHICH DIRECTION each one is: mic = they talk to
+  it, speaker = it talks to them. Told about only one, it pointed people at
+  the wrong button.
+- 🟡 **Speech recognition delivers a final result AFTER send**, which put the
+  sent message straight back in the composer — it looked like nothing had
+  happened. `dictationSpent` blocks late results; a new dictation clears it.
+- 🟡 **The prompt banning markdown is not enough** — models still reach for
+  `**bold**` and visitors read the asterisks. `unmark()` strips paired
+  emphasis and headings server-side. Only PAIRED markers around non-space
+  text, so `2*4` and `5 * 3 metres` survive.

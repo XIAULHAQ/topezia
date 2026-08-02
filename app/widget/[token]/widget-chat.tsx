@@ -152,6 +152,25 @@ export default function WidgetChat({
     return () => { try { window.speechSynthesis?.cancel(); } catch { /* nothing queued */ } };
   }, []);
 
+  /**
+   * iOS refuses speechSynthesis.speak() unless the FIRST one happens inside a
+   * real tap, and it refuses silently — no error, no event, just nothing. Our
+   * replies are spoken when a streamed answer finishes, which is long after
+   * any tap, so on an iPhone the assistant simply never made a sound.
+   *
+   * Speaking one empty utterance during the tap unlocks it for the rest of
+   * the page's life. It has to be called from the handler itself; wrapping it
+   * in a promise or a timeout breaks the chain and the unlock is lost.
+   */
+  const speechPrimed = useRef(false);
+  function primeSpeech() {
+    if (speechPrimed.current || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    try {
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
+      speechPrimed.current = true;
+    } catch { /* unsupported; say() degrades to silence */ }
+  }
+
   function say(text: string) {
     if (!speak || !text.trim()) return;
     try {
@@ -159,9 +178,15 @@ export default function WidgetChat({
       const u = new SpeechSynthesisUtterance(text.slice(0, 900));
       u.lang = navigator.language || "en-US";
       window.speechSynthesis.speak(u);
+      // Safari parks the queue as "paused" after a cancel often enough that
+      // this is worth doing unconditionally; resuming an idle queue is a
+      // no-op everywhere else.
+      window.speechSynthesis.resume();
     } catch { /* the text is on screen regardless */ }
   }
   const recognizer = useRef<SpeechRec | null>(null);
+  /** True once a dictated message has been sent — see rec.onresult. */
+  const dictationSpent = useRef(false);
   useEffect(() => {
     const w = window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec };
     const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
@@ -171,6 +196,8 @@ export default function WidgetChat({
   }, []);
 
   function toggleMic() {
+    // Using the mic turns speaking-back on, so unlock speech in the same tap.
+    primeSpeech();
     if (micOn) {
       try { recognizer.current?.stop(); } catch { /* already stopped */ }
       setMicOn(false);
@@ -186,6 +213,11 @@ export default function WidgetChat({
     // Dictation lands in the box; the visitor still presses send. Nothing
     // is transmitted on their behalf because they held a button down.
     rec.onresult = (e) => {
+      // Recognition delivers a FINAL result after the send has already gone —
+      // which put the sent message straight back into the box, so it looked
+      // like nothing had happened. Once the message is away, later results
+      // from that dictation belong to nothing.
+      if (dictationSpent.current) return;
       let said = "";
       for (let i = 0; i < e.results.length; i++) said += e.results[i][0].transcript;
       setInput(said);
@@ -202,6 +234,7 @@ export default function WidgetChat({
     recognizer.current = rec;
     try {
       rec.start();
+      dictationSpent.current = false; // a fresh dictation may fill the box again
       setMicOn(true);
       setMicNote(null);
       setSpeak(true); // they spoke to it; it should speak back
@@ -253,6 +286,10 @@ export default function WidgetChat({
     e.preventDefault();
     const text = input.trim();
     if (!text || busy) return;
+    // Whatever was being dictated has now been said and sent. Stop listening
+    // and ignore anything still in flight, or it lands back in the box.
+    dictationSpent.current = true;
+    try { recognizer.current?.stop(); } catch { /* not listening */ }
     setInput("");
     setError(null);
     const history = [...turns, { role: "visitor" as const, text }];
@@ -467,6 +504,9 @@ export default function WidgetChat({
             type="button"
             onClick={() => {
               const next = !speak;
+              // Inside the tap, before anything async — this is the only
+              // moment iOS will let us unlock speech.
+              if (next) primeSpeech();
               setSpeak(next);
               if (!next) { try { window.speechSynthesis.cancel(); } catch { /* nothing queued */ } }
             }}
