@@ -9,21 +9,88 @@
  *
  * The happy path STREAMS: newline-delimited JSON events —
  *   {"t":"delta","text":"..."}   reply text, token by token
- *   {"t":"done", reply, sources, products, handoff, capped}
+ *   {"t":"done", reply, sources, products, handoff, capped, captured}
  * The done event repeats the full reply so fallback paths (which never
  * stream a delta) and dropped-mid-stream clients still end up whole.
  * Guard failures keep their plain JSON error bodies and status codes.
+ *
+ * IT ALSO TAKES LEADS. When a visitor types their email into the chat —
+ * which is what people actually do when the assistant asks — the lead is
+ * created HERE, before the reply is generated, so the assistant can say the
+ * team has their details and be telling the truth. See lib/widget/contact.ts.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit, clientIp, RATE_LIMITED } from "@/lib/rate-limit";
 import { answerFromSite, type ChatTurn } from "@/lib/widget/answer";
 import { consumeAiReply } from "@/lib/widget/caps";
+import { detectContact, detectContactInChat, leadMessageFromChat } from "@/lib/widget/contact";
+import { createWidgetLead } from "@/lib/widget/lead";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_TURNS = 30;
+
+type CaptureSite = {
+  id: string;
+  domain: string;
+  company: { id: string; name: string; ownerUserId: string; plan: string };
+};
+/** What the visitor gave us, and whether the team already had it. */
+type Captured = { email: string; name: string | null; threadToken: string | null; already: boolean };
+
+/**
+ * The lead nobody filled in a form for.
+ *
+ * Fires on the turn the address ARRIVES — that is the moment the assistant's
+ * reply needs to be true — and leans on the one-open-inquiry rule to stay
+ * idempotent when they repeat themselves. If the team already has this
+ * person, that is reported too, so the reply doesn't ask a second time.
+ *
+ * Best effort in the strictest sense: a failure here must never cost the
+ * visitor their answer, so everything is caught and the chat carries on.
+ */
+async function captureFromChat(site: CaptureSite, history: ChatTurn[], ip: string): Promise<Captured | null> {
+  try {
+    const latest = history.filter((t) => t.role === "visitor").at(-1);
+    if (!latest) return null;
+    const fresh = detectContact(latest.text, site.domain).email;
+    const known = detectContactInChat(history, site.domain);
+    if (!known.email) return null;
+
+    // Not a new address this turn — but we know who they are, so say so
+    // rather than open a form asking for what they already typed.
+    if (!fresh) {
+      const open = await prisma.companyInquiry.findFirst({
+        where: { siteId: site.id, visitorEmail: known.email, status: "NEW", source: "WIDGET" },
+        select: { id: true },
+      });
+      return open ? { email: known.email, name: known.name, threadToken: null, already: true } : null;
+    }
+
+    // A conversation is a slower thing to abuse than a form, so the window is
+    // per day only — but it exists, because "type an address, get an email
+    // sent to a business" is worth someone's while.
+    if (!rateLimit(`widget-chat-lead:${ip}`, 5, 24 * 60 * 60 * 1000)) return null;
+
+    const result = await createWidgetLead(site, {
+      email: known.email,
+      name: known.name,
+      phone: known.phone,
+      message: leadMessageFromChat(history, "They shared their contact details in the website chat — the conversation is above."),
+      transcript: history,
+    });
+    if (result.ok) return { email: known.email, name: known.name, threadToken: result.threadToken, already: false };
+    // Already waiting on a reply: true, and worth telling the visitor.
+    if (result.open) return { email: known.email, name: known.name, threadToken: null, already: true };
+    // Refused (disposable address, spam score). Say nothing and claim nothing.
+    return null;
+  } catch (err) {
+    console.error("[widget/chat] lead capture failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
 
 export async function POST(req: NextRequest, { params }: { params: { token: string } }) {
   const ip = clientIp(req);
@@ -33,7 +100,10 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
 
   const site = await prisma.widgetSite.findUnique({
     where: { siteToken: params.token },
-    select: { id: true, enabled: true, domain: true, checkoutPath: true, storeKind: true, company: { select: { name: true } } },
+    select: {
+      id: true, enabled: true, domain: true, checkoutPath: true, storeKind: true,
+      company: { select: { id: true, name: true, ownerUserId: true, plan: true } },
+    },
   });
   if (!site || !site.enabled) {
     return NextResponse.json({ error: "This widget is turned off." }, { status: 404 });
@@ -71,21 +141,34 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     async start(controller) {
       const send = (obj: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
       try {
-        // Budget spent → honest message-taker mode, not a dead bubble.
+        // ── Did they just hand over their details? ─────────────────────────
+        // Before anything else, because the answer is written knowing the
+        // outcome: an assistant that says "I've passed that to the team"
+        // must be describing something that already happened.
+        const captured = await captureFromChat(site!, history, ip);
+
+        // Budget spent → honest message-taker mode, not a dead bubble. The
+        // lead above still went through: the AI is what's capped, never the
+        // path from a visitor to the company.
         if (!(await consumeAiReply(site!.id))) {
           send({
             t: "done",
-            reply: "Our automatic answers are resting this month — but a person isn't. Leave your email and your question and the team will reply directly.",
-            sources: [], products: [], handoff: true, capped: true,
+            reply: captured
+              ? "Thanks — your details are with the team and they'll come back to you by email. Our automatic answers are resting this month, so a person will pick this up."
+              : "Our automatic answers are resting this month — but a person isn't. Leave your email and your question and the team will reply directly.",
+            sources: [], products: [], handoff: !captured, capped: true,
+            captured: captured ?? undefined,
           });
           return;
         }
         const answer = await answerFromSite(
           { id: site!.id, domain: site!.domain, companyName: site!.company.name, checkoutPath: site!.checkoutPath, storeKind: site!.storeKind },
           history,
-          { pageUrl, onDelta: (text) => send({ t: "delta", text }) }
+          { pageUrl, onDelta: (text) => send({ t: "delta", text }), contactCaptured: captured ? { name: captured.name, already: captured.already } : null }
         );
-        send({ t: "done", ...answer, capped: false });
+        // Their details are already with the team — offering the message
+        // form on top of that is a dead end, not a handoff.
+        send({ t: "done", ...answer, handoff: answer.handoff && !captured, capped: false, captured: captured ?? undefined });
         // Remember what was asked (feeds the weekly digest). After the send,
         // and a failure here must never break the answer the visitor got.
         const question = history.filter((t) => t.role === "visitor").at(-1)?.text.slice(0, 280);

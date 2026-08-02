@@ -59,6 +59,10 @@ export type AnswerOptions = {
   /** Streaming sink: called with reply text as it generates. When absent
    *  the call is non-streaming and only the return value matters. */
   onDelta?: (text: string) => void;
+  /** The visitor's details reached the team BEFORE this reply was written
+   *  (the chat route takes the lead first, precisely so this can be stated
+   *  as fact). Null when we have nothing — never set it hopefully. */
+  contactCaptured?: { name: string | null; already: boolean } | null;
 };
 
 const HANDOFF_FALLBACK: Omit<WidgetAnswer, "sources" | "products"> = {
@@ -186,6 +190,12 @@ export async function answerFromSite(
     productRows.some((p) => p.buyable)
       ? `5b. SOME PRODUCTS CAN BE BOUGHT ON THE SPOT (marked buy-now), and the buttons under your reply take the visitor straight to checkout. WHEN THEY ARE TRYING TO BUY ONE — "I want to buy X", "help me order X", "how do I get X" — CLOSE, DON'T INTERVIEW. Name the options and their prices in one or two short sentences, tell them the buttons below go straight to checkout, and stop. In that reply: do NOT ask them a question, do NOT ask what their business is, do NOT suggest they look at a portfolio, gallery, examples or any other page, and do NOT add a link — every one of those sends a ready buyer somewhere other than the checkout. Answer follow-ups they actually ask, and only then. Never invent an option, a price, a delivery date or a discount, and never claim an order has been placed — tapping a button is what starts it.`
       : ``,
+    // CONTACT DETAILS. Taken by the route before this call, so the reply can
+    // say so as a fact. Without this the assistant asks again — which is what
+    // a visitor who has just typed their email reads as being ignored.
+    opts.contactCaptured
+      ? `5c. THE TEAM HAS THIS VISITOR'S CONTACT DETAILS${opts.contactCaptured.already ? ` — they left them earlier in this conversation and their message is already waiting` : ` — they have just given them and the message has gone through`}. This is DONE, not pending. ${opts.contactCaptured.already ? `Reassure them in one short sentence that the team has their details and will reply by email` : `Thank them once${opts.contactCaptured.name ? ` by name (${opts.contactCaptured.name})` : ""} and say the team will follow up by email, in ONE short sentence`}, then answer whatever else they asked. IF THEIR MESSAGE WAS ONLY CONTACT DETAILS and asked nothing, stop after that sentence and offer to keep answering questions — do not pitch a product, do not link a page and do not raise a topic they never mentioned. NEVER ask for their name, email or phone number again, and never tell them to fill in a form or leave their details.`
+      : `5c. NEVER ask for a name, email and phone number as a list of fields — you are a conversation, not a form, and the panel below the chat already invites their details. If they want a person or a quote and there is no way to reach them, ask for the best EMAIL only, in one short sentence at the end of your reply. Ask once; if they'd rather not, drop it.`,
     `6. When the visitor is describing a real job of their own that CANNOT simply be bought from the buttons (a custom project, a quote, a bulk or rush order — not a general question, and not something a buy-now product already covers), be a good front desk: answer what they asked FIRST, then ask ONE short qualifying question at the end of your reply. Ask about whatever matters most and hasn't been said yet — what exactly they need, when they need it, roughly what budget they have in mind, or how many. One per reply, never a list, and never twice about the same thing. If they'd rather not say, drop it and move on — the team can ask later.`,
     ``,
     `Output format, exactly: first the reply as plain conversational text — no JSON and no markdown of any kind (no **bold**, headings, or bullet lists; the chat renders plain text). Then a new line containing exactly ${META_MARKER} immediately followed by one single-line JSON object: {"sources": string[], "products": number[], "handoff": boolean}. Nothing after that object.`,

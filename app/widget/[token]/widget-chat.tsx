@@ -296,7 +296,11 @@ export default function WidgetChat({
       const decoder = new TextDecoder();
       let buf = "";
       let acc = "";
-      type DoneEvent = { reply?: string; sources?: string[]; products?: Product[]; handoff?: boolean };
+      type DoneEvent = {
+        reply?: string; sources?: string[]; products?: Product[]; handoff?: boolean;
+        /** The server took their details straight out of what they typed. */
+        captured?: { email: string; name: string | null; threadToken: string | null; already: boolean };
+      };
       let done: DoneEvent | null = null;
       for (;;) {
         const { value, done: eof } = await reader.read();
@@ -328,6 +332,17 @@ export default function WidgetChat({
       }
       patchLast({ text: finalText, sources: done?.sources, products: done?.products });
       say(finalText);
+      // They typed their details into the chat and the server made the lead
+      // out of them. Stop inviting what they have already given: the card
+      // and the message form would both be asking a second time.
+      if (done?.captured) {
+        setLeadDone(true);
+        setContactDone(true);
+        setEmail((cur) => cur || done.captured!.email);
+        setName((cur) => cur || done.captured!.name || "");
+        if (done.captured.threadToken) setThreadToken(done.captured.threadToken);
+        return;
+      }
       // First answer done — invite their details, once, if the owner wants
       // it. An invite: the assistant keeps working whether they fill it in
       // or not.

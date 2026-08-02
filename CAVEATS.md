@@ -1990,3 +1990,42 @@ Migration 054 (`WidgetSite.branded`, default true).
 - 🟡 The proactive open fires once per visit (sessionStorage), on dwell,
   half-page scroll, or exit intent. Owners set the line, the delay, and can
   turn it off; the contact invite is separately toggleable.
+
+## Details typed into the chat ARE a lead (added 2026-08-02)
+
+A real visitor to rodeo.graphics typed her name, email, phone, the service
+she wanted and her budget straight into the chat box. The assistant answered
+her, the message was logged as a `WidgetQuestion`, and **nothing else
+happened** — no `CompanyInquiry`, no email, nothing in the inbox. The owner
+found out because the customer told him. The bug had been live since the
+widget shipped.
+
+- 🔴 **A lead can arrive as a sentence, not a form submission.** People
+  answer where the cursor already is. `POST /chat` now reads every visitor
+  turn for contact details (`lib/widget/contact.ts`) and creates the lead
+  itself. Any new surface that takes visitor text has to assume the same.
+- 🟡 **Detection is regex, never a model.** An address is a shape; a model
+  adds cost, latency and the chance of a confident invention. It is
+  deliberately conservative — a name it isn't sure of is null, an unlabelled
+  digit run must be 10-15 digits (so prices, years and order numbers can't
+  qualify), and the company's own domain is excluded so "should I email
+  info@theirsite.com?" is a question, not a lead.
+- 🔴 **Capture runs BEFORE the answer is generated**, not after. The reply
+  says "the team has your details" — that has to already be true when the
+  words are written. Never reorder this.
+- 🟡 **One place creates leads: `lib/widget/lead.ts`.** The form and the chat
+  both go through it, so the spam scoring, the disposable-address block, the
+  one-open-inquiry rule, the intake brief and the owner email cannot drift
+  apart. The card path is now a thin caller.
+- 🟡 **Idempotent through the one-open-inquiry rule.** Capture fires on the
+  turn the address arrives; repeating it returns `already: true`, which
+  suppresses the handoff form and tells the assistant to reassure rather than
+  ask again. Someone who has already given their details must never be shown
+  a form asking for them.
+- 🟡 **The lead's message is the visitor's OWN first question**, not "shared
+  their details" — that is what the owner needs to read. The full transcript
+  rides along regardless.
+- 🟡 The assistant is now told never to ask for name, email and phone as a
+  list of fields. It did exactly that ("Name: / Email: / Phone: / Service: /
+  Budget:") which is what produced the lost lead: a form in prose, with
+  nothing behind it.

@@ -9,19 +9,16 @@
  * thread token minted here is the visitor's only key to the conversation —
  * it is never returned to the browser, only mailed, so holding the link
  * proves the reply email reached that mailbox.
+ *
+ * The work itself lives in lib/widget/lead.ts, because a visitor who TYPES
+ * their details into the chat instead of filling this in has to end up in
+ * exactly the same row, with the same checks and the same email.
  */
-import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit, clientIp, RATE_LIMITED } from "@/lib/rate-limit";
-import { scoreUgcFields, isSpam, spamMessage } from "@/lib/ugc";
-import { isDisposableEmail } from "@/lib/email-domains";
-import { userEmail } from "@/lib/company/owner";
-import { sendEmail } from "@/lib/alerts/send";
-import { INQUIRY_LIMITS, INQUIRY_FROM, renderNewInquiryEmail } from "@/lib/company/inquiries";
 import type { ChatTurn } from "@/lib/widget/answer";
-import { buildBrief } from "@/lib/widget/intake";
-import { planFor } from "@/lib/billing/plans";
+import { createWidgetLead } from "@/lib/widget/lead";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,107 +41,21 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
   try { body = (await req.json()) as Record<string, unknown>; }
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-    return NextResponse.json({ error: "Enter a real email — it's how the reply reaches you." }, { status: 400 });
-  }
-  if (isDisposableEmail(email)) {
-    return NextResponse.json({ error: "Use an address you actually read — the reply goes there." }, { status: 400 });
-  }
-  const name = typeof body.name === "string" ? body.name.replace(/\s+/g, " ").trim().slice(0, 80) : "";
-  // Optional, and gently: keep only phone-shaped characters and drop the
-  // field rather than refuse the lead over a typo'd number.
-  const rawPhone = typeof body.phone === "string" ? body.phone.replace(/[^\d+()\-. ]/g, "").trim().slice(0, 30) : "";
-  const phone = /\d{5,}/.test(rawPhone.replace(/\D/g, "")) ? rawPhone : null;
-  const message = typeof body.message === "string" ? body.message.replace(/\r\n/g, "\n").trim().slice(0, INQUIRY_LIMITS.message) : "";
-  if (message.length < INQUIRY_LIMITS.messageMin) {
-    return NextResponse.json({ error: "Say a little more so the team can actually help." }, { status: 400 });
-  }
-  const transcript: ChatTurn[] = (Array.isArray(body.transcript) ? body.transcript : [])
-    .slice(-30)
-    .flatMap((t) => {
-      const turn = t as { role?: unknown; text?: unknown };
-      return (turn.role === "visitor" || turn.role === "bot") && typeof turn.text === "string" && turn.text.trim()
-        ? [{ role: turn.role, text: turn.text.trim().slice(0, 1500) }]
-        : [];
-    });
-
-  const verdict = scoreUgcFields([name, message]);
-  if (isSpam(verdict)) return NextResponse.json({ error: spamMessage(verdict) }, { status: 422 });
-
-  // Per SITE, not per company: on an agency account, writing to two
-  // different client sites is two conversations, not a duplicate.
-  const open = await prisma.companyInquiry.findFirst({
-    where: { siteId: site.id, visitorEmail: email, status: "NEW", source: "WIDGET" },
-    select: { id: true },
+  const transcript: ChatTurn[] = (Array.isArray(body.transcript) ? body.transcript : []).flatMap((t) => {
+    const turn = t as { role?: unknown; text?: unknown };
+    return (turn.role === "visitor" || turn.role === "bot") && typeof turn.text === "string" && turn.text.trim()
+      ? [{ role: turn.role, text: turn.text }]
+      : [];
   });
-  if (open) {
-    return NextResponse.json(
-      { error: "You already have a message waiting with the team — they'll reply to your email." },
-      { status: 409 }
-    );
-  }
 
-  // Concierge intake: read the chat once and hand the owner a brief. Paid
-  // (a model call per lead) and best effort — without it the lead is
-  // delivered exactly as it always was. THE LEAD ITSELF IS NEVER GATED.
-  const brief = planFor(site.company).aiAssist
-    ? await buildBrief(site.company.name, transcript, message, { name: name || null, email })
-    : null;
-
-  let inquiry;
-  try {
-    inquiry = await prisma.companyInquiry.create({
-      data: {
-        companyId: site.company.id,
-        siteId: site.id,
-        source: "WIDGET",
-        visitorEmail: email,
-        visitorName: name || null,
-        visitorPhone: phone,
-        threadToken: randomBytes(24).toString("base64url"),
-        transcript: transcript.length ? transcript : undefined,
-        brief: brief ?? undefined,
-        message,
-      },
-      select: { id: true, threadToken: true },
-    });
-  } catch (err) {
-    if (err && typeof err === "object" && (err as { code?: string }).code === "P2002") {
-      return NextResponse.json({ error: "You already have a message waiting with the team." }, { status: 409 });
-    }
-    throw err;
-  }
-
-  let emailed = false;
-  try {
-    const to = await userEmail(site.company.ownerUserId);
-    if (to) {
-      // The brief goes in the email too — the owner often decides whether
-      // to act from their phone, before they ever open the inbox.
-      const briefLines = brief
-        ? [
-            ``,
-            `— What they're after —`,
-            brief.summary,
-            ...(brief.wants.length ? [`Wants: ${brief.wants.join(", ")}`] : []),
-            ...(brief.budget ? [`Budget: ${brief.budget}`] : []),
-            ...(brief.timeline ? [`Timing: ${brief.timeline}`] : []),
-            ...(brief.openQuestions.length ? [`Still to ask: ${brief.openQuestions.join(" · ")}`] : []),
-          ].join("\n")
-        : "";
-      const { subject, html } = renderNewInquiryEmail({
-        companyName: site.company.name,
-        senderName: name || email,
-        reason: "Website chat",
-        message: `${message}\n${briefLines}\n\nReach them: ${email}${phone ? ` · ${phone}` : ""}`,
-      });
-      await sendEmail({ to, subject, html, from: INQUIRY_FROM });
-      emailed = true;
-    }
-  } catch (err) {
-    console.error("[widget/inquiry] delivery failed:", err instanceof Error ? err.message : err);
-  }
+  const result = await createWidgetLead(site, {
+    email: typeof body.email === "string" ? body.email : "",
+    name: typeof body.name === "string" ? body.name : "",
+    phone: typeof body.phone === "string" ? body.phone : "",
+    message: typeof body.message === "string" ? body.message : "",
+    transcript,
+  });
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
 
   // The thread token goes back to the session that CREATED the inquiry (the
   // author reading their own thread), kept in iframe memory only, so a
@@ -152,5 +63,5 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
   // Known trade-off, accepted: someone who typed an address that isn't
   // theirs sees the reply to the message *they wrote* in that open tab; the
   // email remains the durable channel and the only way back in later.
-  return NextResponse.json({ sent: true, id: inquiry.id, emailed, threadToken: inquiry.threadToken });
+  return NextResponse.json({ sent: true, id: result.id, emailed: result.emailed, threadToken: result.threadToken });
 }
