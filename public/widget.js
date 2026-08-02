@@ -30,7 +30,7 @@
   var open = false;
   var frame = null;
   var shell = null;
-  var cfg = { accent: null, name: "", logo: null, greeting: "", proactive: false, proactiveDelay: 20 };
+  var cfg = { accent: null, name: "", logo: null, greeting: "", proactive: false, proactiveDelay: 20, sound: false };
   var grad = DEFAULT_GRAD;
 
   function shade(hex) {
@@ -117,6 +117,65 @@
     btn.style.display = mobile && open ? "none" : "flex";
   }
 
+  /**
+   * A soft two-note chime when the chat opens ITSELF.
+   *
+   * Browsers refuse audio until the page has real user activation, and
+   * dwelling, scrolling and heading for the tab bar are none of them. So we
+   * build the audio context on the first genuine gesture and simply stay
+   * SILENT when there hasn't been one — a cold first visit opens quietly
+   * rather than pretending to chime. WebAudio rather than a file: nothing
+   * to download, nothing to host, and no request on someone else's site.
+   */
+  var audio = null;
+  function armAudio() {
+    if (audio) return;
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) audio = new Ctx();
+    } catch (e) { audio = null; }
+  }
+  ["pointerdown", "mousedown", "click", "keydown", "touchstart", "touchend"].forEach(function (evt) {
+    window.addEventListener(evt, armAudio, { once: true, passive: true, capture: true });
+  });
+
+  function chime() {
+    if (!cfg.sound) return;
+    // Our script tag is async, so the visitor may well have clicked BEFORE
+    // it arrived — in which case our own gesture listeners never fired but
+    // the page is nonetheless activated and audio is allowed. Ask the
+    // browser rather than relying only on what we happened to observe.
+    if (!audio && navigator.userActivation && navigator.userActivation.hasBeenActive) armAudio();
+    if (!audio) return;
+
+    function play() {
+      if (audio.state !== "running") return; // still not permitted: stay quiet
+      var now = audio.currentTime;
+      [[880, 0], [1174.7, 0.12]].forEach(function (note) {
+        var osc = audio.createOscillator();
+        var gain = audio.createGain();
+        osc.type = "sine";
+        osc.frequency.value = note[0];
+        // Short and quiet on purpose — a notification, not an alarm.
+        gain.gain.setValueAtTime(0.0001, now + note[1]);
+        gain.gain.exponentialRampToValueAtTime(0.06, now + note[1] + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + note[1] + 0.22);
+        osc.connect(gain);
+        gain.connect(audio.destination);
+        osc.start(now + note[1]);
+        osc.stop(now + note[1] + 0.24);
+      });
+    }
+
+    try {
+      // resume() is ASYNC. Checking state on the next line finds it still
+      // "suspended" and skips the sound entirely — which is exactly how a
+      // chime ships as permanently silent. Wait for it.
+      if (audio.state === "suspended") audio.resume().then(play).catch(function () {});
+      else play();
+    } catch (e) { /* silence is an acceptable outcome */ }
+  }
+
   function dropShell() {
     if (shell && shell.parentNode) shell.parentNode.removeChild(shell);
     shell = null;
@@ -171,6 +230,7 @@
       fired = true;
       cleanup();
       toggle();
+      chime(); // only here — a visitor who clicked doesn't need telling
     }
     function onScroll() {
       var h = document.documentElement;
@@ -215,6 +275,7 @@
           greeting: c.greeting || "",
           proactive: !!c.proactive,
           proactiveDelay: c.proactiveDelay || 20,
+          sound: !!c.sound,
         };
         if (cfg.accent && /^#[0-9a-f]{6}$/i.test(cfg.accent)) {
           grad = "linear-gradient(135deg," + cfg.accent + "," + shade(cfg.accent) + ")";

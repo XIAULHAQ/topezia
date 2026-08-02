@@ -1976,10 +1976,17 @@ Migration 054 (`WidgetSite.branded`, default true).
   the mic. This runs on other people's sites; unprompted audio on a
   stranger's page is a worse first impression than silence. There is a
   header toggle either way.
-- 🟡 **NO SOUND on the proactive open.** Browsers block audio until the
-  page has a real user gesture, and dwell/scroll/exit-intent are not
-  gestures — a "beep" would fail silently on most first visits. Deliberately
-  not shipped rather than shipped broken.
+- 🟡 **The proactive open chimes where sound is allowed** (migration 064,
+  `proactiveSound`, default on, own toggle). Browsers block audio until the
+  page has real user activation, and dwell/scroll/exit-intent are NOT
+  activation, so a cold first visit opens SILENTLY rather than failing.
+  Two traps, both of which make it permanently mute with nothing in the
+  logs: `AudioContext.resume()` is ASYNC (checking `state` on the next line
+  finds "suspended" and skips the sound — wait for the promise), and our
+  script tag is ASYNC so a visitor may click before the loader exists and
+  our gesture listeners never fire (also check
+  `navigator.userActivation.hasBeenActive` and arm on demand).
+  Never chime when the visitor opened the chat themselves.
 - 🟡 The proactive open fires once per visit (sessionStorage), on dwell,
   half-page scroll, or exit intent. Owners set the line, the delay, and can
   turn it off; the contact invite is separately toggleable.

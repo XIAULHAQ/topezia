@@ -24,6 +24,7 @@ type Site = {
   greeting: string | null;
   proactive: boolean;
   proactiveDelay: number;
+  proactiveSound: boolean;
   askContact: boolean;
   usage: { used: number; limit: number; pooled: boolean };
   stats: SiteStats;
@@ -400,6 +401,18 @@ export default function WidgetClient() {
                 </label>
               )}
             </div>
+            {site.proactive && (
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                <button type="button" style={site.proactiveSound ? ES.btnGhost : ES.btn}
+                  onClick={() => patchSite({ proactiveSound: !site.proactiveSound }, { proactiveSound: !site.proactiveSound })}>
+                  {site.proactiveSound ? "Open silently" : "Play a chime"}
+                </button>
+                <span style={{ ...ES.empty, flex: 1, minWidth: 200 }}>
+                  A soft chime when it opens itself. Browsers only allow sound once a visitor has clicked
+                  something on the page, so a brand-new visit opens quietly rather than failing noisily.
+                </span>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 18 }}>
               <button type="button" style={site.askContact ? ES.btnGhost : ES.btn}
                 onClick={() => patchSite({ askContact: !site.askContact }, { askContact: !site.askContact })}>

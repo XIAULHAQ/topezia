@@ -36,7 +36,7 @@ const SITE_SELECT = {
   id: true, domain: true, siteToken: true, enabled: true, branded: true,
   digestEnabled: true, pagesCrawled: true, crawledAt: true, crawlError: true,
   accentColor: true, replyHours: true, storeKind: true,
-  greeting: true, proactive: true, proactiveDelay: true, askContact: true,
+  greeting: true, proactive: true, proactiveDelay: true, proactiveSound: true, askContact: true,
   monthKey: true, messagesUsed: true,
 } as const;
 
@@ -213,6 +213,7 @@ export async function PATCH(req: NextRequest) {
   if (typeof body.proactiveDelay === "number" && Number.isFinite(body.proactiveDelay)) {
     data.proactiveDelay = Math.min(Math.max(Math.round(body.proactiveDelay), 3), 300);
   }
+  if (typeof body.proactiveSound === "boolean") data.proactiveSound = body.proactiveSound;
   if (typeof body.askContact === "boolean") data.askContact = body.askContact;
   if ("replyHours" in body) {
     if (body.replyHours === null) data.replyHours = Prisma.DbNull;

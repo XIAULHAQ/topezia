@@ -1202,6 +1202,9 @@ model WidgetSite {
   /// visit. proactiveDelay is the dwell in seconds.
   proactive      Boolean @default(true)
   proactiveDelay Int     @default(20)
+  /// A soft chime when it opens itself — only where the browser allows
+  /// audio, i.e. after the visitor has really interacted with the page.
+  proactiveSound Boolean @default(true)
   /// Invite name, email and phone after the first answer. An invite, never
   /// a gate — the assistant keeps answering either way.
   askContact     Boolean @default(true)

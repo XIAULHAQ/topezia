@@ -20,7 +20,7 @@ export async function GET(_req: Request, { params }: { params: { token: string }
     where: { siteToken: params.token },
     select: {
       enabled: true, accentColor: true, greeting: true, pagesCrawled: true,
-      proactive: true, proactiveDelay: true,
+      proactive: true, proactiveDelay: true, proactiveSound: true,
       company: { select: { plan: true, name: true, logoPath: true } },
     },
   });
@@ -42,6 +42,7 @@ export async function GET(_req: Request, { params }: { params: { token: string }
             : `Hi — leave a message and the ${site.company.name} team will get back to you.`),
         proactive: site.proactive,
         proactiveDelay: Math.min(Math.max(site.proactiveDelay, 3), 300),
+        sound: site.proactiveSound,
       }
     : { enabled: false, accent: null };
 
