@@ -61,9 +61,13 @@ export interface PremiumPrice {
   interval: string; // "month" | "year"
 }
 
-/** "$9/month" from a Stripe price. */
+/** "$9/month", "$1,290/year" from a Stripe price. Thousands separated —
+ *  four-figure plans read as a typo without it. */
 export function formatPrice(p: PremiumPrice): string {
-  const whole = p.amount % 100 === 0 ? String(p.amount / 100) : (p.amount / 100).toFixed(2);
+  const units = p.amount / 100;
+  const whole = p.amount % 100 === 0
+    ? units.toLocaleString("en-US")
+    : units.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const sym = p.currency === "usd" ? "$" : p.currency === "eur" ? "€" : p.currency === "gbp" ? "£" : `${p.currency.toUpperCase()} `;
   return `${sym}${whole}/${p.interval}`;
 }

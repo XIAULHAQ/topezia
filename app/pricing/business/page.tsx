@@ -44,7 +44,11 @@ export default async function BusinessPricingPage() {
       id: p.id,
       name: p.name,
       price: p.monthly?.label ?? p.yearly?.label ?? "—",
-      sub: p.yearly ? `or ${p.yearly.label} billed yearly` : p.sites === 1 ? "per website" : `up to ${p.sites} websites`,
+      // Just the amount: the label carries "/year", and "…/year billed
+      // yearly" says it twice.
+      sub: p.yearly
+        ? `or $${(p.yearly.amount / 100).toLocaleString("en-US")} billed yearly`
+        : p.sites === 1 ? "per website" : `up to ${p.sites} websites`,
       limits: p,
       cta: p.forSale ? { label: `Choose ${p.name}`, href: "/employer/billing" } : null,
       note: p.forSale ? null : "Not on sale yet.",
