@@ -76,6 +76,20 @@ export function botAuthConfigured(): boolean {
   return key() !== null;
 }
 
+/**
+ * Why signing isn't working, for the well-known endpoint to report.
+ *
+ * Deliberately says WHICH of the two failures it is. Neither reveals
+ * anything about the key — "there is no variable" and "the variable isn't an
+ * Ed25519 key" are statements about configuration, and the alternative is a
+ * single opaque 404 that leaves an operator poking at Vercel in the dark.
+ * We know, because that is exactly where the first attempt left us.
+ */
+export function botAuthState(): "ok" | "missing" | "invalid" {
+  if (key()) return "ok";
+  return process.env.TOPEZIA_BOT_PRIVATE_KEY ? "invalid" : "missing";
+}
+
 /** The public key set served at the well-known directory. */
 export function publicJwks(): { keys: Array<{ kty: string; crv: string; x: string }> } | null {
   const k = key();

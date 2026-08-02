@@ -9,7 +9,7 @@
  * second would make a verifier think every signature we send is forged.
  */
 import { NextResponse } from "next/server";
-import { publicJwks, directoryHeaders } from "@/lib/bot-auth/sign";
+import { publicJwks, directoryHeaders, botAuthState } from "@/lib/bot-auth/sign";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic"; // the response carries a fresh signature
@@ -17,7 +17,19 @@ export const dynamic = "force-dynamic"; // the response carries a fresh signatur
 export async function GET() {
   const jwks = publicJwks();
   if (!jwks) {
-    return NextResponse.json({ error: "Not configured." }, { status: 404 });
+    // Say which failure it is. Neither answer reveals anything about the key
+    // — both are statements about configuration — and the alternative is an
+    // opaque 404 that leaves whoever set it up guessing at the dashboard.
+    const state = botAuthState();
+    return NextResponse.json(
+      {
+        error:
+          state === "invalid"
+            ? "TOPEZIA_BOT_PRIVATE_KEY is set but is not a usable Ed25519 private key."
+            : "TOPEZIA_BOT_PRIVATE_KEY is not set on this deployment.",
+      },
+      { status: 404 }
+    );
   }
 
   return new NextResponse(JSON.stringify(jwks), {
