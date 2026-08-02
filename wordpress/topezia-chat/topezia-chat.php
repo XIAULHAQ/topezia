@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: Topezia Chat
- * Plugin URI: https://www.topezia.com
- * Description: AI chat for your website that answers from your own pages and sends every real lead to your Topezia inbox. Paste your site key and you're live.
- * Version: 1.0.0
+ * Plugin Name: Topezia Chat — AI Chatbot & Lead Capture
+ * Plugin URI: https://www.topezia.com/free-ai-chatbot
+ * Description: An AI chat bubble that answers visitors from your own pages, captures leads and emails them to you. Connect in one click — your logo, contact details and about text are picked up automatically.
+ * Version: 2.0.0
  * Requires at least: 5.8
  * Requires PHP: 7.2
  * Author: Topezia
@@ -11,154 +11,111 @@
  * License: GPLv2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: topezia-chat
+ * Domain Path: /languages
  *
- * The plugin is deliberately thin: everything real happens inside an iframe
- * served by topezia.com. This file stores one option (the site key) and
- * enqueues one script. The less code that runs on the customer's WordPress,
- * the less there is to break on the customer's WordPress.
+ * WHAT RUNS WHERE, AND WHY IT MATTERS.
+ *
+ * On the public site this plugin adds exactly one thing: an async <script>
+ * tag. No styles, no shortcodes, no database reads beyond two options, no
+ * work on any request that isn't a page view. Everything the chat actually
+ * does happens inside an iframe served by topezia.com. The less of ours that
+ * runs on a customer's site, the less of theirs we can break.
+ *
+ * In wp-admin it does more, because connecting an account is a real job:
+ * it reads what the site already knows about itself (name, logo, about page,
+ * contact details, WooCommerce settings) and offers it, so nobody has to
+ * retype what WordPress already stores.
+ *
+ * NOTHING LEAVES THIS SITE UNTIL SOMEONE PRESSES CONNECT. No pings, no
+ * telemetry, no phoning home on activation. After connecting, the plugin
+ * asks topezia.com for its own status — see readme.txt, "External services".
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TOPEZIA_CHAT_VERSION', '1.0.0' );
-define( 'TOPEZIA_CHAT_OPTION', 'topezia_chat_site_key' );
+define( 'TOPEZIA_CHAT_VERSION', '2.0.0' );
+define( 'TOPEZIA_CHAT_FILE', __FILE__ );
+define( 'TOPEZIA_CHAT_DIR', plugin_dir_path( __FILE__ ) );
+define( 'TOPEZIA_CHAT_URL', plugin_dir_url( __FILE__ ) );
 
 /**
- * The site key as minted by Topezia: URL-safe base64, 10-64 chars.
- * Anything else is refused rather than printed into the page.
+ * Where the service lives. Filterable so a self-hosted or staging Topezia can
+ * be pointed at without editing the plugin — the WordPress way, and it keeps
+ * this file free of magic strings.
  */
-function topezia_chat_sanitize_key( $value ) {
-	$value = is_string( $value ) ? trim( $value ) : '';
-	if ( '' === $value ) {
-		return '';
-	}
-	if ( ! preg_match( '/^[A-Za-z0-9_-]{10,64}$/', $value ) ) {
-		add_settings_error(
-			TOPEZIA_CHAT_OPTION,
-			'topezia_chat_bad_key',
-			__( 'That does not look like a Topezia site key. Copy it from your Site chat page on topezia.com.', 'topezia-chat' )
-		);
-		return get_option( TOPEZIA_CHAT_OPTION, '' );
-	}
-	return $value;
+function topezia_chat_api_base() {
+	$base = apply_filters( 'topezia_chat_api_base', 'https://www.topezia.com' );
+	return untrailingslashit( esc_url_raw( $base ) );
 }
 
-function topezia_chat_register_settings() {
-	register_setting(
-		'topezia_chat',
-		TOPEZIA_CHAT_OPTION,
+/** The public key in the embed. Identifies the site; authorizes nothing. */
+define( 'TOPEZIA_CHAT_OPTION', 'topezia_chat_site_key' );
+/** The plugin's own credential. Read-only, and revoked by disconnecting. */
+define( 'TOPEZIA_CHAT_PLUGIN_KEY', 'topezia_chat_plugin_key' );
+/** In-flight handshake: state + one-time claim token. Deleted once used. */
+define( 'TOPEZIA_CHAT_HANDSHAKE', 'topezia_chat_handshake' );
+/** Display settings that are ours to decide locally. */
+define( 'TOPEZIA_CHAT_SETTINGS', 'topezia_chat_settings' );
+/** Cached account status, so the dashboard doesn't call out on every view. */
+define( 'TOPEZIA_CHAT_STATUS', 'topezia_chat_status' );
+
+require_once TOPEZIA_CHAT_DIR . 'includes/detect.php';
+require_once TOPEZIA_CHAT_DIR . 'includes/api.php';
+require_once TOPEZIA_CHAT_DIR . 'includes/frontend.php';
+if ( is_admin() ) {
+	require_once TOPEZIA_CHAT_DIR . 'includes/admin.php';
+}
+
+/**
+ * The site key as Topezia mints it: URL-safe base64, 10-64 characters.
+ * Anything else is refused rather than printed into a page.
+ */
+function topezia_chat_valid_key( $value ) {
+	return is_string( $value ) && preg_match( '/^[A-Za-z0-9_-]{10,64}$/', $value );
+}
+
+function topezia_chat_site_key() {
+	$key = get_option( TOPEZIA_CHAT_OPTION, '' );
+	return topezia_chat_valid_key( $key ) ? $key : '';
+}
+
+function topezia_chat_settings() {
+	$saved = get_option( TOPEZIA_CHAT_SETTINGS, array() );
+	return wp_parse_args(
+		is_array( $saved ) ? $saved : array(),
 		array(
-			'type'              => 'string',
-			'sanitize_callback' => 'topezia_chat_sanitize_key',
-			'default'           => '',
+			'enabled'  => true,
+			// Post/page IDs the bubble is hidden on. Empty = everywhere.
+			'exclude'  => array(),
+			// WooCommerce cart and checkout, where a chat bubble over the
+			// pay button is a conversion problem rather than a help.
+			'skip_checkout' => false,
 		)
 	);
 }
-add_action( 'admin_init', 'topezia_chat_register_settings' );
 
-function topezia_chat_add_settings_page() {
-	add_options_page(
-		__( 'Topezia Chat', 'topezia-chat' ),
-		__( 'Topezia Chat', 'topezia-chat' ),
-		'manage_options',
-		'topezia-chat',
-		'topezia_chat_render_settings_page'
+/** Everything the plugin stores, in one place, so uninstall can be exact. */
+function topezia_chat_option_names() {
+	return array(
+		TOPEZIA_CHAT_OPTION,
+		TOPEZIA_CHAT_PLUGIN_KEY,
+		TOPEZIA_CHAT_HANDSHAKE,
+		TOPEZIA_CHAT_SETTINGS,
+		TOPEZIA_CHAT_STATUS,
 	);
 }
-add_action( 'admin_menu', 'topezia_chat_add_settings_page' );
-
-function topezia_chat_render_settings_page() {
-	if ( ! current_user_can( 'manage_options' ) ) {
-		return;
-	}
-	$key = get_option( TOPEZIA_CHAT_OPTION, '' );
-	?>
-	<div class="wrap">
-		<h1><?php esc_html_e( 'Topezia Chat', 'topezia-chat' ); ?></h1>
-		<p>
-			<?php esc_html_e( 'The chat answers visitors from your own website content and sends every real lead to your Topezia inbox.', 'topezia-chat' ); ?>
-			<a href="https://www.topezia.com/employer/widget" target="_blank" rel="noopener">
-				<?php esc_html_e( 'Get your site key and manage the widget on Topezia →', 'topezia-chat' ); ?>
-			</a>
-		</p>
-		<form action="options.php" method="post">
-			<?php settings_fields( 'topezia_chat' ); ?>
-			<table class="form-table" role="presentation">
-				<tr>
-					<th scope="row">
-						<label for="topezia_chat_site_key"><?php esc_html_e( 'Site key', 'topezia-chat' ); ?></label>
-					</th>
-					<td>
-						<input
-							type="text"
-							id="topezia_chat_site_key"
-							name="<?php echo esc_attr( TOPEZIA_CHAT_OPTION ); ?>"
-							value="<?php echo esc_attr( $key ); ?>"
-							class="regular-text code"
-							placeholder="<?php esc_attr_e( 'Paste your site key', 'topezia-chat' ); ?>"
-						/>
-						<p class="description">
-							<?php esc_html_e( 'Found on your Site chat page at topezia.com. Leave empty to turn the chat off.', 'topezia-chat' ); ?>
-						</p>
-					</td>
-				</tr>
-			</table>
-			<?php submit_button(); ?>
-		</form>
-		<?php if ( $key ) : ?>
-			<p><strong><?php esc_html_e( 'The chat bubble is live on your site.', 'topezia-chat' ); ?></strong></p>
-		<?php endif; ?>
-	</div>
-	<?php
-}
-
-/** "Settings" link on the Plugins screen, where people actually look. */
-function topezia_chat_action_links( $links ) {
-	$settings = sprintf(
-		'<a href="%s">%s</a>',
-		esc_url( admin_url( 'options-general.php?page=topezia-chat' ) ),
-		esc_html__( 'Settings', 'topezia-chat' )
-	);
-	array_unshift( $links, $settings );
-	return $links;
-}
-add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), 'topezia_chat_action_links' );
 
 /**
- * The one thing this plugin does on the public site: load the Topezia
- * widget loader, async, in the footer. Skipped everywhere it would be
- * noise — admin, feeds, embeds, previews, and whenever no key is set.
+ * On activation, send the person to the setup screen once — the single most
+ * common reason a plugin never gets configured is that nobody finds it.
+ * A flag, not a redirect from the activation hook itself: bulk activation
+ * must not hijack the browser.
  */
-function topezia_chat_enqueue() {
-	if ( is_feed() || is_embed() || is_preview() ) {
-		return;
+function topezia_chat_activate() {
+	if ( ! topezia_chat_site_key() ) {
+		add_option( 'topezia_chat_do_welcome', 1 );
 	}
-	$key = get_option( TOPEZIA_CHAT_OPTION, '' );
-	if ( '' === $key || ! preg_match( '/^[A-Za-z0-9_-]{10,64}$/', $key ) ) {
-		return;
-	}
-	wp_enqueue_script(
-		'topezia-chat',
-		'https://www.topezia.com/widget.js',
-		array(),
-		TOPEZIA_CHAT_VERSION,
-		true
-	);
 }
-add_action( 'wp_enqueue_scripts', 'topezia_chat_enqueue' );
-
-/** Add async + the site key to the enqueued tag (5.8-compatible). */
-function topezia_chat_script_tag( $tag, $handle ) {
-	if ( 'topezia-chat' !== $handle ) {
-		return $tag;
-	}
-	$key = get_option( TOPEZIA_CHAT_OPTION, '' );
-	return str_replace(
-		' src=',
-		' async data-topezia="' . esc_attr( $key ) . '" src=',
-		$tag
-	);
-}
-add_filter( 'script_loader_tag', 'topezia_chat_script_tag', 10, 2 );
+register_activation_hook( __FILE__, 'topezia_chat_activate' );

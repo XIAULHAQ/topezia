@@ -1,0 +1,460 @@
+/**
+ * Topezia Chat — admin styles.
+ *
+ * Sits INSIDE wp-admin, so it borrows the admin's own type stack and spacing
+ * rather than importing a font or fighting the chrome. Everything is scoped
+ * under .topezia-wrap: a plugin that leaks styles into somebody else's
+ * settings screen is a bug report waiting to happen.
+ */
+
+.topezia-wrap {
+	--tz-ink: #0f172a;
+	--tz-mut: #64748b;
+	--tz-line: #e2e8f0;
+	--tz-brand: #4f46e5;
+	--tz-brand-soft: #eef2ff;
+	max-width: 1180px;
+	color: var(--tz-ink);
+}
+
+.topezia-wrap * {
+	box-sizing: border-box;
+}
+
+/* Header ---------------------------------------------------------------- */
+
+.topezia-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	flex-wrap: wrap;
+	margin: 8px 0 20px;
+}
+
+.topezia-brand {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.topezia-logo {
+	width: 40px;
+	height: 40px;
+	border-radius: 11px;
+	background: var(--tz-brand);
+	color: #fff;
+	display: grid;
+	place-items: center;
+	font-weight: 800;
+	font-size: 19px;
+	flex: none;
+}
+
+.topezia-wrap h1 {
+	font-size: 21px;
+	font-weight: 700;
+	margin: 0;
+	padding: 0;
+	line-height: 1.25;
+}
+
+.topezia-brand p {
+	margin: 2px 0 0;
+	color: var(--tz-mut);
+	font-size: 13px;
+}
+
+.topezia-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	border-radius: 999px;
+	padding: 6px 13px;
+	font-size: 12.5px;
+	font-weight: 600;
+	border: 1px solid var(--tz-line);
+	background: #fff;
+}
+
+.topezia-pill.is-live {
+	border-color: #a7f3d0;
+	background: #ecfdf5;
+	color: #047857;
+}
+
+.topezia-pill.is-off {
+	border-color: #fde68a;
+	background: #fffbeb;
+	color: #b45309;
+}
+
+.topezia-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: currentColor;
+	flex: none;
+}
+
+/* Cards ----------------------------------------------------------------- */
+
+.topezia-card {
+	background: #fff;
+	border: 1px solid var(--tz-line);
+	border-radius: 14px;
+	padding: 22px;
+	margin: 0 0 16px;
+	box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+}
+
+.topezia-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+	gap: 16px;
+	align-items: start;
+}
+
+.topezia-wrap h2 {
+	font-size: 18px;
+	font-weight: 700;
+	margin: 0 0 8px;
+	padding: 0;
+}
+
+.topezia-wrap h3 {
+	font-size: 15px;
+	font-weight: 700;
+	margin: 0 0 8px;
+	padding: 0;
+}
+
+.topezia-lead {
+	font-size: 14px;
+	line-height: 1.7;
+	color: #334155;
+	margin: 0 0 16px;
+}
+
+.topezia-muted {
+	color: var(--tz-mut);
+	font-size: 13px;
+	line-height: 1.7;
+	margin: 0 0 14px;
+}
+
+.topezia-fine {
+	color: var(--tz-mut);
+	font-size: 12px;
+	line-height: 1.6;
+	margin: 12px 0 0;
+}
+
+.topezia-warn {
+	color: #b45309;
+}
+
+.topezia-points {
+	margin: 0 0 20px;
+	padding: 0;
+	list-style: none;
+}
+
+.topezia-points li {
+	position: relative;
+	padding: 0 0 0 26px;
+	margin: 0 0 11px;
+	font-size: 13.5px;
+	line-height: 1.65;
+	color: #475569;
+}
+
+.topezia-points li::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 4px;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: var(--tz-brand-soft);
+	border: 1px solid #c7d2fe;
+}
+
+.topezia-points strong {
+	color: var(--tz-ink);
+	display: block;
+}
+
+/* Buttons --------------------------------------------------------------- */
+
+.topezia-btn {
+	display: inline-block;
+	border: 1px solid var(--tz-line);
+	background: #fff;
+	color: var(--tz-ink);
+	border-radius: 9px;
+	padding: 10px 17px;
+	font-size: 13.5px;
+	font-weight: 600;
+	cursor: pointer;
+	text-decoration: none;
+	line-height: 1.3;
+	transition: background .12s ease, border-color .12s ease;
+}
+
+.topezia-btn:hover {
+	background: #f8fafc;
+	color: var(--tz-ink);
+}
+
+.topezia-btn-primary {
+	background: var(--tz-brand);
+	border-color: var(--tz-brand);
+	color: #fff;
+}
+
+.topezia-btn-primary:hover {
+	background: #4338ca;
+	border-color: #4338ca;
+	color: #fff;
+}
+
+.topezia-btn-danger {
+	border-color: #fecaca;
+	color: #b91c1c;
+}
+
+.topezia-btn-danger:hover {
+	background: #fef2f2;
+	color: #b91c1c;
+}
+
+.topezia-actions,
+.topezia-row {
+	display: flex;
+	gap: 10px;
+	flex-wrap: wrap;
+	align-items: center;
+	margin: 4px 0 0;
+}
+
+/* Detected-details table ------------------------------------------------ */
+
+.topezia-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+}
+
+.topezia-table th,
+.topezia-table td {
+	text-align: left;
+	padding: 8px 0;
+	border-top: 1px solid #f1f5f9;
+	vertical-align: top;
+}
+
+.topezia-table th {
+	width: 38%;
+	color: var(--tz-mut);
+	font-weight: 600;
+	padding-right: 12px;
+}
+
+.topezia-table td {
+	word-break: break-word;
+}
+
+/* Stats ----------------------------------------------------------------- */
+
+.topezia-stats {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+	gap: 14px;
+	margin: 0 0 16px;
+}
+
+.topezia-stat {
+	background: #fff;
+	border: 1px solid var(--tz-line);
+	border-radius: 13px;
+	padding: 16px 18px;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.topezia-stat-label {
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: .06em;
+	text-transform: uppercase;
+	color: var(--tz-mut);
+}
+
+.topezia-stat-value {
+	font-size: 25px;
+	font-weight: 800;
+	letter-spacing: -.5px;
+	line-height: 1.15;
+}
+
+.topezia-stat-note {
+	font-size: 12px;
+	color: var(--tz-mut);
+	line-height: 1.5;
+}
+
+.topezia-bar {
+	display: block;
+	height: 5px;
+	border-radius: 999px;
+	background: #eef2f7;
+	overflow: hidden;
+	margin: 3px 0 2px;
+}
+
+.topezia-bar span {
+	display: block;
+	height: 100%;
+	background: var(--tz-brand);
+	border-radius: 999px;
+}
+
+/* Settings -------------------------------------------------------------- */
+
+.topezia-switch {
+	display: flex;
+	gap: 11px;
+	align-items: flex-start;
+	padding: 12px 0;
+	border-top: 1px solid #f1f5f9;
+	cursor: pointer;
+}
+
+.topezia-switch input {
+	margin-top: 3px;
+	flex: none;
+}
+
+.topezia-switch strong {
+	display: block;
+	font-size: 13.5px;
+	font-weight: 600;
+}
+
+.topezia-switch em {
+	display: block;
+	font-style: normal;
+	font-size: 12.5px;
+	color: var(--tz-mut);
+	line-height: 1.6;
+	margin-top: 2px;
+}
+
+.topezia-field {
+	padding: 14px 0 6px;
+	border-top: 1px solid #f1f5f9;
+}
+
+.topezia-field strong {
+	display: block;
+	font-size: 13.5px;
+	margin-bottom: 8px;
+}
+
+.topezia-checklist {
+	max-height: 190px;
+	overflow-y: auto;
+	border: 1px solid var(--tz-line);
+	border-radius: 10px;
+	padding: 10px 12px;
+	margin-bottom: 14px;
+}
+
+.topezia-checklist label {
+	display: block;
+	font-size: 13px;
+	padding: 3px 0;
+}
+
+/* Waiting --------------------------------------------------------------- */
+
+.topezia-waiting {
+	text-align: center;
+	padding: 44px 22px;
+}
+
+.topezia-waiting .topezia-row {
+	justify-content: center;
+}
+
+.topezia-spinner {
+	width: 30px;
+	height: 30px;
+	margin: 0 auto 16px;
+	border-radius: 50%;
+	border: 3px solid var(--tz-brand-soft);
+	border-top-color: var(--tz-brand);
+	animation: topezia-spin 0.9s linear infinite;
+}
+
+@keyframes topezia-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.topezia-spinner {
+		animation-duration: 3s;
+	}
+}
+
+/* Banners --------------------------------------------------------------- */
+
+.topezia-upgrade,
+.topezia-danger {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 20px;
+	flex-wrap: wrap;
+}
+
+.topezia-upgrade {
+	border-color: #c7d2fe;
+	background: linear-gradient(180deg, #fff 0%, var(--tz-brand-soft) 100%);
+}
+
+.topezia-upgrade p,
+.topezia-danger p {
+	margin-bottom: 0;
+	max-width: 640px;
+}
+
+.topezia-details summary {
+	cursor: pointer;
+	font-weight: 600;
+	font-size: 13.5px;
+}
+
+.topezia-details form {
+	margin-top: 14px;
+	display: flex;
+	gap: 10px;
+	flex-wrap: wrap;
+	align-items: center;
+}
+
+.topezia-details .topezia-muted {
+	flex-basis: 100%;
+	margin-bottom: 0;
+}
+
+@media (max-width: 782px) {
+	.topezia-stat-value {
+		font-size: 22px;
+	}
+}

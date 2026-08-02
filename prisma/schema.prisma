@@ -1134,6 +1134,8 @@ model Company {
   // The embeddable site chat widget (migration 051). One per company — the
   // unique IS the free-tier cap.
   widgetSites      WidgetSite[]
+  // In-flight WordPress plugin connections (migration 067).
+  wpConnects       WpConnect[]
 
   // /hq override for the spam scorer, exactly as Profile.spamCleared: the
   // scorer has known false positives and the only other remedy would be
@@ -1226,13 +1228,78 @@ model WidgetSite {
   // {"tz","days":[1..7],"start":"09:00","end":"17:00"} — when set, the chat
   // says plainly that nobody's there rather than implying someone is.
   replyHours    Json?
+  /// SHA-256 of the WordPress plugin's own read credential (migration 068).
+  /// siteToken is PUBLIC — it is in every visitor's page source — so it can
+  /// identify a site but must never authorize a question like "how many
+  /// leads this month?". Null means no plugin is connected; disconnecting
+  /// nulls it, which is a real revocation rather than a flag.
+  pluginKeyHash     String?
+  pluginConnectedAt DateTime?
+  /// What the plugin last reported: WP/PHP/plugin versions, WooCommerce.
+  pluginInfo        Json?
   chunks       SiteChunk[]
   products     SiteProduct[]
   questions    WidgetQuestion[]
   facts        SiteFact[]
   inquiries    CompanyInquiry[]
+  wpConnects   WpConnect[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  @@index([pluginKeyHash])
+}
+
+/// A WordPress plugin connection in flight (migration 067).
+///
+/// An authorization-code handshake, and it is that shape so THE SITE KEY
+/// NEVER TRAVELS THROUGH A BROWSER URL. WordPress registers the connection
+/// server-to-server and holds a one-time claim token; the person approves in
+/// their browser carrying only `state`, which authorizes nothing; WordPress
+/// exchanges the token for the key server-to-server. A stolen `state` buys an
+/// attacker a consent screen and no key.
+///
+/// Short-lived by design — nothing here is a system of record. Every lasting
+/// effect of an approval lands on Company and WidgetSite.
+model WpConnect {
+  id             String   @id @default(uuid())
+  /// Public handle, appears in the approval URL. Authorizes nothing alone.
+  state          String   @unique
+  /// SHA-256 of the claim token. The token itself is shown once, to the
+  /// WordPress site that asked, and never stored.
+  claimHash      String
+
+  /// Normalised host, matched against WidgetSite.domain.
+  host           String
+  siteUrl        String
+  /// wp-admin page to return to, validated against siteUrl's origin on use.
+  returnUrl      String?
+
+  /// What WordPress detected about itself. Unverified input from a
+  /// stranger's server: shown to a human for approval, sanitised on use.
+  details        Json?
+
+  /// PENDING | APPROVED | CLAIMED | EXPIRED
+  status         String   @default("PENDING")
+
+  companyId      String?
+  company        Company?    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// The key is read THROUGH this at claim time rather than copied, so a
+  /// deleted site cannot be resurrected by a stale connection row.
+  siteId         String?
+  site           WidgetSite? @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  approvedUserId String?
+  approvedAt     DateTime?
+  claimedAt      DateTime?
+
+  /// For rate limiting and abuse triage. Never shown to anyone.
+  ip             String?
+
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([expiresAt])
+  @@index([host, status])
 }
 
 // Answers the OWNER wrote — "teach the bot". Retrieved alongside the crawl
