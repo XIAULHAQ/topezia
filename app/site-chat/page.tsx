@@ -410,9 +410,13 @@ export default async function SiteChatPage() {
             how many questions it answers and how much of your site it reads.
           </p>
           {/* Capped columns, not 1fr: when Stripe has no live prices this
-              renders ONE card, and a single card stretched across 1040px
-              looks like a bug rather than a plan. */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,340px))", gap: 16, justifyContent: "center" }}>
+              renders ONE card, and a single card stretched across the full
+              width looks like a bug rather than a plan.
+              320 is not arbitrary — the container is 1040 with 20px padding
+              either side, so three columns plus two 16px gaps have 1000px to
+              live in. At 340 the third card wrapped and Studio sat alone on
+              its own row. */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,320px))", gap: 16, justifyContent: "center" }}>
             <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, padding: 22, display: "flex", flexDirection: "column" }}>
               <b style={{ fontSize: 16 }}>Free</b>
               <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-1px", margin: "10px 0 2px" }}>$0</div>
