@@ -1938,3 +1938,20 @@ Migration 054 (`WidgetSite.branded`, default true).
   is not yet on sale. Multi-site removes the reason for that; setting
   STRIPE_STUDIO_{MONTHLY,YEARLY}_PRICE_ID is now a business decision, not a
   technical block.
+
+## Buying intent closes, it doesn't qualify (added 2026-08-02)
+
+- 🔴 **When a buy-now product answers what the visitor asked, the reply
+  must CLOSE**: options, prices, "the buttons below go straight to
+  checkout", stop. No qualifying question, no "what's your business", no
+  portfolio/gallery suggestion, no link of any kind in that reply — each
+  one sends a ready buyer away from a checkout that was one tap away.
+  Reported from a real chat where "can you help me buying a logo design"
+  got a portfolio link and an interview question.
+- 🟡 Concierge intake (answer.ts rule 6) applies ONLY to work that cannot
+  be bought from the buttons — custom projects, quotes, bulk or rush
+  orders. It used to match "I want a logo for my barn" and interview
+  someone who was ready to pay. Don't widen it back.
+- 🟡 Both behaviours rule 6 exists for still work and should stay tested: a
+  custom rebrand gets one qualifying question plus handoff, and an
+  unanswerable question refuses honestly rather than guessing.
