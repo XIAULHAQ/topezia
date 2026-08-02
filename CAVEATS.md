@@ -1911,6 +1911,45 @@ Migration 054 (`WidgetSite.branded`, default true).
   yet and there is no secret key outside Vercel. First real open is the
   remaining check.
 
+## Changing plan while already on one (added 2026-08-02, e408cfb)
+
+- 🔴 **Never decide "are they already paying?" from `Company.plan`.** The
+  column says PRO for a COMPED company, and a company can hold a
+  `stripeCustomerId` with no subscription at all — the customer is minted
+  BEFORE the Checkout session, so any abandoned checkout leaves one behind.
+  Rodeo Graphics is exactly this shape (comped PRO, planUntil NULL,
+  cus_V02N9db5fj4hoT, no subscription), and the old check
+  `stripeCustomerId && plan !== "FREE"` sent it down the "manage your
+  existing subscription" path when there was nothing to manage. Brandon
+  clicked Studio and hit a 409 with no way forward. POST
+  /api/company/billing now asks Stripe what subscriptions exist and branches
+  on that.
+- 🔴 **The subscription lookup fails CLOSED.** If Stripe can't be reached we
+  refuse rather than guess — guessing "no subscription" means a second
+  subscription on the same card.
+- 🟡 A real switch deep-links to the portal's `subscription_update_confirm`
+  flow for the exact price clicked, so the button lands on the confirmation
+  with the proration, not on the portal's front page. Requires the company
+  configuration to list the target price; if Stripe rejects the flow (a
+  legacy price outside the configuration) it falls back to a plain portal
+  session rather than erroring.
+- 🟡 Switchable statuses are `active`, `trialing`, `past_due`, `unpaid`.
+  `past_due`/`unpaid` are in on purpose: someone whose card bounced must
+  still be able to move to a cheaper plan.
+- 🟡 **The badge coupon is chosen for the TARGET period on a switch.**
+  `amount_off` applies per invoice, so carrying the monthly coupon into a
+  yearly switch would take $5 off a $390 invoice. Monthly and yearly coupons
+  are different objects; the switch picks by the period being moved to.
+- 🟡 There is deliberately no "you're already on that plan" check against
+  our column any more — converting a comp into a real subscription is a
+  sale. The only same-plan refusal is against the live Stripe price.
+- 🟢 Verified on production 2026-08-02 in Brandon's own browser: "Switch to
+  Studio" from comped-PRO Rodeo Graphics reached live Stripe Checkout
+  ("Subscribe to Studio", $129/month, email prefilled). Stopped before
+  paying, so the checkout session is abandoned and nothing was charged. The
+  portal deep-link branch is still UNPROVEN — it needs a company with a real
+  subscription, and none exists yet.
+
 ## Multi-site (added 2026-08-02, migration 062)
 
 - 🔴 **How many sites a company may run is a PLAN decision, not a database
