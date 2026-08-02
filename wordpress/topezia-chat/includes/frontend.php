@@ -36,9 +36,9 @@ function topezia_chat_should_render() {
 		}
 	}
 
-	if ( ! empty( $settings['exclude'] ) && is_singular() ) {
+	if ( ! empty( $settings['hide_on'] ) && is_singular() ) {
 		$id = get_queried_object_id();
-		if ( $id && in_array( (int) $id, array_map( 'intval', (array) $settings['exclude'] ), true ) ) {
+		if ( $id && in_array( (int) $id, array_map( 'intval', (array) $settings['hide_on'] ), true ) ) {
 			return false;
 		}
 	}

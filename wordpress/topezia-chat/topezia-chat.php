@@ -11,7 +11,6 @@
  * License: GPLv2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: topezia-chat
- * Domain Path: /languages
  *
  * WHAT RUNS WHERE, AND WHY IT MATTERS.
  *
@@ -88,7 +87,9 @@ function topezia_chat_settings() {
 		array(
 			'enabled'  => true,
 			// Post/page IDs the bubble is hidden on. Empty = everywhere.
-			'exclude'  => array(),
+			// NOT called 'exclude': that name reads as a WP_Query exclusion
+			// parameter to static analysis, and this is neither.
+			'hide_on'  => array(),
 			// WooCommerce cart and checkout, where a chat bubble over the
 			// pay button is a conversion problem rather than a help.
 			'skip_checkout' => false,

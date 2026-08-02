@@ -13,7 +13,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 	exit;
 }
 
-$topezia_options = array(
+$topezia_chat_options = array(
 	'topezia_chat_site_key',
 	'topezia_chat_plugin_key',
 	'topezia_chat_handshake',
@@ -21,8 +21,8 @@ $topezia_options = array(
 	'topezia_chat_do_welcome',
 );
 
-foreach ( $topezia_options as $topezia_option ) {
-	delete_option( $topezia_option );
+foreach ( $topezia_chat_options as $topezia_chat_option ) {
+	delete_option( $topezia_chat_option );
 }
 
 delete_transient( 'topezia_chat_status' );

@@ -176,9 +176,9 @@ function topezia_chat_handle_settings() {
 		wp_die( esc_html__( 'You do not have permission to do that.', 'topezia-chat' ) );
 	}
 
-	$exclude = array();
-	if ( isset( $_POST['exclude'] ) && is_array( $_POST['exclude'] ) ) {
-		$exclude = array_values( array_filter( array_map( 'intval', wp_unslash( $_POST['exclude'] ) ) ) );
+	$hide_on = array();
+	if ( isset( $_POST['hide_on'] ) && is_array( $_POST['hide_on'] ) ) {
+		$hide_on = array_values( array_filter( array_map( 'intval', wp_unslash( $_POST['hide_on'] ) ) ) );
 	}
 
 	update_option(
@@ -186,7 +186,7 @@ function topezia_chat_handle_settings() {
 		array(
 			'enabled'       => ! empty( $_POST['enabled'] ),
 			'skip_checkout' => ! empty( $_POST['skip_checkout'] ),
-			'exclude'       => $exclude,
+			'hide_on'       => $hide_on,
 		)
 	);
 	topezia_chat_notice( 'success', __( 'Saved.', 'topezia-chat' ) );
@@ -526,9 +526,9 @@ function topezia_chat_render_dashboard( $key ) {
 								<label>
 									<input
 										type="checkbox"
-										name="exclude[]"
+										name="hide_on[]"
 										value="<?php echo esc_attr( (string) $page->ID ); ?>"
-										<?php checked( in_array( (int) $page->ID, array_map( 'intval', (array) $settings['exclude'] ), true ) ); ?>
+										<?php checked( in_array( (int) $page->ID, array_map( 'intval', (array) $settings['hide_on'] ), true ) ); ?>
 									/>
 									<?php echo esc_html( $page->post_title ? $page->post_title : __( '(no title)', 'topezia-chat' ) ); ?>
 								</label>
