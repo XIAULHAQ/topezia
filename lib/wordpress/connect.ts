@@ -16,9 +16,35 @@
  */
 import { createHash, randomBytes } from "crypto";
 
-/** Long enough that an approval can be interrupted by a phone call, short
- *  enough that an abandoned one is rubbish by lunchtime. */
-export const CONNECT_TTL_MS = 60 * 60 * 1000;
+/**
+ * How long a pending connection stays claimable.
+ *
+ * This was an hour, on the reasoning that an approval can survive a phone call
+ * but an abandoned one should be rubbish by lunchtime. That reasoning assumed
+ * the approval happens in one sitting. It does not, for the case that now
+ * matters most: someone arriving from the WordPress directory has no Topezia
+ * account, so they create one mid-handshake, and email confirmation is on.
+ * The confirmation link brings them straight back here — but only if they open
+ * their mail within the window. People who check email twice a day were losing
+ * a connection they had already approved of, and being told to start again.
+ *
+ * A day, because that is roughly how long the confirmation link they are
+ * waiting on lives. Anything shorter re-creates the problem for someone who
+ * signs up in the evening.
+ *
+ * WHAT THE WINDOW IS ACTUALLY GUARDING. `state` authorizes nothing by itself —
+ * approving requires a signed-in account, and the site key never travels
+ * through the browser. The bound risk is a stale `state` sitting in the
+ * history of a shared computer, where a DIFFERENT signed-in person could bind
+ * the site to their own account. That is real, so this stays a window rather
+ * than becoming no expiry at all; a day of it is a trade worth making against
+ * a flow that was failing honest people daily.
+ *
+ * The plugin does not second-guess this: it keeps its half of the handshake
+ * until the server says 404/410, so changing this number here changes the real
+ * behaviour with no plugin release.
+ */
+export const CONNECT_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** A one-time secret and the digest we keep instead of it. */
 export function mintToken(): { token: string; hash: string } {

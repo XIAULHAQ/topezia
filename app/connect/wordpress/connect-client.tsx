@@ -23,7 +23,11 @@ export type PlanChoice = {
 };
 
 export type ConnectView =
-  | { kind: "expired" }
+  // `hours` is passed in rather than written into the sentence below, because
+  // the sentence is a claim about CONNECT_TTL_MS and the two drifted the
+  // moment the window changed. The constant lives in lib/wordpress/connect.ts,
+  // which imports node crypto and so cannot be pulled into a client bundle.
+  | { kind: "expired"; hours: number }
   | { kind: "signin"; host: string; detected: WpSiteDetails; next: string }
   | {
       kind: "approve";
@@ -193,8 +197,9 @@ export default function ConnectClient({ view }: { view: ConnectView }) {
           <div style={S.card}>
             <h1 style={S.h1}>This link has expired</h1>
             <p style={S.sub}>
-              Connection links last an hour, so an abandoned one can&apos;t be picked up later by someone else.
-              Go back to <b>Topezia</b> in your WordPress admin and press Connect again — it takes a second.
+              Connection links last {view.hours === 24 ? "a day" : `${view.hours} hours`}, so an abandoned one
+              can&apos;t be picked up later by someone else. Go back to <b>Topezia</b> in your WordPress admin
+              and press Connect again — it takes a second.
             </p>
           </div>
         </div>

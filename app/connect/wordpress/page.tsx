@@ -4,7 +4,7 @@ import { currentIdentity } from "@/lib/identity";
 import { planCatalogue } from "@/lib/billing/catalogue";
 import { billingConfigured } from "@/lib/billing/stripe";
 import { PLANS } from "@/lib/billing/plans";
-import { sanitizeDetails, safeReturnUrl } from "@/lib/wordpress/connect";
+import { sanitizeDetails, safeReturnUrl, CONNECT_TTL_MS } from "@/lib/wordpress/connect";
 import ConnectClient, { type ConnectView, type PlanChoice } from "./connect-client";
 
 /**
@@ -51,7 +51,7 @@ export default async function ConnectWordPressPage({
     : null;
 
   if (!row || row.expiresAt.getTime() < Date.now()) {
-    return <ConnectClient view={{ kind: "expired" }} />;
+    return <ConnectClient view={{ kind: "expired", hours: Math.round(CONNECT_TTL_MS / 3_600_000) }} />;
   }
 
   const { userId, authed } = await currentIdentity();
