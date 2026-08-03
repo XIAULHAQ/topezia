@@ -59,6 +59,37 @@ export async function GET(req: NextRequest) {
   const supabase = createClient();
 
   let userId: string;
+  /**
+   * Where they were going, as recorded ON THE ACCOUNT at signup.
+   *
+   * `next` is supposed to arrive in the URL: signUp is called with an
+   * emailRedirectTo that carries it, and Supabase is handed that as the
+   * redirect. But the confirmation email is rendered from a template in the
+   * Supabase dashboard, and OURS only prints the token — it never prints the
+   * redirect. So the delivered link is
+   *   /auth/callback?token_hash=…&type=signup
+   * with the destination silently dropped, and someone who created an account
+   * halfway through connecting their WordPress site was sent to résumé
+   * onboarding instead of back to the approval screen. Found by reading the
+   * actual delivered mail in Resend, not the code.
+   *
+   * The template is worth fixing, but this must not DEPEND on a dashboard
+   * setting nobody can see from the repo — that is the same class of failure
+   * that once pointed password-reset links at localhost. So the destination
+   * also rides on the user record, where no template can drop it, and it
+   * survives the very common case of confirming on a different device from
+   * the one that signed up.
+   *
+   * user_metadata is writable by its own user, so it is clamped by safePath
+   * exactly like the query param. The worst it can do is redirect someone to
+   * a page of their own choosing, inside our own site.
+   */
+  let signupNext: string | null = null;
+  const rememberedNext = (user: { user_metadata?: Record<string, unknown> | null } | null) => {
+    const raw = user?.user_metadata?.signup_next;
+    return typeof raw === "string" ? safePath(raw) : null;
+  };
+
   if (tokenHash && otpType) {
     if (!OTP_TYPES.has(otpType)) return fail("That link isn't valid here.");
     const { data, error } = await supabase.auth.verifyOtp({
@@ -71,6 +102,7 @@ export async function GET(req: NextRequest) {
       return fail(error?.message ?? "That confirmation link has already been used, or it has expired.");
     }
     userId = data.user.id;
+    signupNext = rememberedNext(data.user);
   } else {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code!);
     if (error || !data.user) {
@@ -85,6 +117,7 @@ export async function GET(req: NextRequest) {
       );
     }
     userId = data.user.id;
+    signupNext = rememberedNext(data.user);
   }
 
   // Same migration as /api/auth/link: the matches and profile built before
@@ -115,10 +148,14 @@ export async function GET(req: NextRequest) {
    * into a CV upload and threw `next` away — and with it the half-finished
    * WordPress connection that brought them here.
    */
-  const dest = isBusinessDestination(next)
-    ? next ?? BUSINESS_HOME
+  // The URL first, because a link that carries a destination is stating the
+  // most recent intent; the account's memory is the fallback for when the
+  // email template dropped it.
+  const target = next ?? signupNext;
+  const dest = isBusinessDestination(target)
+    ? target ?? BUSINESS_HOME
     : hasProfile
-      ? next ?? "/feed"
+      ? target ?? "/feed"
       : "/onboard";
   const res = NextResponse.redirect(new URL(dest, url.origin));
   res.cookies.set(ANON_COOKIE, "", { maxAge: 0, path: "/" });

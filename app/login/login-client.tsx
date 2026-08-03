@@ -231,6 +231,20 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
                 // actually is. It still has to be in Supabase's Redirect URLs
                 // allow-list, or Supabase silently falls back to Site URL again.
                 emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next ?? "/feed")}`,
+                /**
+                 * The same destination, written onto the ACCOUNT.
+                 *
+                 * emailRedirectTo above is only a request: the confirmation
+                 * mail is rendered from a template in the Supabase dashboard,
+                 * and ours prints the token without the redirect — so the
+                 * link that actually arrives has no `next` on it, and a
+                 * business signup landed in résumé onboarding. This copy
+                 * cannot be dropped by a template, and it survives confirming
+                 * on a different device from the one that signed up, which is
+                 * the normal case for email links. /auth/callback re-clamps it
+                 * to an internal path before using it.
+                 */
+                data: { signup_next: next ?? null },
               },
             })
           : await supabase.auth.signInWithPassword({ email: addr, password: pw, options: captcha });
