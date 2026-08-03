@@ -27,6 +27,7 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { ANON_COOKIE, ANON_COOKIE_MAX_AGE, LAST_UID_COOKIE } from "@/lib/anon-session";
+import { isBusinessDestination, BUSINESS_HOME } from "@/lib/auth/destination";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -104,9 +105,21 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // No profile at all → onboarding, which is exactly the "come without a
-  // resume" path; otherwise wherever they were headed.
-  const dest = hasProfile ? next ?? "/feed" : "/onboard";
+  /**
+   * No profile at all → onboarding, which is exactly the "come without a
+   * resume" path; otherwise wherever they were headed.
+   *
+   * UNLESS they came for their company. A business account has no resume and
+   * needs none (see lib/auth/destination.ts), and this line is the one that
+   * used to demand one: it sent a shop owner confirming their email straight
+   * into a CV upload and threw `next` away — and with it the half-finished
+   * WordPress connection that brought them here.
+   */
+  const dest = isBusinessDestination(next)
+    ? next ?? BUSINESS_HOME
+    : hasProfile
+      ? next ?? "/feed"
+      : "/onboard";
   const res = NextResponse.redirect(new URL(dest, url.origin));
   res.cookies.set(ANON_COOKIE, "", { maxAge: 0, path: "/" });
   res.cookies.set(LAST_UID_COOKIE, userId, {

@@ -22,6 +22,7 @@ import { createClient } from "@/lib/supabase/client";
 import { clearClientCaches } from "@/lib/client-cache";
 import Turnstile, { turnstileEnabled } from "@/app/_components/Turnstile";
 import { isDisposableEmail, DISPOSABLE_EMAIL_MESSAGE } from "@/lib/email-domains";
+import { isBusinessDestination, BUSINESS_HOME } from "@/lib/auth/destination";
 
 const C = { c1: "#8B5CF6", c2: "#3B82F6", ink: "#0F172A", slate: "#334155", mut: "#64748B", line: "#E2E8F0" };
 const GRAD = `linear-gradient(135deg,${C.c1},${C.c2})`;
@@ -60,6 +61,10 @@ const DESTINATIONS: { prefix: string; label: string; eyebrow: string }[] = [
   // Longest prefix first: "/employer/widget" must not be described as the
   // generic employer area when the person came from the WordPress plugin
   // asking specifically for their chat settings.
+  // The WordPress handshake. Its `next` always carries ?state=…, which is why
+  // the lookup below matches on the path alone — without that, the one arrival
+  // most in need of "yes, you are in the right place" got no badge at all.
+  { prefix: "/connect/wordpress", label: "connecting your website", eyebrow: "Connect your website" },
   { prefix: "/employer/widget", label: "your site chat settings", eyebrow: "Your site chat" },
   { prefix: "/employer/billing", label: "your plan", eyebrow: "Your plan" },
   { prefix: "/employer/inquiries", label: "your inbox", eyebrow: "Your inbox" },
@@ -86,12 +91,21 @@ const CSS = `
 
 export default function LoginClient({ next, stats, viewer, initialError = null }: { next: string | null; stats: LoginStats | null; viewer: Viewer | null; initialError?: string | null }) {
   const router = useRouter();
+  /**
+   * Heading for a company rather than a job hunt. Changes three things: which
+   * form opens, where they go afterwards, and what this page says it is for.
+   * A shop owner who arrived from the WordPress plugin should not be read a
+   * pitch about job matches.
+   */
+  const business = isBusinessDestination(next);
   // /login means SIGN IN — that is what every "Sign in" link in the app points
-  // at, so it must land on the sign-in form. The one exception is the
-  // post-onboarding hand-off: a visitor with a parsed profile but no account
-  // came here to create one, so open signup for them or the flow dead-ends.
+  // at, so it must land on the sign-in form. Two exceptions: the
+  // post-onboarding hand-off (a visitor with a parsed profile but no account
+  // came here to create one, so open signup or the flow dead-ends), and an
+  // unrecognised visitor heading for the business area — they arrived from a
+  // plugin or a "get it free" button, which is a signup by any other name.
   const [mode, setMode] = useState<"login" | "signup">(
-    viewer && !viewer.hasAccount ? "signup" : "login"
+    (viewer && !viewer.hasAccount) || (business && !viewer) ? "signup" : "login"
   );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -127,7 +141,9 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
   // Covers the OAuth path too, which starts here before redirecting away.
   useEffect(() => { clearClientCaches(); }, []);
 
-  const dest = next ? DESTINATIONS.find((d) => next === d.prefix || next.startsWith(`${d.prefix}/`)) : undefined;
+  // Path only: `next` may carry a query string (the WordPress state token).
+  const nextPath = next ? next.split(/[?#]/)[0] : null;
+  const dest = nextPath ? DESTINATIONS.find((d) => nextPath === d.prefix || nextPath.startsWith(`${d.prefix}/`)) : undefined;
 
   async function signInWithLinkedIn() {
     setError(null);
@@ -178,7 +194,7 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
     // Warm the destination WHILE Supabase authenticates. Its RSC payload
     // downloads during a request we are already waiting on, instead of starting
     // cold after it. Prefetch is disabled app-wide, so ask explicitly.
-    try { router.prefetch("/feed"); } catch { /* best effort */ }
+    try { router.prefetch(business ? next ?? BUSINESS_HOME : "/feed"); } catch { /* best effort */ }
     // Same autofill caveat as forgotPassword: trust the inputs over state, or a
     // password-manager fill signs in with empty credentials.
     const addr = (email || emailRef.current?.value || "").trim();
@@ -222,7 +238,16 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
 
       // If email confirmation is on, signUp returns no session yet.
       if (mode === "signup" && !data.session) {
-        setNotice("Check your email to confirm your account, then come back and log in.");
+        // The confirmation link opens a session and lands on `next` (see
+        // emailRedirectTo above and /auth/callback), so "come back and log
+        // in" understates it — and on the WordPress path, where the person is
+        // mid-handshake and watching a wp-admin tab, "you'll be brought back"
+        // is the difference between finishing and giving up.
+        setNotice(
+          business
+            ? "Check your email and click the confirmation link — it brings you straight back here to finish."
+            : "Check your email to confirm your account, then come back and log in."
+        );
         setLoading(false);
         return;
       }
@@ -255,8 +280,21 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
         hasProfile = true;
       }
 
-      // `next` is already validated server-side as an internal path.
-      const dest = next && hasProfile ? next : hasProfile ? "/feed" : "/onboard";
+      /**
+       * `next` is already validated server-side as an internal path.
+       *
+       * A business account skips the profile question entirely: it has no
+       * resume, needs none, and /onboard would both ask for one and DROP
+       * `next` — which is how a WordPress connection got abandoned one click
+       * from done. Everyone else keeps the old rule exactly.
+       */
+      const dest = business
+        ? next ?? BUSINESS_HOME
+        : next && hasProfile
+          ? next
+          : hasProfile
+            ? "/feed"
+            : "/onboard";
       router.push(dest);
       // Belt and braces: if the client-side navigation hasn't moved us shortly,
       // go the hard way rather than leaving someone staring at a dead button.
@@ -271,10 +309,20 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
   }
 
   // Counted, never invented — the panel shows only what the corpus backs.
-  const perks: { big: string; text: string }[] = [];
-  if (stats?.jobs) perks.push({ big: stats.jobs.toLocaleString(), text: "verified live roles, each scored against your actual experience" });
-  if (stats?.projects) perks.push({ big: stats.projects.toLocaleString(), text: "freelance projects you can bid on, matched the same way" });
-  perks.push({ big: "2 min", text: "from resume upload to your profile, score and roadmap" });
+  // The business panel quotes no counts at all: how many jobs are live is
+  // nothing to a shop owner, and there is no equivalent number about their
+  // own site that we could know before they connect it.
+  const perks: { big: string; text: string }[] = business
+    ? [
+        { big: "Free", text: "forever on one website — the chat, the leads and the inbox. No card." },
+        { big: "24/7", text: "answers pulled from your own pages, in whatever language the visitor writes in" },
+        { big: "1 click", text: "connect WordPress and your logo, about text and contact details come across with it" },
+      ]
+    : [
+        ...(stats?.jobs ? [{ big: stats.jobs.toLocaleString(), text: "verified live roles, each scored against your actual experience" }] : []),
+        ...(stats?.projects ? [{ big: stats.projects.toLocaleString(), text: "freelance projects you can bid on, matched the same way" }] : []),
+        { big: "2 min", text: "from resume upload to your profile, score and roadmap" },
+      ];
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", fontFamily: FONT, color: C.ink, background: "#fff" }}>
@@ -294,7 +342,10 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 0" }}>
           <form style={{ width: "100%", maxWidth: 380 }} onSubmit={submit}>
             {dest && (
-              <div style={S.badge}><Ic n="spark" s={13} />Sign in to continue to {dest.label}</div>
+              <div style={S.badge}>
+                <Ic n="spark" s={13} />
+                {mode === "signup" ? "Create your account to continue to" : "Sign in to continue to"} {dest.label}
+              </div>
             )}
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
               {viewer && (
@@ -314,11 +365,19 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
               </h1>
             </div>
             <p style={{ margin: "10px 0 0", fontSize: 13.5, color: C.mut, lineHeight: 1.6 }}>
-              {mode === "signup"
-                ? viewer
-                  ? "Create an account to keep your profile, score and matches — on every device."
-                  : "Save your matches, score and roadmap so they follow you across devices."
-                : "Your roadmap, career score and matched roles are waiting."}
+              {/* Every line here promises a career score and matched roles.
+                  True, and irrelevant to somebody who came to put a chat on
+                  their shop — that mismatch is most of why the business side
+                  looked like it was built on top of a job hunt. */}
+              {business
+                ? mode === "signup"
+                  ? "One account runs your company page, your site chat and your inbox."
+                  : "Your company page, site chat and inbox are waiting."
+                : mode === "signup"
+                  ? viewer
+                    ? "Create an account to keep your profile, score and matches — on every device."
+                    : "Save your matches, score and roadmap so they follow you across devices."
+                  : "Your roadmap, career score and matched roles are waiting."}
               {viewer && (
                 <>
                   {" "}
@@ -410,16 +469,31 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
               </p>
             )}
 
-            {/* The front door for newcomers: joining IS uploading your resume. */}
-            <div style={S.orRow}><span style={S.orLine} /><span style={S.orText}>New to Topezia?</span><span style={S.orLine} /></div>
-            <Link href="/onboard" className="lg-join" style={S.join}>
-              <span style={{ width: 38, height: 38, borderRadius: 11, background: GRAD, color: "#fff", display: "grid", placeItems: "center", flex: "none" }}><Ic n="upload" s={16} /></span>
-              <span style={{ flex: 1, textAlign: "left" }}>
-                <span style={{ display: "block", fontSize: 14.5, fontWeight: 800, color: C.ink }}>Join free — upload your resume</span>
-                <span style={{ display: "block", fontSize: 12, color: C.mut, marginTop: 3, lineHeight: 1.5 }}>Our AI builds your profile and career score in 2 minutes.</span>
-              </span>
-              <span style={{ color: C.c1, flex: "none" }}><Ic n="arrow" s={14} /></span>
-            </Link>
+            {business ? (
+              /* "Join free — upload your resume" is the wrong front door for
+                 somebody who came to put a chat bubble on their shop, and it
+                 is the reason this looked like it required a job-seeker
+                 account. It never did: a Company hangs off the ACCOUNT, not
+                 off a Profile. Say that plainly here, because the rest of the
+                 page still says Topezia and they are entitled to wonder what
+                 a career site wants with their CV. */
+              <p style={{ ...S.consent, marginTop: 18, lineHeight: 1.6 }}>
+                This is a business account — no resume, no job profile. Free forever on one website.
+              </p>
+            ) : (
+              <>
+                {/* The front door for newcomers: joining IS uploading your resume. */}
+                <div style={S.orRow}><span style={S.orLine} /><span style={S.orText}>New to Topezia?</span><span style={S.orLine} /></div>
+                <Link href="/onboard" className="lg-join" style={S.join}>
+                  <span style={{ width: 38, height: 38, borderRadius: 11, background: GRAD, color: "#fff", display: "grid", placeItems: "center", flex: "none" }}><Ic n="upload" s={16} /></span>
+                  <span style={{ flex: 1, textAlign: "left" }}>
+                    <span style={{ display: "block", fontSize: 14.5, fontWeight: 800, color: C.ink }}>Join free — upload your resume</span>
+                    <span style={{ display: "block", fontSize: 12, color: C.mut, marginTop: 3, lineHeight: 1.5 }}>Our AI builds your profile and career score in 2 minutes.</span>
+                  </span>
+                  <span style={{ color: C.c1, flex: "none" }}><Ic n="arrow" s={14} /></span>
+                </Link>
+              </>
+            )}
           </form>
         </div>
 
@@ -442,7 +516,9 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
             {dest?.eyebrow ?? "Why Topezia"}
           </div>
           <h2 style={{ margin: 0, fontSize: 27, fontWeight: 800, letterSpacing: "-0.7px", lineHeight: 1.24 }}>
-            See exactly where you stand — then the roadmap up.
+            {business
+              ? "Answer every visitor, capture every lead — straight from your own pages."
+              : "See exactly where you stand — then the roadmap up."}
           </h2>
           <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 26 }}>
             {perks.map((pk) => (
