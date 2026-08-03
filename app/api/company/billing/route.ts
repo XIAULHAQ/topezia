@@ -289,6 +289,18 @@ export async function POST(req: NextRequest) {
   if (!isPlanId(plan) || plan === "FREE") {
     return NextResponse.json({ error: "Pick a plan." }, { status: 400 });
   }
+  /**
+   * A coming-soon plan is refused HERE, not merely left without a button.
+   *
+   * Its price id is real and configured — that is what lets the pricing page
+   * quote the true amount — so the only thing standing between a crafted POST
+   * and a live Stripe checkout is this check. Missing it would sell somebody
+   * three domains that don't yet share a knowledge base, which is the precise
+   * failure the plan exists to fix.
+   */
+  if (PLANS[plan].comingSoon) {
+    return NextResponse.json({ error: `${PLANS[plan].name} isn't on sale yet.` }, { status: 503 });
+  }
   const priceId = priceIdFor(plan, period);
   if (!priceId) return NextResponse.json({ error: `${PLANS[plan].name} isn't on sale yet.` }, { status: 503 });
 

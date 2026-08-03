@@ -10,7 +10,7 @@
  * honest outcome, rather than a button that fails at checkout.
  */
 import { getPrices, formatPrice } from "./stripe";
-import { PLANS, priceIdFor, sellablePlans } from "./plans";
+import { PLANS, PAID_PLANS, priceIdFor, pricedPlans } from "./plans";
 
 export type PlanCard = (typeof PLANS)["PRO"] & {
   forSale: boolean;
@@ -19,7 +19,12 @@ export type PlanCard = (typeof PLANS)["PRO"] & {
 };
 
 export async function planCatalogue(): Promise<PlanCard[]> {
-  const ids = sellablePlans().flatMap((p) =>
+  /**
+   * pricedPlans, not sellablePlans: a coming-soon plan still has to show its
+   * REAL price, read from Stripe like every other amount. Quoting it from a
+   * constant here is how a pricing page ends up disagreeing with the invoice.
+   */
+  const ids = pricedPlans().flatMap((p) =>
     (["month", "year"] as const).flatMap((period) => {
       const id = priceIdFor(p, period);
       return id ? [id] : [];
@@ -27,14 +32,17 @@ export async function planCatalogue(): Promise<PlanCard[]> {
   );
   const prices = await getPrices(ids);
 
-  return (["PRO", "STUDIO"] as const).map((id) => {
+  // PAID_PLANS drives the order too, so the cards read Pro → Brand → Studio.
+  return PAID_PLANS.map((id) => {
     const monthId = priceIdFor(id, "month");
     const yearId = priceIdFor(id, "year");
     const month = monthId ? prices[monthId] : undefined;
     const year = yearId ? prices[yearId] : undefined;
     return {
       ...PLANS[id],
-      forSale: Boolean(month || year),
+      // A live Stripe price is necessary but no longer sufficient: a plan we
+      // cannot deliver yet is shown, priced, and deliberately unbuyable.
+      forSale: Boolean(month || year) && !PLANS[id].comingSoon,
       monthly: month ? { amount: month.amount, label: formatPrice(month) } : null,
       yearly: year ? { amount: year.amount, label: formatPrice(year) } : null,
     };

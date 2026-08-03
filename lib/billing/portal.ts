@@ -22,7 +22,7 @@
  * plan switching.
  */
 import type Stripe from "stripe";
-import { priceIdFor, type PlanId, type BillingPeriod } from "./plans";
+import { priceIdFor, sellablePlans, type BillingPeriod } from "./plans";
 
 const KIND = "company";
 
@@ -31,7 +31,11 @@ let cached: { fingerprint: string; id: string } | null = null;
 
 function businessPriceIds(): string[] {
   const ids: string[] = [];
-  for (const plan of ["PRO", "STUDIO"] as Exclude<PlanId, "FREE">[]) {
+  // sellablePlans(), not a literal list: Stripe's portal is a REAL purchase
+  // path, so a coming-soon plan appearing here would be buyable from inside
+  // the portal no matter what our own UI does. It also means a new plan
+  // reaches the portal without anyone remembering this file.
+  for (const plan of sellablePlans()) {
     for (const period of ["month", "year"] as BillingPeriod[]) {
       const id = priceIdFor(plan, period);
       if (id) ids.push(id);

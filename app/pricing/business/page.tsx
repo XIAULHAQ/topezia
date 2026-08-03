@@ -51,7 +51,9 @@ export default async function BusinessPricingPage() {
         : p.sites === 1 ? "per website" : `up to ${p.sites} websites`,
       limits: p,
       cta: p.forSale ? { label: `Choose ${p.name}`, href: "/employer/billing" } : null,
-      note: p.forSale ? null : "Not on sale yet.",
+      // "Coming soon" when we have a real price but can't deliver the plan
+      // yet; "not on sale" when there is no price at all. Different states.
+      note: p.forSale ? null : p.monthly || p.yearly ? "Coming soon." : "Not on sale yet.",
     })),
   ];
 

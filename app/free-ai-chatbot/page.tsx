@@ -75,7 +75,7 @@ export default async function FreeAiChatbotPage() {
       // A plan Stripe has no live price for gets no checkout button — it says
       // so instead, rather than offering a button that 503s.
       href: p.forSale ? "/employer/billing" : "/pricing/business",
-      cta: p.forSale ? `Choose ${p.name}` : "Not on sale yet",
+      cta: p.forSale ? `Choose ${p.name}` : p.monthly || p.yearly ? "Coming soon" : "Not on sale yet",
       dark: p.id === "PRO",
     })),
   ];

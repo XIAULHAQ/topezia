@@ -225,8 +225,12 @@ export default function BillingClient() {
                   </ul>
                   {isCurrent ? (
                     <button type="button" style={{ ...ES.btnGhost, width: "100%" }} disabled>On this plan</button>
-                  ) : !price ? (
-                    <p style={{ ...ES.empty, margin: 0 }}>Not on sale yet.</p>
+                  ) : !p.forSale ? (
+                    /* forSale, NOT `price`. A coming-soon plan has a real
+                       Stripe price so the card can quote the true amount —
+                       gating on the price alone put a Choose button on a plan
+                       the server refuses, i.e. a button that only ever errors. */
+                    <p style={{ ...ES.empty, margin: 0 }}>{price ? "Coming soon." : "Not on sale yet."}</p>
                   ) : (
                     <button type="button" style={{ ...ES.btn, width: "100%" }}
                       disabled={busy === p.id}
