@@ -57,6 +57,13 @@ const LINKEDIN_ENABLED = process.env.NEXT_PUBLIC_LINKEDIN_AUTH === "1";
 
 /** What they were trying to reach, for the badge + panel eyebrow. */
 const DESTINATIONS: { prefix: string; label: string; eyebrow: string }[] = [
+  // Longest prefix first: "/employer/widget" must not be described as the
+  // generic employer area when the person came from the WordPress plugin
+  // asking specifically for their chat settings.
+  { prefix: "/employer/widget", label: "your site chat settings", eyebrow: "Your site chat" },
+  { prefix: "/employer/billing", label: "your plan", eyebrow: "Your plan" },
+  { prefix: "/employer/inquiries", label: "your inbox", eyebrow: "Your inbox" },
+  { prefix: "/employer", label: "your company", eyebrow: "Your company" },
   { prefix: "/coach", label: "Career Coach", eyebrow: "Your Career Coach" },
   { prefix: "/feed", label: "your job feed", eyebrow: "Your job feed" },
   { prefix: "/projects", label: "freelance projects", eyebrow: "Freelance projects" },

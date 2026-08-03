@@ -71,6 +71,37 @@ export async function middleware(request: NextRequest) {
   // proved unreliable in this route (it throws correctly, but Next rendered
   // not-found instead of honouring it).
   const isEditRoute = /^\/portfolio\/[^/]+\/edit\/?$/.test(pathname);
+
+  /**
+   * The employer area needs a REAL ACCOUNT, not merely an identity.
+   *
+   * It is its own list because the gate below deliberately lets an anonymous
+   * profile cookie through — "no account needed to start" is true of the job
+   * hunt. It is not true here: a company owns a public page, an inbox, a
+   * subscription and other people's leads, none of which can hang off a
+   * cookie. Every /api/company route already refuses anything but a signed-in
+   * owner, so an anonymous visitor reached these pages only to be told no by
+   * each panel in turn.
+   *
+   * Found from the outside: Brandon pressed "Chat settings" in the WordPress
+   * plugin while signed out and landed on the widget page wearing a sidebar
+   * for a company called "Your company — Not set up yet", with one small
+   * "Sign in" sentence where the settings should be. A link we send people to
+   * has to arrive somewhere that makes sense, and the answer to "you are not
+   * signed in" is the sign-in page.
+   */
+  const needsAccount = pathname === "/employer" || pathname.startsWith("/employer/");
+  if (needsAccount && !user) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    // Carries them back to the exact page they asked for — the widget
+    // settings, not a generic dashboard.
+    url.search = `?next=${encodeURIComponent(pathname)}`;
+    const redirect = NextResponse.redirect(url);
+    for (const c of response.cookies.getAll()) redirect.cookies.set(c);
+    return redirect;
+  }
+
   const isGated = isEditRoute || GATED.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   if (isGated && !user) {
     // Cookie name mirrors lib/anon-session.ts ANON_COOKIE (inlined: that

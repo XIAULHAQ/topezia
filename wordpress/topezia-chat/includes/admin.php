@@ -448,6 +448,10 @@ function topezia_chat_render_dashboard( $key ) {
 	}
 
 	$dash = topezia_chat_api_base();
+	// Paths on topezia.com. Kept together and checked against the real
+	// routes: /employer/messages was invented from the menu LABEL and
+	// shipped as a dead link. The route is /employer/inquiries.
+
 	?>
 	<div class="topezia-grid">
 		<div class="topezia-card">
@@ -472,7 +476,7 @@ function topezia_chat_render_dashboard( $key ) {
 			<?php endif; ?>
 
 			<div class="topezia-actions">
-				<a class="topezia-btn topezia-btn-primary" href="<?php echo esc_url( $dash . '/employer/messages' ); ?>" target="_blank" rel="noopener">
+				<a class="topezia-btn topezia-btn-primary" href="<?php echo esc_url( $dash . '/employer/inquiries' ); ?>" target="_blank" rel="noopener">
 					<?php esc_html_e( 'Open my inbox', 'topezia-chat' ); ?>
 				</a>
 				<a class="topezia-btn" href="<?php echo esc_url( $dash . '/employer/widget' ); ?>" target="_blank" rel="noopener">
