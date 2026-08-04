@@ -1,5 +1,5 @@
 === Topezia Chat — AI Chatbot & Lead Capture ===
-Contributors: topezia
+Contributors: brandontyfusion
 Tags: ai chatbot, chatbot, live chat, lead generation, woocommerce
 Requires at least: 5.8
 Tested up to: 7.0
