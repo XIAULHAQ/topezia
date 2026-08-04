@@ -471,17 +471,41 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
               <Link href="/privacy" className="lg-link" style={S.consentLink}>Privacy Policy</Link>.
             </p>
 
-            {/* Only shown in signup mode. In login mode the pairing read as a
-                contradiction ("Have a password already? Create an account"),
-                and newcomers there are served by the join CTA below. */}
-            {mode === "signup" && (
-              <p style={S.toggle}>
-                Already have an account?{" "}
-                <button type="button" className="lg-link" style={S.toggleBtn} onClick={() => { setMode("login"); setError(null); setNotice(null); }}>
-                  Log in
-                </button>
-              </p>
-            )}
+            {/**
+             * THE SWITCH MUST GO BOTH WAYS.
+             *
+             * It used to exist only in signup mode, on the reasoning that a
+             * newcomer in login mode was served by the résumé CTA below. That
+             * reasoning had two holes, and Brandon fell through both: the CTA
+             * is the WRONG destination for a business (it is a résumé upload),
+             * and on the business path it isn't rendered at all — so a person
+             * looking at the sign-in form had NOTHING on the page that would
+             * make them an account. He pressed the only thing that looked like
+             * one and landed in résumé onboarding.
+             *
+             * `setMode` appeared exactly once in this file. That was the bug.
+             */}
+            <p style={S.toggle}>
+              {mode === "signup" ? (
+                <>
+                  Already have an account?{" "}
+                  <button type="button" className="lg-link" style={S.toggleBtn} onClick={() => { setMode("login"); setError(null); setNotice(null); }}>
+                    Log in
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* Not "New to Topezia?" on the consumer path — the résumé
+                      CTA directly below already uses that exact lead-in, and
+                      two identical headings stacked read as a rendering bug.
+                      There it is the second-choice route, so it says so. */}
+                  {business ? "Setting up a new business?" : "Rather not upload a resume?"}{" "}
+                  <button type="button" className="lg-link" style={S.toggleBtn} onClick={() => { setMode("signup"); setError(null); setNotice(null); }}>
+                    Create an account
+                  </button>
+                </>
+              )}
+            </p>
 
             {business ? (
               /* "Join free — upload your resume" is the wrong front door for
