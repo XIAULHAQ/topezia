@@ -170,15 +170,42 @@ export async function answerFromSite(
   const qVector = `[${qEmbedding.join(",")}]`;
 
   const [chunks, retrieved, pageProduct, facts] = await Promise.all([
-    prisma.$queryRawUnsafe<{ url: string; title: string; content: string; distance: number }[]>(
-      `SELECT url, title, content, (embedding <=> $1::vector) AS distance
-         FROM "SiteChunk"
-        WHERE "siteId" = ANY($2::text[]) AND embedding IS NOT NULL
-        ORDER BY embedding <=> $1::vector
-        LIMIT ${TOP_K}`,
-      qVector,
-      siteIds
-    ),
+    /**
+     * ONE SITE: the plain nearest-eight, untouched — the overwhelmingly
+     * common case, and the ANN index answers it directly.
+     *
+     * SEVERAL (a brand): cap how many of the eight any single domain may
+     * take. A 200-page shop joined to a small marketing site would otherwise
+     * fill every slot on sheer volume, and the FAQ the visitor asked about —
+     * the only page that answers them — never reaches the model. Relevance
+     * still orders the result; the partition only stops one domain owning it.
+     *
+     * Deliberately NOT applied to a single site, where the window function
+     * would cost a sort over the whole site for no possible benefit.
+     */
+    siteIds.length > 1
+      ? prisma.$queryRawUnsafe<{ url: string; title: string; content: string; distance: number }[]>(
+          `SELECT url, title, content, distance FROM (
+             SELECT url, title, content, (embedding <=> $1::vector) AS distance,
+                    row_number() OVER (PARTITION BY "siteId" ORDER BY embedding <=> $1::vector) AS rn
+               FROM "SiteChunk"
+              WHERE "siteId" = ANY($2::text[]) AND embedding IS NOT NULL
+           ) ranked
+           WHERE rn <= ${Math.max(2, Math.ceil(TOP_K / 2))}
+           ORDER BY distance
+           LIMIT ${TOP_K}`,
+          qVector,
+          siteIds
+        )
+      : prisma.$queryRawUnsafe<{ url: string; title: string; content: string; distance: number }[]>(
+          `SELECT url, title, content, (embedding <=> $1::vector) AS distance
+             FROM "SiteChunk"
+            WHERE "siteId" = ANY($2::text[]) AND embedding IS NOT NULL
+            ORDER BY embedding <=> $1::vector
+            LIMIT ${TOP_K}`,
+          qVector,
+          siteIds
+        ),
     // The shelf: this site's products nearest the question. Empty on a
     // purely informational site, which is the whole ecommerce detection.
     prisma.$queryRawUnsafe<(ProductRow & { distance: number })[]>(

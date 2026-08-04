@@ -42,3 +42,52 @@ export async function brandSiteIds(site: { id: string; brandId: string | null })
   // visitor is standing on would be absurd.
   return ids.includes(site.id) ? ids : [site.id, ...ids];
 }
+
+/**
+ * Which site in this brand holds the shop, for "where is my order?".
+ *
+ * The store credential hangs off ONE site — the shop's — so before brands a
+ * visitor could only ask about an order on the shop's own domain. Ask on the
+ * marketing site and the assistant had nothing, which is precisely backwards:
+ * the marketing site is where people arrive, and "where's my order" is the
+ * question they arrive with.
+ *
+ * A brand has one shop in practice, so the first match is the answer. The
+ * site being chatted on wins when it has its own — no reason to reach sideways
+ * when the shop is right here.
+ *
+ * Returns null when nothing in the brand has a store connected, and the chat
+ * then says nothing about orders at all rather than inviting an order number
+ * it cannot check.
+ */
+export async function brandStoreSiteId(site: {
+  id: string;
+  brandId: string | null;
+  orderLookup: boolean;
+}): Promise<string | null> {
+  // Its own shop first. `orderLookup` is the owner's deliberate switch, and
+  // the credential's presence is the other half — both are required here and
+  // for siblings, so nothing is ever looked up on a site that opted out.
+  if (site.orderLookup) {
+    const own = await prisma.siteStoreCredential.findUnique({
+      where: { siteId: site.id },
+      select: { siteId: true },
+    });
+    if (own) return own.siteId;
+  }
+
+  if (!site.brandId) return null;
+
+  const sibling = await prisma.widgetSite.findFirst({
+    where: {
+      brandId: site.brandId,
+      enabled: true,
+      orderLookup: true,
+      id: { not: site.id },
+      storeCredential: { isNot: null },
+    },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  return sibling?.id ?? null;
+}

@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit, clientIp, RATE_LIMITED } from "@/lib/rate-limit";
 import { answerFromSite, type ChatTurn } from "@/lib/widget/answer";
+import { brandStoreSiteId } from "@/lib/widget/brand";
 import { consumeAiReply } from "@/lib/widget/caps";
 import { detectContact, detectContactInChat, leadMessageFromChat } from "@/lib/widget/contact";
 import { createWidgetLead } from "@/lib/widget/lead";
@@ -66,11 +67,24 @@ function plainOrderReply(order: import("@/lib/widget/orders").OrderStatus): stri
  * for anyone working through a range.
  */
 async function orderContext(
-  site: { id: string; domain: string; orderLookup: boolean },
+  site: { id: string; domain: string; orderLookup: boolean; brandId: string | null },
   history: ChatTurn[],
   ip: string
 ): Promise<OrderContext | null> {
-  if (!site.orderLookup) return null;
+  /**
+   * The shop may be on a SIBLING DOMAIN (migration 070). A business whose
+   * marketing site is on WordPress and whose shop is on Shopify keeps the
+   * store credential on the shop's site — so before brands, "where is my
+   * order?" only worked on the shop's own domain. That is backwards: the
+   * marketing site is where people arrive, and this is the question they
+   * arrive with.
+   *
+   * Resolved BEFORE the intent check so the answer to "can we look orders up
+   * at all" is the brand's answer, not this domain's.
+   */
+  const storeSiteId = await brandStoreSiteId(site);
+  if (!storeSiteId) return null;
+
   const query = parseOrderQuery(history, site.domain);
   if (!query.intent) return null;
 
@@ -80,7 +94,7 @@ async function orderContext(
   }
   if (!rateLimit(`widget-order:${ip}`, 12, 60 * 60 * 1000)) return { state: "no_match" };
 
-  const cred = await loadCredentials(site.id);
+  const cred = await loadCredentials(storeSiteId);
   // Switched on but never connected — say nothing about orders at all rather
   // than inviting details we cannot check.
   if (!cred) return null;

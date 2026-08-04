@@ -57,6 +57,25 @@ export function normalizeDomain(raw: unknown): { ok: true; host: string } | { ok
   if (host.endsWith("topezia.com")) {
     return { ok: false, error: "The widget is for your own website." };
   }
+  /**
+   * `www.` is not a different website, and counting it as one costs money.
+   *
+   * Domains are the billing unit — every subdomain counts against the plan's
+   * allowance — so registering both example.com and www.example.com would burn
+   * two of a Brand plan's three domains on one site, and crawl the same pages
+   * twice into two knowledge bases that then compete in retrieval.
+   *
+   * Stripped only for `www`, which is a convention rather than a subdomain in
+   * any meaningful sense. shop.example.com IS a different site and keeps its
+   * own row, exactly as Brandon specified.
+   *
+   * Safe on the existing rows: none of them carry a www prefix, checked before
+   * this shipped. The chat route already compares hostnames with www removed
+   * on both sides, so a visitor on either form still matches their site.
+   */
+  if (host.startsWith("www.") && host.split(".").length > 2) {
+    host = host.slice(4);
+  }
   return { ok: true, host };
 }
 
