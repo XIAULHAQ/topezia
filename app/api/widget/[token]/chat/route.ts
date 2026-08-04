@@ -151,7 +151,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
   const site = await prisma.widgetSite.findUnique({
     where: { siteToken: params.token },
     select: {
-      id: true, enabled: true, domain: true, checkoutPath: true, storeKind: true, orderLookup: true,
+      id: true, enabled: true, domain: true, checkoutPath: true, storeKind: true, orderLookup: true, brandId: true,
       company: { select: { id: true, name: true, ownerUserId: true, plan: true } },
     },
   });
@@ -237,7 +237,9 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
           return;
         }
         const answer = await answerFromSite(
-          { id: site!.id, domain: site!.domain, companyName: site!.company.name, checkoutPath: site!.checkoutPath, storeKind: site!.storeKind },
+          // brandId decides which sibling domains this chat may answer from
+          // (migration 070) — null means this site alone, as before.
+          { id: site!.id, domain: site!.domain, companyName: site!.company.name, checkoutPath: site!.checkoutPath, storeKind: site!.storeKind, brandId: site!.brandId },
           history,
           {
             pageUrl,

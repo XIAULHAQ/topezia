@@ -1134,6 +1134,8 @@ model Company {
   // The embeddable site chat widget (migration 051). One per company — the
   // unique IS the free-tier cap.
   widgetSites      WidgetSite[]
+  // Groups of those sites that share one knowledge base (migration 070).
+  siteBrands       SiteBrand[]
   // In-flight WordPress plugin connections (migration 067).
   wpConnects       WpConnect[]
 
@@ -1173,6 +1175,27 @@ enum InquirySource {
 }
 
 // One company's installed chat widget (migration 051).
+/// A set of domains that are one business and therefore share one knowledge
+/// base (migration 070). The marketing site on WordPress and the shop on
+/// Shopify are one brand; an agency's ten client sites are ten brands.
+///
+/// This is the SAFETY boundary, not a billing one — domains are what we count.
+/// Retrieval spans a brand and must never span two, or one Studio client's
+/// chat starts answering with another client's content.
+model SiteBrand {
+  id        String   @id @default(uuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// Shown to the owner when a company has more than one. Seeded from the
+  /// company name, which is right for the overwhelming majority who have one.
+  name      String
+  sites     WidgetSite[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+}
+
 model WidgetSite {
   id           String   @id @default(uuid())
   /// NOT unique since migration 062 — a company may run the chat on several
@@ -1180,6 +1203,12 @@ model WidgetSite {
   /// changing it never needs a migration.
   companyId    String
   company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// Which brand's knowledge this site is part of (migration 070). NULLable on
+  /// purpose: a site without one is an island, which is exactly today's
+  /// behaviour and the safe reading if anything ever fails to assign it.
+  /// ON DELETE SET NULL — deleting a brand must never delete somebody's site.
+  brandId      String?
+  brand        SiteBrand? @relation(fields: [brandId], references: [id], onDelete: SetNull)
   domain       String
   // Public key in the embed snippet. Identifies, never authorizes — every
   // owner action still goes through requireCompanyOwner.

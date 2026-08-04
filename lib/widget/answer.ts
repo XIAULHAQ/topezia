@@ -30,6 +30,7 @@
 import { prisma } from "@/lib/prisma";
 import { embedText } from "@/lib/ingestion/embed";
 import { buyOptions, type BuyOption } from "./checkout";
+import { brandSiteIds } from "./brand";
 
 const ANSWER_MODEL = "claude-haiku-4-5-20251001"; // same tier as the reranker
 const TOP_K = 8;
@@ -139,7 +140,7 @@ const EMPTY = { sources: [] as string[], products: [] as ProductCard[] };
 type ProductRow = { url: string; name: string; price: string | null; image: string | null; description: string; externalId: string | null; buyable: boolean; variations: unknown };
 
 export async function answerFromSite(
-  site: { id: string; domain: string; companyName: string; checkoutPath: string | null; storeKind: string | null },
+  site: { id: string; domain: string; companyName: string; checkoutPath: string | null; storeKind: string | null; brandId: string | null },
   history: ChatTurn[],
   opts: AnswerOptions = {}
 ): Promise<WidgetAnswer> {
@@ -147,6 +148,18 @@ export async function answerFromSite(
   if (!question.trim() || !process.env.ANTHROPIC_API_KEY) {
     return { ...HANDOFF_FALLBACK, ...EMPTY };
   }
+
+  /**
+   * Every retrieval below spans the BRAND, not the single site (migration
+   * 070). A business whose shop is on a second domain gets one assistant that
+   * knows both, instead of two that each know half.
+   *
+   * Resolved once, here, and passed to all three queries — so pages, products
+   * and taught answers can never disagree about what this chat is allowed to
+   * see. A site with no brand resolves to itself, which is the pre-070
+   * behaviour exactly.
+   */
+  const siteIds = await brandSiteIds(site);
 
   // Retrieval query = the question PLUS the previous exchange. "Where can I
   // buy that?" embeds as nothing on its own — the referent lives in the turn
@@ -160,22 +173,22 @@ export async function answerFromSite(
     prisma.$queryRawUnsafe<{ url: string; title: string; content: string; distance: number }[]>(
       `SELECT url, title, content, (embedding <=> $1::vector) AS distance
          FROM "SiteChunk"
-        WHERE "siteId" = $2 AND embedding IS NOT NULL
+        WHERE "siteId" = ANY($2::text[]) AND embedding IS NOT NULL
         ORDER BY embedding <=> $1::vector
         LIMIT ${TOP_K}`,
       qVector,
-      site.id
+      siteIds
     ),
     // The shelf: this site's products nearest the question. Empty on a
     // purely informational site, which is the whole ecommerce detection.
     prisma.$queryRawUnsafe<(ProductRow & { distance: number })[]>(
       `SELECT url, name, price, image, description, "externalId", buyable, variations, (embedding <=> $1::vector) AS distance
          FROM "SiteProduct"
-        WHERE "siteId" = $2 AND embedding IS NOT NULL
+        WHERE "siteId" = ANY($2::text[]) AND embedding IS NOT NULL
         ORDER BY embedding <=> $1::vector
         LIMIT 6`,
       qVector,
-      site.id
+      siteIds
     ),
     // The product of the page the visitor is standing on always makes the
     // shelf — "how much is it?" asked on a product page means THAT product,
@@ -191,11 +204,11 @@ export async function answerFromSite(
     prisma.$queryRawUnsafe<{ question: string; answer: string; distance: number }[]>(
       `SELECT question, answer, (embedding <=> $1::vector) AS distance
          FROM "SiteFact"
-        WHERE "siteId" = $2 AND embedding IS NOT NULL
+        WHERE "siteId" = ANY($2::text[]) AND embedding IS NOT NULL
         ORDER BY embedding <=> $1::vector
         LIMIT 3`,
       qVector,
-      site.id
+      siteIds
     ),
   ]);
 
