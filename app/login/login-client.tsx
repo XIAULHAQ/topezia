@@ -250,6 +250,30 @@ export default function LoginClient({ next, stats, viewer, initialError = null }
           : await supabase.auth.signInWithPassword({ email: addr, password: pw, options: captcha });
       if (error) throw error;
 
+      /**
+       * THE ADDRESS ALREADY HAS AN ACCOUNT — and Supabase will not say so.
+       *
+       * signUp on an existing CONFIRMED address does not error. It returns a
+       * decoy user with an EMPTY `identities` array, creates nothing and sends
+       * nothing, deliberately, so that a stranger cannot use the signup form to
+       * discover which addresses are registered. That is the right call by
+       * Supabase and the wrong thing to pass on unread: we saw "no session",
+       * said "check your email", and the person waited for a message that was
+       * never going to arrive. Brandon hit exactly this, twice.
+       *
+       * Telling them here does NOT leak anything they did not just prove they
+       * know — they typed the address and asked to register it. The generic
+       * answer is only protective for someone probing addresses they don't own,
+       * and that is what the per-IP rate limits are for.
+       */
+      if (mode === "signup" && data.user && (data.user.identities?.length ?? 0) === 0) {
+        setMode("login");
+        setError("That email already has an account. Enter your password to sign in — or use “Forgot?” if you need to reset it.");
+        setLoading(false);
+        setPhase("idle");
+        return;
+      }
+
       // If email confirmation is on, signUp returns no session yet.
       if (mode === "signup" && !data.session) {
         // The confirmation link opens a session and lands on `next` (see
