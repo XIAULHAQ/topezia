@@ -1,0 +1,28 @@
+-- 069_crawl_lock — one crawl per site at a time.
+--
+-- HAND-WRITTEN, applied with `prisma db execute` and recorded with
+-- `prisma migrate resolve --applied`. Do NOT regenerate with
+-- `prisma migrate diff` (pgvector drift trap, same as 044-068).
+--
+-- WHY THIS EXISTS. crawlSite() deletes the site's chunks and then inserts up
+-- to 300 new ones. Two crawls of the same site interleave: B's delete lands
+-- before A's inserts finish, and BOTH sets survive. Seen live on 2026-08-02 —
+-- rodeo.graphics held 535 chunks against a cap of 300, and the chat could
+-- quote pages the site no longer serves. A clean scan repairs it, so the bug
+-- hides itself, which is exactly why it needs a lock rather than vigilance.
+--
+-- Two entry points can start a crawl for the same site (POST
+-- /api/company/widget and the WordPress connect approval), and neither took
+-- anything. This column is the lease they now compete for: set before the
+-- crawl, cleared after, and the loser is REFUSED rather than queued — a crawl
+-- already takes up to 120s, and re-scanning is one click.
+--
+-- It is a timestamp and not a boolean because the holder is a serverless
+-- invocation that can be killed mid-crawl with no chance to clear anything.
+-- A boolean would strand such a site un-scannable forever; a timestamp lets
+-- the next caller see the lease is older than any live crawl could be and
+-- take it. NULL means nobody is crawling, which is every row today.
+--
+-- Additive.
+
+ALTER TABLE "WidgetSite" ADD COLUMN IF NOT EXISTS "crawlingAt" TIMESTAMP(3);

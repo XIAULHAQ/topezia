@@ -1192,6 +1192,12 @@ model WidgetSite {
   pagesCrawled Int      @default(0)
   crawledAt    DateTime?
   crawlError   String?
+  /// A crawl is running (migration 069) — one per site, or the two of them
+  /// delete each other's chunks and leave both sets behind. A TIMESTAMP, not
+  /// a flag: the crawl holding it lives in a serverless invocation that can be
+  /// killed without clearing it, so the lease has to be able to expire. See
+  /// lib/widget/crawl.ts.
+  crawlingAt   DateTime?
   /// Detected from the store's own links; the checkout slug is customisable.
   checkoutPath String?
   /// "woocommerce" | "shopify" | null — the two hand off to checkout in

@@ -21,7 +21,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireCompanyOwner } from "@/lib/company/owner";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
-import { normalizeDomain, crawlSite } from "@/lib/widget/crawl";
+import { normalizeDomain, crawlSite, crawlRunning, CRAWL_BUSY } from "@/lib/widget/crawl";
 import { usageThisMonth } from "@/lib/widget/caps";
 import { normalizeAccent, parseReplyHours } from "@/lib/widget/presence";
 import { planFor } from "@/lib/billing/plans";
@@ -130,10 +130,18 @@ export async function POST(req: NextRequest) {
   // Re-scan an existing site, or add a new one.
   const siteId = typeof body.siteId === "string" && body.siteId ? body.siteId : null;
   const existing = siteId
-    ? await prisma.widgetSite.findFirst({ where: { id: siteId, companyId }, select: { id: true, domain: true } })
+    ? await prisma.widgetSite.findFirst({ where: { id: siteId, companyId }, select: { id: true, domain: true, crawlingAt: true } })
     : null;
   if (siteId && !existing) {
     return NextResponse.json({ error: "That website is no longer set up." }, { status: 404 });
+  }
+
+  // Two scans of one site used to run straight through each other and leave
+  // both sets of chunks behind. Refused here, before the domain below is
+  // touched, so a double submit changes nothing at all; crawlSite holds the
+  // lease that actually settles the race.
+  if (existing && crawlRunning(existing.crawlingAt)) {
+    return NextResponse.json({ error: CRAWL_BUSY }, { status: 409 });
   }
 
   if (!existing) {
@@ -170,6 +178,8 @@ export async function POST(req: NextRequest) {
       });
 
   const crawl = await crawlSite(site.id, norm.host, plan.pages);
+  // The pre-check above misses the last few milliseconds; the lease doesn't.
+  if (crawl.busy) return NextResponse.json({ error: crawl.error }, { status: 409 });
 
   const fresh = await prisma.widgetSite.findUnique({ where: { id: site.id }, select: SITE_SELECT });
   return NextResponse.json({ site: fresh ? await view(fresh, company) : null, crawl });

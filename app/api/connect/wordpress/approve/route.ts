@@ -24,7 +24,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
-import { normalizeDomain, crawlSite } from "@/lib/widget/crawl";
+import { normalizeDomain, crawlSite, type CrawlResult } from "@/lib/widget/crawl";
 import { planFor } from "@/lib/billing/plans";
 import { sanitizeDetails } from "@/lib/wordpress/connect";
 import { fetchLogo } from "@/lib/wordpress/logo";
@@ -159,7 +159,11 @@ export async function POST(req: NextRequest) {
     data: { status: "APPROVED", companyId: company.id, siteId: site.id, approvedUserId: userId, approvedAt: new Date() },
   });
 
-  let crawl: { pages: number; chunks: number; products: number; error: string | null } | null = null;
+  // A scan already running for this site (a re-connect racing a re-scan) comes
+  // back busy rather than crawling. The CONNECTION still stands — it was
+  // approved above and is the thing the person actually asked for; the
+  // approval screen shows crawl.error as a warning and they can re-scan.
+  let crawl: CrawlResult | null = null;
   try {
     crawl = await crawlSite(site.id, norm.host, plan.pages);
   } catch (err) {

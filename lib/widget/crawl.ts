@@ -493,12 +493,91 @@ function chunkText(text: string): string[] {
   return out;
 }
 
+export type CrawlResult = {
+  pages: number; chunks: number; products: number; error: string | null;
+  /** Nothing was crawled because another crawl of this site holds the lease. */
+  busy?: boolean;
+};
+
+/**
+ * ONE crawl per site at a time.
+ *
+ * A crawl deletes the site's chunks and then inserts its own. Two of them
+ * overlap badly: B's delete runs before A's inserts finish, so BOTH sets
+ * survive. Seen live on 2026-08-02 — rodeo.graphics ended a double scan with
+ * 535 chunks against a cap of 300, and until the next clean scan the chat
+ * could quote pages the site no longer serves. It self-heals, which is
+ * precisely why it needs a lock and not care.
+ *
+ * The second crawl is REFUSED, not queued. A crawl already takes up to 120s
+ * and runs inside the request; making someone wait 240s for a scan they'd
+ * happily re-trigger with one click is the worse trade.
+ *
+ * The lease EXPIRES. Its holder is a serverless invocation that can be killed
+ * mid-crawl with no chance to clean up, and a lock that only the holder can
+ * release would strand that site un-scannable forever. The ceiling is above
+ * the 120s maxDuration of both routes that crawl, so a lease can only look
+ * stale once the crawl behind it is genuinely dead.
+ */
+const CRAWL_LEASE_MS = 3 * 60_000;
+
+export const CRAWL_BUSY = "A scan of this site is already running — give it a minute, then try again.";
+
+/** Is a crawl in flight, per this row's lease? For refusing early, before
+ *  anything is written. Advisory only — takeCrawlLease is the real gate. */
+export const crawlRunning = (crawlingAt: Date | null | undefined): boolean =>
+  !!crawlingAt && Date.now() - crawlingAt.getTime() < CRAWL_LEASE_MS;
+
+/**
+ * Claim the site's crawl lease, or null if someone else holds it.
+ *
+ * ONE conditional UPDATE, so the check and the set can't be interleaved: the
+ * second of two simultaneous callers blocks on the row lock, then re-evaluates
+ * its WHERE against the row the first one just wrote, sees a fresh crawlingAt
+ * and matches nothing. A read-then-write pair would have the same race the
+ * chunks did.
+ *
+ * The returned stamp IS the lease. Releasing matches on it, so a crawl that
+ * somehow outlived its lease can never clear the lease of the crawl that
+ * replaced it. (A site id that no longer exists also returns null — the
+ * callers have all just read or created the row.)
+ */
+async function takeCrawlLease(siteId: string): Promise<Date | null> {
+  const now = new Date();
+  const stale = new Date(now.getTime() - CRAWL_LEASE_MS);
+  const { count } = await prisma.widgetSite.updateMany({
+    where: { id: siteId, OR: [{ crawlingAt: null }, { crawlingAt: { lt: stale } }] },
+    data: { crawlingAt: now },
+  });
+  return count === 1 ? now : null;
+}
+
+async function releaseCrawlLease(siteId: string, lease: Date): Promise<void> {
+  // A lease we fail to clear is not a lost site — it expires on its own.
+  await prisma.widgetSite
+    .updateMany({ where: { id: siteId, crawlingAt: lease }, data: { crawlingAt: null } })
+    .catch(() => {});
+}
+
+/** The crawl, one at a time per site. See CRAWL_LEASE_MS above. */
+export async function crawlSite(siteId: string, host: string, maxPages = FREE_LIMITS.pages): Promise<CrawlResult> {
+  const lease = await takeCrawlLease(siteId);
+  if (!lease) return { pages: 0, chunks: 0, products: 0, error: CRAWL_BUSY, busy: true };
+  try {
+    return await runCrawl(siteId, host, maxPages);
+  } finally {
+    // Runs on the write path's failures too, which the try/catch inside
+    // runCrawl does not cover — a throw there must not hold the lease.
+    await releaseCrawlLease(siteId, lease);
+  }
+}
+
 /**
  * The whole crawl: discover → fetch → chunk → embed → replace the site's
- * chunks in one transaction. Returns what the UI shows. Throws never — the
- * error lands on WidgetSite.crawlError instead.
+ * chunks. Returns what the UI shows; a crawl that fails to READ the site
+ * lands its error on WidgetSite.crawlError rather than throwing.
  */
-export async function crawlSite(siteId: string, host: string, maxPages = FREE_LIMITS.pages): Promise<{ pages: number; chunks: number; products: number; error: string | null }> {
+async function runCrawl(siteId: string, host: string, maxPages: number): Promise<CrawlResult> {
   let pages = 0;
   let error: string | null = null;
   const rows: { url: string; title: string; content: string }[] = [];
