@@ -23,6 +23,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { EmployerGate } from "../_components/EmployerSection";
 import { Icon, type IconName } from "./icons";
 import type { PlanOffer } from "./plans";
+import BrandsCard from "./brands-card";
 
 /* ── design tokens ──────────────────────────────────────────────────────── */
 const C1 = "#8B5CF6";
@@ -477,6 +478,10 @@ export default function WidgetClient({ offers }: { offers: PlanOffer[] }) {
           )}
         </div>
       )}
+
+      {/* Which websites share a knowledge base. Renders itself away when
+          there is only one, so a single-site company never sees it. */}
+      <BrandsCard siteCount={sites.length} onChanged={() => void loadSites()} />
 
       {error && <p style={{ fontSize: 12.5, color: "#B91C1C", marginTop: 12 }}>{error}</p>}
 
