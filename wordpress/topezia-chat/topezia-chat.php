@@ -3,7 +3,7 @@
  * Plugin Name: Topezia Chat — AI Chatbot & Lead Capture
  * Plugin URI: https://www.topezia.com/free-ai-chatbot
  * Description: An AI chat bubble that answers visitors from your own pages, captures leads and emails them to you. Connect in one click — your logo, contact details and about text are picked up automatically.
- * Version: 2.0.0
+ * Version: 2.0.1
  * Requires at least: 5.8
  * Requires PHP: 7.2
  * Author: Topezia
@@ -34,7 +34,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TOPEZIA_CHAT_VERSION', '2.0.0' );
+define( 'TOPEZIA_CHAT_VERSION', '2.0.1' );
 define( 'TOPEZIA_CHAT_FILE', __FILE__ );
 define( 'TOPEZIA_CHAT_DIR', plugin_dir_path( __FILE__ ) );
 define( 'TOPEZIA_CHAT_URL', plugin_dir_url( __FILE__ ) );

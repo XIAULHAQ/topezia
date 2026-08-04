@@ -4,7 +4,7 @@ Tags: ai chatbot, chatbot, live chat, lead generation, woocommerce
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 2.0.0
+Stable tag: 2.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -99,6 +99,9 @@ Yes. It detects your store, can recommend products and can send a shopper to you
 4. Choosing where the chat appears.
 
 == Changelog ==
+
+= 2.0.1 =
+* Fixed: a connection you had already approved could be left unfinished. The plugin only collected its key if you happened to return by the exact link it sent you to — click "Topezia" in the menu instead, or come back later, and it showed the first-run setup screen as though nothing had happened. It now finishes the connection however you get back, and tells you when one is waiting.
 
 = 2.0.0 =
 * One-click connect: create your Topezia account and set up your website without copying a key.

@@ -257,14 +257,35 @@ function topezia_chat_render() {
 		return;
 	}
 
-	// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-	$returning = isset( $_GET['topezia_return'] );
+	// The return URL still carries ?topezia_return=1 and is still where the
+	// approval sends people — it is just no longer READ here. What this screen
+	// does now depends only on what this site actually has: a key, or an
+	// unfinished handshake, or neither. Nothing hangs on the query string, so
+	// nothing breaks when the redirect is lost.
 	$handshake = get_option( TOPEZIA_CHAT_HANDSHAKE, array() );
 	$key       = topezia_chat_site_key();
 
-	// Coming back from topezia.com with the approval done: finish the job
-	// without making them press anything.
-	if ( $returning && ! $key && ! empty( $handshake['state'] ) ) {
+	/**
+	 * Finish the job whenever there is a job to finish — NOT only when the
+	 * person happens to arrive by the return link.
+	 *
+	 * This used to require $returning. Approve on topezia.com and then reach
+	 * wp-admin any other way — click "Topezia" in the sidebar, close the tab
+	 * and come back later, or simply lose the redirect — and the plugin never
+	 * asked for its key and never mentioned that a connection was waiting. It
+	 * showed the first-run setup screen, so the honest reading was "nothing
+	 * happened, this thing doesn't work."
+	 *
+	 * Brandon hit exactly that: two connections APPROVED on the server, both
+	 * unclaimed, and a plugin insisting it wasn't set up.
+	 *
+	 * Claiming is cheap and safe to repeat: it answers 'pending' while the
+	 * person hasn't approved yet, and the endpoint is idempotent by design
+	 * (it re-mints the key on every claim). So the only cost of trying on
+	 * every page load is one request while a handshake is open, and the
+	 * benefit is that the connection completes however they navigate.
+	 */
+	if ( ! $key && ! empty( $handshake['state'] ) ) {
 		$res = topezia_chat_claim_connect();
 		if ( ! is_wp_error( $res ) && 'pending' !== $res ) {
 			$key = topezia_chat_site_key();
@@ -278,7 +299,12 @@ function topezia_chat_render() {
 
 	if ( $key ) {
 		topezia_chat_render_dashboard( $key );
-	} elseif ( ! empty( $handshake['state'] ) && $returning ) {
+	} elseif ( ! empty( $handshake['state'] ) ) {
+		// Same reasoning as the claim above: a connection in progress is a
+		// fact about this site, not about which URL was used to get here.
+		// Gating it on $returning meant an unfinished handshake was invisible
+		// — the setup screen said "Connect in one click" while the server was
+		// holding an approved connection waiting to be collected.
 		topezia_chat_render_waiting();
 	} else {
 		topezia_chat_render_welcome();

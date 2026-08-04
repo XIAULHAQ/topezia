@@ -14,18 +14,45 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
+/** The named entities worth knowing. Anything not here is left as written
+ *  rather than guessed at — a stray `&foo;` is likelier to be literal text. */
+const NAMED_ENTITIES: Record<string, string> = {
+  lt: "<", gt: ">", quot: '"', apos: "'", amp: "&", nbsp: " ",
+  rsquo: "’", lsquo: "‘", ldquo: "“", rdquo: "”",
+  mdash: "—", ndash: "–", hellip: "…", times: "×",
+};
+
 /**
- * Decode HTML entities. `&amp;` MUST go last, or `&amp;lt;` would decode twice
- * and resurrect a tag we never had.
+ * Decode HTML entities.
+ *
+ * ONE PASS, deliberately. The old version chained six .replace() calls and
+ * noted that `&amp;` had to go last or `&amp;lt;` would decode twice and
+ * resurrect a tag we never had. Matching each entity once removes that hazard
+ * outright instead of relying on the order being maintained.
+ *
+ * And it handles NUMERIC entities, which the old one did not beyond `&#39;`.
+ * WordPress encodes with them constantly and with leading zeros — a real
+ * crawled title came back as "Rigby &#038; Rexburg | Valorie&#8217;s List"
+ * and would have been shown to visitors exactly like that, ampersand codes
+ * and all.
  */
 export function decodeHtmlEntities(s: string): string {
-  return s
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#0?39;/g, "'")
-    .replace(/&#x27;/gi, "'")
-    .replace(/&amp;/gi, "&");
+  return s.replace(/&(#\d{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z]{2,8});/g, (whole, body: string) => {
+    if (body.startsWith("#")) {
+      const hex = body[1] === "x" || body[1] === "X";
+      const code = parseInt(hex ? body.slice(2) : body.slice(1), hex ? 16 : 10);
+      // Surrogates and out-of-range values would throw or produce mojibake;
+      // leaving the text as the page wrote it is the safer failure.
+      if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff) return whole;
+      if (code >= 0xd800 && code <= 0xdfff) return whole;
+      try {
+        return String.fromCodePoint(code);
+      } catch {
+        return whole;
+      }
+    }
+    return NAMED_ENTITIES[body.toLowerCase()] ?? whole;
+  });
 }
 
 /**

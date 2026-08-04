@@ -185,6 +185,39 @@ const sameHost = (url: string, host: string) => {
 };
 
 /** Sitemap <loc> entries on this host, else a shallow BFS from the homepage. */
+/**
+ * Machine-generated listing pages, which are never worth a page of the budget.
+ *
+ * An author archive on valorieblanchard.com came back titled
+ * "email2xia@gmail.com" — WordPress names them after the account when no
+ * display name is set — so the owner's address went into the chat's knowledge
+ * and could be quoted at a visitor. Tag, category, date and paged archives are
+ * the same shape: no writing of their own, just excerpts of pages the crawl
+ * already has, spending the page cap twice on the same words.
+ *
+ * Note what is NOT here: /blog, /news, /shop and /products are real index
+ * pages people write and link to, and dropping those would lose the site's
+ * own description of what it sells.
+ */
+function isArchivePath(u: string): boolean {
+  let path: string;
+  try {
+    path = new URL(u).pathname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return (
+    /(^|\/)(author|tag|category|archives?)\//.test(path) ||
+    // WordPress date archives: /2026/, /2026/08/, /2026/08/04/
+    /(^|\/)\d{4}\/(\d{2}\/(\d{2}\/)?)?$/.test(path) ||
+    // Pagination of any of the above, and of anything else.
+    /(^|\/)page\/\d+\/?$/.test(path) ||
+    /(^|\/)(feed|comments|embed)\/?$/.test(path) ||
+    // Search results and WP's internal endpoints.
+    /(^|\/)(wp-json|wp-admin|wp-login|xmlrpc\.php|cart|checkout|my-account)(\/|$)/.test(path)
+  );
+}
+
 async function discoverUrls(host: string, maxPages: number, stats?: FetchStats, robots?: Robots): Promise<string[]> {
   const base = `https://${host}`;
   const seen = new Set<string>([base, `${base}/`]);
@@ -192,6 +225,7 @@ async function discoverUrls(host: string, maxPages: number, stats?: FetchStats, 
     sameHost(u, host) &&
     !/\.(png|jpe?g|gif|svg|webp|pdf|zip|mp4|css|js|ico|xml)(\?|$)/i.test(u) &&
     !u.includes("#") &&
+    !isArchivePath(u) &&
     // robots.txt is checked at DISCOVERY, so a disallowed page is never even
     // requested — obeying it by throwing the response away afterwards would
     // still have hit a server that asked us not to.

@@ -28,6 +28,7 @@ import { normalizeDomain, crawlSite, type CrawlResult } from "@/lib/widget/crawl
 import { planFor } from "@/lib/billing/plans";
 import { sanitizeDetails } from "@/lib/wordpress/connect";
 import { fetchLogo } from "@/lib/wordpress/logo";
+import { fetchSiteIdentity } from "@/lib/wordpress/identity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -168,6 +169,46 @@ export async function POST(req: NextRequest) {
     crawl = await crawlSite(site.id, norm.host, plan.pages);
   } catch (err) {
     console.error("[wp-connect] crawl failed:", err instanceof Error ? err.message : err);
+  }
+
+  /**
+   * SECOND OPINION, from the site's own homepage.
+   *
+   * The plugin reports WordPress's options — blogname, tagline, Custom Logo.
+   * On a site whose metadata is run by an SEO plugin those are routinely
+   * blank, and we would take the emptiness at face value: valorieblanchard.com
+   * connected with name, tagline, about and logo all null and became a company
+   * called "valorieblanchard.com" with nothing in it — while its homepage said
+   * `og:site_name: Valorie`, carried a real description, and the crawl that
+   * had JUST finished held its title and its About page.
+   *
+   * So having read the site, ask it what it calls itself, and fill only what
+   * is still empty. Same rule as everywhere else on this route: blanks only,
+   * never overwriting a word the owner wrote. Re-read the row first, because
+   * the crawl above can take two minutes and this is the fresher truth.
+   */
+  const current = await prisma.company.findUnique({
+    where: { id: company.id },
+    select: { name: true, tagline: true, about: true, logoPath: true },
+  });
+  if (current) {
+    const identity = await fetchSiteIdentity(norm.host);
+    const fill: Record<string, string> = {};
+    // The name is only replaced when ours is the bare domain — i.e. we never
+    // had one. A name someone chose, even a poor one, is theirs.
+    if (identity.name && current.name === norm.host) fill.name = identity.name;
+    if (!current.tagline && identity.tagline) fill.tagline = identity.tagline;
+    // A description too long to be a strapline is still the site describing
+    // itself in its own words — better About text than an empty panel.
+    if (!current.about && identity.description) fill.about = identity.description;
+    if (Object.keys(fill).length) {
+      await prisma.company.update({ where: { id: company.id }, data: fill });
+      company = { ...company, ...fill } as typeof company;
+    }
+    if (!current.logoPath && identity.logoUrl) {
+      const path = await fetchLogo(identity.logoUrl, company.id);
+      if (path) await prisma.company.update({ where: { id: company.id }, data: { logoPath: path } });
+    }
   }
 
   return NextResponse.json({
