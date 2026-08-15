@@ -112,6 +112,9 @@ never attacker-chosen text.
 | Test users | `brandon@tiltmediaco.com`, `zia.esource@gmail.com` (2 / 100) |
 | OAuth client | `Topezia Web` (Web application) |
 | Redirect URI | `https://www.topezia.com/api/network/google/callback` |
+| Authorized domain | `topezia.com` — auto-added from the redirect URI |
+| Consent screen URLs | home `/`, privacy `/privacy`, terms `/terms` (all verified 200 before registering) |
+| Search Console | **already verified** — `sc-domain:topezia.com` *Domain* property, owner `zia.esource@gmail.com` |
 | Vercel | `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` on Production; redeployed |
 
 **Verified end to end** by building the exact consent URL the code generates: Google
@@ -121,12 +124,23 @@ not completed.
 
 ### STILL TO DO
 
-1. **Verify `topezia.com` in Search Console** under `zia.esource@gmail.com` — the
-   same account that owns the project, or verification stalls.
-2. **Submit for verification** (Verification Center) with a scope justification and
-   an unlisted YouTube demo video. Google quotes up to 10 days.
-3. **Only then** publish the app. Until it is verified, everyone who is not one of
-   the two test users hits Google's "unverified app" wall.
+Only one thing, and it is not a config step:
+
+1. **Submit for verification** (Verification Center) with a scope justification and
+   an unlisted YouTube demo video. Google quotes up to 10 days. The video should
+   show: click Connect Google Contacts → consent screen → the results page with
+   matched members and invitable contacts → tick two people → send. Say out loud
+   that the token is not stored and the contact list is deleted when the member
+   finishes — that is the Limited Use claim the reviewer is checking.
+2. **Only then** publish the app (Audience → Publish app). Until it is verified,
+   anyone who is not one of the two test users hits Google's "unverified app"
+   wall — so the import button must not go in front of members before that.
+
+Search Console verification was **already done** and needs no action: it is a
+*Domain* property (`sc-domain:topezia.com`), owned and verified by
+`zia.esource@gmail.com`, which covers www and every subdomain over both
+protocols. That it is the same account owning the OAuth project is what makes
+the authorized domain acceptable to Google's reviewer.
 
 ### Reference — what was configured, if it ever needs rebuilding
 
