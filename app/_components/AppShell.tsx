@@ -16,9 +16,16 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { C, GRAD, FONT, Icon, BrandMark, initials } from "./ui";
 import { fetchProfileShared, readProfileCache } from "@/lib/fetch-profile";
-import { clearClientCaches } from "@/lib/client-cache";
+import { cachedFetchJson, clearClientCaches, writeCache } from "@/lib/client-cache";
 
-type NavItem = { icon: string; label: string; href?: string; soon?: boolean };
+/**
+ * Fired by /network when it accepts or ignores a request. Accepting happens on
+ * the same page, so pathname never changes and the badge would otherwise keep
+ * showing a count the member has already dealt with.
+ */
+export const PENDING_CHANGED = "topezia:network-pending-changed";
+
+type NavItem = { icon: string; label: string; href?: string; soon?: boolean; badge?: "network" };
 
 /**
  * The two "go find work" destinations: inline beside the avatar on desktop, a
@@ -57,6 +64,9 @@ const NAV: NavItem[] = [
   // profile — the saved/collected things come after.
   { icon: "doc", label: "Resume Builder", href: "/resume" },
   { icon: "spark", label: "Career Coach", href: "/coach" },
+  // Above the saved/collected things: the network is people, and it belongs
+  // with the profile it hangs off rather than with a list of bookmarks.
+  { icon: "link", label: "My Network", href: "/network", badge: "network" },
   { icon: "bookmark", label: "Saved Jobs", href: "/saved" },
   { icon: "zap", label: "Saved Projects", href: "/saved/projects" },
   { icon: "image", label: "My Work", href: "/portfolio/mine" },
@@ -87,6 +97,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [photo, setPhoto] = useState<string | null>(null);
   const [tier, setTier] = useState<string | null>(null);
   const [searchQ, setSearchQ] = useState("");
+  // Requests waiting on me + acceptances I haven't seen. One number, because
+  // the sidebar has room for one — /network separates them.
+  const [pending, setPending] = useState(0);
 
   useEffect(() => {
     // Self-contained identity: the top-bar avatar needs the signed-in name/photo,
@@ -99,6 +112,36 @@ export default function AppShell({ children }: { children: ReactNode }) {
     };
     applyIdentity(readProfileCache()); // instant avatar on repeat visits
     fetchProfileShared().then(applyIdentity).catch(() => {});
+  }, []);
+
+  // The connection-request badge. Re-read on every navigation so accepting a
+  // request on /network clears the count without a reload, and hydrated from
+  // the session cache first so it never flashes 0 → 3 on a repeat visit.
+  // clearClientCaches() on login/logout already covers this key, so one
+  // account's count can never appear under another's.
+  useEffect(() => {
+    void cachedFetchJson<{ total: number }>("/api/network/pending", (d) =>
+      setPending(d.total ?? 0)
+    );
+  }, [pathname]);
+
+  // Same-page updates. A plain fetch rather than cachedFetchJson: the cached
+  // value is the number we already know is stale, and re-applying it first
+  // would flash the old count before the new one lands.
+  useEffect(() => {
+    const refresh = async () => {
+      try {
+        const r = await fetch("/api/network/pending");
+        if (!r.ok) return;
+        const d = (await r.json()) as { total: number };
+        writeCache("/api/network/pending", d);
+        setPending(d.total ?? 0);
+      } catch {
+        /* the badge is decoration — leave the last known count */
+      }
+    };
+    window.addEventListener(PENDING_CHANGED, refresh);
+    return () => window.removeEventListener(PENDING_CHANGED, refresh);
   }, []);
 
   useEffect(() => {
@@ -219,10 +262,39 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
           {NAV.map((nv) => {
             const active = nv.href && pathname === nv.href;
+            const count = nv.badge === "network" ? pending : 0;
             const inner = (
               <>
-                <Icon name={nv.icon} />
+                {/* The icon is wrapped only when there's a count to hang off
+                    it — the dot has to stay visible in the collapsed rail,
+                    where the label (and so the pill) is display:none. */}
+                {count > 0 ? (
+                  <span style={{ position: "relative", display: "flex", flex: "none" }}>
+                    <Icon name={nv.icon} />
+                    {!expanded && (
+                      <span style={{
+                        position: "absolute", top: -3, right: -4, width: 8, height: 8,
+                        borderRadius: "50%", background: "#EF4444", border: "1.5px solid #fff",
+                      }} />
+                    )}
+                  </span>
+                ) : (
+                  <Icon name={nv.icon} />
+                )}
                 <span style={{ flex: 1, display: disp }}>{nv.label}</span>
+                {count > 0 && expanded && (
+                  <span
+                    aria-label={`${count} waiting`}
+                    style={{
+                      background: active ? "rgba(255,255,255,.25)" : "#EF4444",
+                      color: "#fff", fontSize: 10.5, fontWeight: 700, borderRadius: 999,
+                      padding: "2px 7px", minWidth: 18, textAlign: "center",
+                    }}
+                  >
+                    {/* Past 99 the exact number stops being information. */}
+                    {count > 99 ? "99+" : count}
+                  </span>
+                )}
                 {nv.soon && expanded && (
                   <span style={{ background: "#F1F5F9", color: C.mut, fontSize: 9.5, fontWeight: 700, borderRadius: 999, padding: "2px 7px", border: `1px solid ${C.line}` }}>Soon</span>
                 )}

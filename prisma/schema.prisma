@@ -438,6 +438,24 @@ model Profile {
   insightUnsubToken String  @unique @default(uuid()) // one-click unsubscribe, no login needed
   insightSnapshots  InsightSnapshot[]
 
+  // Email when someone asks to connect (migration 072).
+  //
+  // Defaults TRUE, unlike insightAlerts, because this is not marketing: a named
+  // person has asked this member a direct question and is waiting for an answer.
+  // Silence by default would make the graph feel dead. It is still one click to
+  // stop, from the email or from /settings.
+  connectionEmails  Boolean @default(true)
+  /// Last time this member actually opened /network (migration 074).
+  ///
+  /// Distinct from Connection.acceptNotifiedAt, which means "we emailed them
+  /// about it". An email leaving our server is not the member reading it, so
+  /// clearing an in-app badge on send would hide news nobody ever saw. This is
+  /// the only column that means "they looked".
+  networkSeenAt     DateTime?
+  // Separate from insightUnsubToken on purpose: opting out of connection mail
+  // must not silently kill insight alerts, or the other way round.
+  notifyUnsubToken  String  @unique @default(uuid())
+
   portfolios        Portfolio[]
   portfolioSaves    PortfolioSave[]
   portfolioLikes    PortfolioLike[]
@@ -449,6 +467,14 @@ model Profile {
   companyWorkSaves  CompanyWorkSave[]
   companyWorkLikes  CompanyWorkLike[]
   companyInquiries  CompanyInquiry[]
+
+  // The member graph (migration 071). Two relations for one concept: an edge
+  // is stored once, in the direction it was asked, so "my network" is the
+  // union of both sides — see lib/network/connections.ts.
+  connectionsSent     Connection[]    @relation("ConnectionsSent")
+  connectionsReceived Connection[]    @relation("ConnectionsReceived")
+  contactImports      ContactImport[]
+  networkInvites      NetworkInvite[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -1976,4 +2002,171 @@ model CompanyInvite {
   // which deletes the row — so this can't strand anyone.
   @@unique([companyId, email])
   @@index([companyId, status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The member graph (migration 071)
+//
+// LinkedIn's model, not a follower model: an edge is a CLAIM BY BOTH PEOPLE
+// that they know each other, so it does not exist until the second one agrees.
+// One row per pair — never two — which is what keeps "are we connected?" a
+// single indexed lookup instead of an OR over two columns in every query.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ConnectionStatus {
+  PENDING
+  ACCEPTED
+}
+
+model Connection {
+  id          String           @id @default(uuid())
+
+  // Direction is preserved even after ACCEPTED, because it is the honest
+  // record of who asked. It carries no privilege once accepted — every read
+  // path treats an accepted edge as symmetric.
+  requesterId String
+  requester   Profile          @relation("ConnectionsSent", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId String
+  addressee   Profile          @relation("ConnectionsReceived", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  status      ConnectionStatus @default(PENDING)
+
+  /// When the ADDRESSEE was emailed about this request (migration 072).
+  ///
+  /// Per-request rather than a "last notified" stamp on the profile, because
+  /// that is the only way to send one email covering the three requests that
+  /// arrived together and still notice the fourth that arrived afterwards.
+  /// Null means nobody has been told yet.
+  notifiedAt  DateTime?
+
+  /// When the REQUESTER was emailed that this was accepted (migration 073).
+  ///
+  /// The mirror of notifiedAt: that one tracks telling the addressee somebody
+  /// asked, this one tracks telling the asker they said yes. Two columns rather
+  /// than one because the two facts are told to opposite ends of the same row,
+  /// and a single stamp could not say which end had heard.
+  acceptNotifiedAt DateTime?
+
+  /// The optional line LinkedIn calls "add a note". Shown to the addressee
+  /// while deciding, then kept — it is often the only context for why two
+  /// people are connected at all.
+  note        String?
+
+  /// Set when this edge started life as an emailed invitation to a non-member,
+  /// so the invited person can see it was them who was asked, not a stranger
+  /// cold-adding them the moment they signed up.
+  fromInviteId String?         @unique
+  fromInvite   NetworkInvite?  @relation(fields: [fromInviteId], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime         @default(now())
+  respondedAt DateTime?
+
+  // The pair is unique in the stored direction. The REVERSE direction is
+  // prevented in application code (lib/network/connections.ts), where a
+  // reciprocal request is treated as an acceptance rather than a second row —
+  // which is also what a person means when they invite someone who already
+  // invited them.
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+  @@index([requesterId, status])
+  // The notifier's whole working set: pending requests nobody has been told
+  // about yet. Partial-index territory eventually; at this size the composite
+  // is enough and Prisma can express it.
+  @@index([status, notifiedAt])
+  // The other half of the notifier's working set: accepted edges whose asker
+  // has not been told yet.
+  @@index([status, acceptNotifiedAt])
+}
+
+/// One run of "find people I know" — the imported address book, encrypted and
+/// on a short timer.
+///
+/// WHY THIS IS STORED AT ALL, AND WHY IT EXPIRES. Google's OAuth consent lands
+/// on a redirect, which cannot hand JSON back to the page that started it, and
+/// serverless instances share no memory — so the matched result has to survive
+/// one hop through the database. It is the user's address book: other people's
+/// names and addresses, held under Google's Limited Use rules, which permit
+/// keeping it only for the period needed to provide the feature. So it is
+/// encrypted at rest (AES-256-GCM, lib/crypto/secrets.ts), read exactly once by
+/// the page that opens next, deleted the moment the user finishes or skips, and
+/// swept after IMPORT_TTL_MINUTES regardless.
+///
+/// The Google access token is NEVER stored — not here, not anywhere. It is
+/// exchanged, used once, and dropped, so there is no offline access to revoke.
+model ContactImport {
+  id        String   @id @default(uuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  source    String   @default("GOOGLE")
+  /// Encrypted JSON: the matched members and the invitable strangers.
+  payload   String
+  /// How many contacts Google returned, kept after payload is destroyed so the
+  /// hub can say "we looked at 312 contacts" without holding any of them.
+  total     Int      @default(0)
+
+  consumedAt DateTime?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([profileId, createdAt])
+  @@index([expiresAt])
+}
+
+enum NetworkInviteStatus {
+  PENDING
+  ACCEPTED
+}
+
+/// An invitation emailed to someone who is not a member yet.
+///
+/// This is the second place in the product where a member's input makes us mail
+/// an address they chose (the first is CompanyInvite), and the only one that
+/// does it in bulk. Every guardrail in lib/network/invites.ts exists because of
+/// that: caps, two rate-limit windows, a global do-not-contact list, and one
+/// invitation per address per inviter, ever.
+model NetworkInvite {
+  id         String              @id @default(uuid())
+  inviterId  String
+  inviter    Profile             @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  email      String
+  /// What the inviter's address book called them. Used to address the email
+  /// ("Hi Jeff") and shown back to the inviter in their sent list. Never
+  /// published — the person writes their own name when they sign up.
+  name       String?
+
+  /// The secret in /n/{token}.
+  token      String              @unique
+  status     NetworkInviteStatus @default(PENDING)
+
+  sentAt     DateTime?
+  /// Why delivery failed, when it did. Kept so the inviter is told the truth
+  /// rather than shown a "sent" that never left.
+  sendError  String?
+  acceptedAt DateTime?
+  expiresAt  DateTime
+
+  createdAt  DateTime            @default(now())
+
+  /// The connection this invitation turned into once they joined.
+  connection Connection?
+
+  // One invitation per address per inviter, ever. Not "one outstanding" —
+  // re-inviting the same person is exactly the behaviour that makes a network
+  // product feel like spam, so the database forbids it rather than the UI.
+  @@unique([inviterId, email])
+  @@index([inviterId, status])
+}
+
+/// Addresses that must never be emailed an invitation again, by anyone.
+///
+/// Deliberately global and deliberately keyed by the address itself: a person
+/// who says "stop" is saying it to Topezia, not to the one member who happened
+/// to import them. Populated by the unsubscribe link in every invitation, and
+/// by hard bounces if that is ever wired up.
+model InviteSuppression {
+  email     String   @id
+  reason    String   @default("unsubscribed")
+  createdAt DateTime @default(now())
 }
