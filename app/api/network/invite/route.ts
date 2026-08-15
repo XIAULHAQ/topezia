@@ -29,7 +29,9 @@ import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// Up to INVITES_PER_BATCH (50) invitations, each one a sequential Resend call.
+// Headroom for a slow upstream rather than a half-sent batch.
+export const maxDuration = 300;
 
 type Incoming = { email?: unknown; name?: unknown };
 

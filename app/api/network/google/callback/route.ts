@@ -22,7 +22,10 @@ import { encryptJson, secretsAvailable } from "@/lib/crypto/secrets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60; // a large address book is two paginated APIs
+// A large address book is two paginated Google APIs (up to MAX_CONTACTS = 2000)
+// plus the match query. Timing out here loses the member's consent round trip
+// and makes them start again, so it gets room.
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);

@@ -21,7 +21,13 @@ import { runConnectionNotifications } from "@/lib/network/notify";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+// 200 recipients per run (MAX_RECIPIENTS_PER_RUN), each a few queries and one
+// sequential Resend call — 100-200s on a full batch. The old 120 was sized to
+// the Hobby ceiling and would have cut most full batches short. Timing out is
+// recoverable by design (unprocessed recipients stay unmarked and the next tick
+// picks them up), but a backlog would then need several ticks to drain and
+// every run would waste the work it did not finish.
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;

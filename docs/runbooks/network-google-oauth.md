@@ -269,10 +269,16 @@ and covers both halves. That opt-out flips one boolean and nothing else — it i
 *not* the global `InviteSuppression` list, which is for strangers who never
 asked to hear from us.
 
-**The four-hourly schedule needs a Vercel Pro plan** (Hobby caps crons at once
-per day). The existing widget-digest cron already declares `maxDuration = 120`,
-which only builds on Pro, so this is consistent with what is deployed — but if a
-deploy ever fails on the cron schedule, that is the reason.
+**The account is on Vercel Pro** (confirmed 2026-08-15), so the four-hourly
+schedule is fine — Hobby would cap crons at once per day.
+
+Pro also raises the function ceiling from 60s to 300s, and the notifier is sized
+to use it: one run processes up to 200 recipients, each a few queries and a
+sequential Resend call, which is 100-200s on a full batch. `maxDuration = 300`
+on the cron, the invite endpoint (50 sequential sends) and the Google callback
+(two paginated APIs over up to 2,000 contacts). **If this ever moves back to
+Hobby, those three routes fail to build** — that is the right failure, since
+silently truncating them would half-send batches.
 
 Migration 073 **backfills `acceptNotifiedAt` on every already-ACCEPTED row.**
 Without it, the first cron run after deploy would email every member about every
