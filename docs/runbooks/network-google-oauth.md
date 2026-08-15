@@ -41,8 +41,8 @@ signed-out state fine but any signed-in read threw
 
 | Variable | Needed for | Status |
 |---|---|---|
-| `GOOGLE_CLIENT_ID` | contact import | **not set** |
-| `GOOGLE_CLIENT_SECRET` | contact import | **not set** |
+| `GOOGLE_CLIENT_ID` | contact import | set (Production, 2026-08-15) |
+| `GOOGLE_CLIENT_SECRET` | contact import | set (Production, 2026-08-15) |
 | `TOPEZIA_SECRET_KEY` | encrypting the imported address book | already set |
 | `RESEND_API_KEY` | sending invitations | already set |
 | `NETWORK_FROM_EMAIL` | sender identity on invitations | optional |
@@ -98,7 +98,37 @@ never attacker-chosen text.
 
 ## 3. Google OAuth verification — the long pole
 
-### What to build in Google Cloud Console
+### DONE — what exists today (built 2026-08-15)
+
+| | |
+|---|---|
+| Google account | `zia.esource@gmail.com` — **owns the OAuth app permanently** |
+| GCP project | name `Topezia`, id `topezia`, billing "Firebase Payment" |
+| API | Google People API — enabled |
+| Consent screen | External, publishing status **Testing** |
+| App name shown to users | `Topezia` · support email `zia.esource@gmail.com` |
+| Notification contacts | `zia.esource@gmail.com`, `brandon@tiltmediaco.com` |
+| Scopes | `contacts.readonly` + `contacts.other.readonly` — both under **sensitive**; restricted list is empty, confirming no CASA |
+| Test users | `brandon@tiltmediaco.com`, `zia.esource@gmail.com` (2 / 100) |
+| OAuth client | `Topezia Web` (Web application) |
+| Redirect URI | `https://www.topezia.com/api/network/google/callback` |
+| Vercel | `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` on Production; redeployed |
+
+**Verified end to end** by building the exact consent URL the code generates: Google
+renders the account chooser "to continue to topezia.com" with no
+`redirect_uri_mismatch` and no `invalid_client`. The grant itself was deliberately
+not completed.
+
+### STILL TO DO
+
+1. **Verify `topezia.com` in Search Console** under `zia.esource@gmail.com` — the
+   same account that owns the project, or verification stalls.
+2. **Submit for verification** (Verification Center) with a scope justification and
+   an unlisted YouTube demo video. Google quotes up to 10 days.
+3. **Only then** publish the app. Until it is verified, everyone who is not one of
+   the two test users hits Google's "unverified app" wall.
+
+### Reference — what was configured, if it ever needs rebuilding
 
 1. New project (or an existing one) → **APIs & Services**.
 2. Enable the **People API**.
