@@ -46,12 +46,18 @@ signed-out state fine but any signed-in read threw
 | `TOPEZIA_SECRET_KEY` | encrypting the imported address book | already set |
 | `RESEND_API_KEY` | sending invitations | already set |
 | `NETWORK_FROM_EMAIL` | sender identity on invitations | optional |
-| `CRON_SECRET` | connection-request notification emails | **check Vercel** |
+| `CRON_SECRET` | connection notification emails | already set |
 
-`CRON_SECRET` is not in the local `.env`. If it is not set in Vercel either, the
-notification cron **fails closed and sends nothing** — deliberately, since an
-unauthenticated trigger would let anyone force-send mail to members. The in-app
-badge is unaffected and keeps working.
+`CRON_SECRET` is **already set in Vercel** (Sensitive, Preview + Production;
+verified 2026-08-15). It is deliberately NOT in the local `.env`, which is why
+the cron route answers 404 to a local `curl` — that is the fail-closed path
+working, not a misconfiguration. Without the secret the cron sends nothing,
+because an unauthenticated trigger would let anyone force-send mail to members.
+The in-app badge is unaffected either way.
+
+To exercise the cron locally, add a `CRON_SECRET` of your own to `.env` and call
+the route with `Authorization: Bearer <that value>`. It does not need to match
+the deployed one — each deployment checks its own.
 
 `NETWORK_FROM_EMAIL` defaults to `Topezia <invites@mail.topezia.com>`. Anything
 on the already-verified `mail.topezia.com` subdomain works without touching
