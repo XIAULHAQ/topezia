@@ -34,7 +34,7 @@ export async function GET() {
       currentLocation: true, country: true, industries: true, resumeText: true,
       employmentTypes: true, remoteTypes: true, locations: true, salaryFloor: true,
       salaryTarget: true, salaryPeriod: true, workAuthorization: true, tier: true, createdAt: true,
-      premiumUntil: true, stripeCustomerId: true,
+      premiumUntil: true, stripeCustomerId: true, connectionEmails: true,
       skills: { select: { proficiency: true, confidence: true, source: true, skill: { select: { name: true } } } },
       // "Export my data" must actually be all of it.
       publications: { select: { type: true, title: true, authors: true, venue: true, year: true, doi: true, isbn: true, url: true, abstract: true } },
@@ -80,11 +80,21 @@ export async function POST(req: NextRequest) {
   const { userId, authed } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "No account." }, { status: 401 });
 
-  let body: { action?: string; alertId?: string };
+  let body: { action?: string; alertId?: string; value?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  // Connection-request emails. Reversible from here in both directions, unlike
+  // the emailed unsubscribe link, which only ever turns them off.
+  if (body.action === "set-connection-emails") {
+    if (typeof body.value !== "boolean") {
+      return NextResponse.json({ error: "On or off?" }, { status: 400 });
+    }
+    await prisma.profile.updateMany({ where: { userId }, data: { connectionEmails: body.value } });
+    return NextResponse.json({ ok: true, connectionEmails: body.value });
   }
 
   if (body.action === "delete-resume-text") {

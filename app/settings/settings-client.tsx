@@ -19,7 +19,9 @@ interface Account {
   activity: { clicks: number; saves: number; dismissals: number };
   alerts: Alert[];
   membership: Membership;
-  profile: unknown;
+  // Typed only for the fields this page actually reads; the rest of the profile
+  // flows through untouched for "Export my data".
+  profile: { connectionEmails?: boolean } & Record<string, unknown>;
 }
 
 const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" });
@@ -148,6 +150,34 @@ export default function SettingsClient() {
               </div>
             ))
           )}
+        </section>
+
+        <section style={S.card}>
+          <div style={S.cardLabel}>Connection emails</div>
+          {(() => {
+            // Defaults to on for accounts that predate the column, matching the
+            // database default — a missing value must not read as "off".
+            const on = acct.profile?.connectionEmails !== false;
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 15 }}>Email me when someone asks to connect, or accepts</div>
+                  <div style={S.meta}>
+                    {acct.authed
+                      ? "One email a day at most, covering both. Everything waits for you on your network page either way."
+                      : "Sign in to manage this."}
+                  </div>
+                </div>
+                <button
+                  style={S.linkBtn}
+                  disabled={!acct.authed || busy !== null}
+                  onClick={() => post("set-connection-emails", { value: !on })}
+                >
+                  {busy === "set-connection-emails" ? "Saving…" : on ? "Turn off" : "Turn on"}
+                </button>
+              </div>
+            );
+          })()}
         </section>
 
         <section style={S.card}>
