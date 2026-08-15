@@ -102,7 +102,7 @@ export default function NetworkClient() {
   const invites = data?.invites ?? [];
 
   return (
-    <div style={{ display: "grid", gap: 18 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 18 }}>
       <div>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: C.ink, margin: "0 0 4px" }}>Your network</h1>
         <p style={{ color: C.mut, fontSize: 14, margin: 0 }}>
@@ -128,7 +128,7 @@ export default function NetworkClient() {
           <h2 style={{ fontSize: 15, fontWeight: 700, color: C.ink, margin: "0 0 4px" }}>
             {incoming.length === 1 ? "1 person wants to connect" : `${incoming.length} people want to connect`}
           </h2>
-          <div style={{ display: "grid", gap: 2, marginTop: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 2, marginTop: 8 }}>
             {incoming.map((r) => (
               <PersonRow
                 key={r.id}
@@ -191,7 +191,7 @@ export default function NetworkClient() {
           connections.length === 0 ? (
             <Empty>No connections yet. Find the people you already know above.</Empty>
           ) : (
-            <div style={{ display: "grid", gap: 2 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 2 }}>
               {connections.map((c) => (
                 <PersonRow
                   key={c.id}
@@ -217,7 +217,7 @@ export default function NetworkClient() {
           outgoing.length === 0 ? (
             <Empty>Nothing waiting on anyone else.</Empty>
           ) : (
-            <div style={{ display: "grid", gap: 2 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 2 }}>
               {outgoing.map((c) => (
                 <PersonRow
                   key={c.id}
@@ -238,7 +238,7 @@ export default function NetworkClient() {
         ) : invites.length === 0 ? (
           <Empty>You haven't invited anyone who isn't on Topezia yet.</Empty>
         ) : (
-          <div style={{ display: "grid", gap: 2 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 2 }}>
             {invites.map((i) => (
               <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 4px" }}>
                 <Icon name="mail" size={18} color={C.mut} />

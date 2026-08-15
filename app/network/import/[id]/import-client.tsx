@@ -159,7 +159,7 @@ export default function ImportClient({ importId }: { importId: string }) {
   if (!data) return <p style={{ color: C.mut, fontSize: 14 }}>Reading your contacts…</p>;
 
   return (
-    <div style={{ display: "grid", gap: 18 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 18 }}>
       <div>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: C.ink, margin: "0 0 4px" }}>
           {connectable.length > 0 ? "People you know are already here" : "Invite the people you know"}
@@ -250,21 +250,29 @@ export default function ImportClient({ importId }: { importId: string }) {
           borderRadius: 14, padding: "13px 16px", display: "flex", alignItems: "center",
           gap: 12, flexWrap: "wrap", boxShadow: "0 -4px 18px rgba(15,23,42,.06)",
         }}>
-          <div style={{ flex: 1, minWidth: 180, fontSize: 13.5, color: total ? C.ink : C.mut, fontWeight: total ? 650 : 500 }}>
+          {/* minWidth is small enough that the count can share a line on a
+              phone; when it can't, it takes its own and the buttons follow
+              together rather than Send stranding itself on a third line. */}
+          <div style={{ flex: 1, minWidth: 120, fontSize: 13.5, color: total ? C.ink : C.mut, fontWeight: total ? 650 : 500 }}>
             {total === 0
               ? "Nobody selected yet"
               : `${pickedMembers.size} request${pickedMembers.size === 1 ? "" : "s"}, ${pickedContacts.size} invitation${pickedContacts.size === 1 ? "" : "s"}`}
           </div>
-          <button style={BTN} disabled={busy} onClick={() => finish("Skipped — nothing was sent.")}>
-            Skip
-          </button>
-          <button
-            style={{ ...BTN_PRIMARY, opacity: total === 0 || busy ? 0.5 : 1, cursor: total === 0 || busy ? "not-allowed" : "pointer" }}
-            disabled={total === 0 || busy}
-            onClick={sendAll}
-          >
-            {busy ? "Sending…" : total === 0 ? "Send" : `Send to ${total}`}
-          </button>
+          {/* The two buttons are one wrapping unit — they belong together at
+              every width, and marginLeft:auto keeps them right-aligned when
+              they do share the row with the count. */}
+          <div style={{ display: "flex", gap: 10, marginLeft: "auto", flex: "none" }}>
+            <button style={BTN} disabled={busy} onClick={() => finish("Skipped — nothing was sent.")}>
+              Skip
+            </button>
+            <button
+              style={{ ...BTN_PRIMARY, opacity: total === 0 || busy ? 0.5 : 1, cursor: total === 0 || busy ? "not-allowed" : "pointer" }}
+              disabled={total === 0 || busy}
+              onClick={sendAll}
+            >
+              {busy ? "Sending…" : total === 0 ? "Send" : `Send to ${total}`}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -293,7 +301,10 @@ function Section({
           {selected > 0 ? `Clear (${selected})` : `Select all ${count}`}
         </button>
       </div>
-      <div style={{ display: "grid", gap: 1, maxHeight: 460, overflowY: "auto" }}>{children}</div>
+      {/* Capped so 600 contacts don't make one enormous page, but relative to
+          the viewport as well as absolute: a fixed 460px scroller inside a
+          short phone screen leaves almost nothing visible around it. */}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 1, maxHeight: "min(460px, 50vh)", overflowY: "auto" }}>{children}</div>
     </div>
   );
 }
