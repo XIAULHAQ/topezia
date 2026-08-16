@@ -36,8 +36,11 @@ import { createClient } from "@/lib/supabase/client";
 import { C, GRAD, Icon, initials } from "./ui";
 import { fetchProfileShared, readProfileCache } from "@/lib/fetch-profile";
 import { clearClientCaches } from "@/lib/client-cache";
+// Pure, reads only a NEXT_PUBLIC_ var — safe in a client component and beats
+// hardcoding the storage bucket path here.
+import { companyLogoUrl } from "@/lib/company/storage";
 
-type CompanyOption = { id: string; name: string };
+type CompanyOption = { id: string; name: string; logoUrl: string | null };
 
 const ITEM: CSSProperties = {
   display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 8,
@@ -81,7 +84,17 @@ export default function AccountMenu({
     if (!open || companies !== null) return;
     fetch("/api/company", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setCompanies(Array.isArray(d?.companies) ? d.companies.map((c: CompanyOption) => ({ id: c.id, name: c.name })) : []))
+      .then((d) =>
+        setCompanies(
+          Array.isArray(d?.companies)
+            ? d.companies.map((c: { id: string; name: string; logoPath: string | null }) => ({
+                id: c.id,
+                name: c.name,
+                logoUrl: companyLogoUrl(c.logoPath),
+              }))
+            : []
+        )
+      )
       .catch(() => setCompanies([]));
   }, [open, companies]);
 
@@ -161,7 +174,7 @@ export default function AccountMenu({
               .filter((c) => c.id !== viewing?.id)
               .map((c) => (
                 <button key={c.id} type="button" onClick={() => openCompany(c.id)} style={{ ...BTN_ITEM, color: C.ink }}>
-                  {companyMark({ name: c.name, logoUrl: null }, 20)}
+                  {companyMark(c, 20)}
                   <span style={TRUNC}>{c.name}</span>
                 </button>
               ))}
