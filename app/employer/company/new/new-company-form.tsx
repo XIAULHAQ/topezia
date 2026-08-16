@@ -61,7 +61,10 @@ export default function NewCompanyForm() {
         <Link href="/" style={S.brand}><BrandMark size={20} /><span style={{ fontSize: 15, fontWeight: 800, letterSpacing: "-0.3px" }}>topezia</span></Link>
         <div style={{ flex: 1 }} />
         <Link href="/employer" style={S.back}>
-          <Icon name="chev" size={14} />
+          {/* The shared set only has a RIGHT arrow and a DOWN chevron; the
+              arrow mirrored is a back arrow, and beats shipping a dropdown
+              glyph on a back link. */}
+          <span style={{ display: "inline-flex", transform: "scaleX(-1)" }}><Icon name="arrow" size={14} /></span>
           {current ? `Back to ${current}` : "Back"}
         </Link>
       </div>
@@ -118,7 +121,7 @@ const S: Record<string, CSSProperties> = {
   page: { minHeight: "100vh", background: "#F8FAFC", fontFamily: FONT, color: C.ink },
   bar: { display: "flex", alignItems: "center", gap: 12, padding: "16px 24px", maxWidth: 760, margin: "0 auto" },
   brand: { display: "flex", alignItems: "center", gap: 8, color: C.ink, textDecoration: "none" },
-  back: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: C.mut, textDecoration: "none", transform: "none" },
+  back: { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 600, color: C.mut, textDecoration: "none" },
   card: { maxWidth: 560, margin: "10px auto 60px", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 18, padding: "26px 28px 24px" },
   mark: { display: "grid", placeItems: "center", width: 42, height: 42, borderRadius: 13, background: GRAD, color: "#fff", marginBottom: 14 },
   h1: { fontSize: 23, fontWeight: 800, letterSpacing: "-0.6px", margin: "0 0 8px" },
