@@ -34,7 +34,7 @@ const ITEM: CSSProperties = {
 };
 const BTN_ITEM: CSSProperties = { ...ITEM, width: "100%", background: "none", border: "none", textAlign: "left", fontFamily: "inherit" };
 const GROUP: CSSProperties = { padding: "9px 12px 3px", fontSize: 10.5, fontWeight: 700, color: C.mut, letterSpacing: ".5px", textTransform: "uppercase" };
-const TRUNC: CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 190 };
+const TRUNC: CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 };
 
 export default function AccountMenu() {
   const pathname = usePathname() ?? "";
@@ -126,7 +126,7 @@ export default function AccountMenu() {
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-          <div role="menu" style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", zIndex: 41, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, boxShadow: "0 12px 32px rgba(15,23,42,.14)", padding: 6, minWidth: 232 }}>
+          <div role="menu" style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", zIndex: 41, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, boxShadow: "0 12px 32px rgba(15,23,42,.14)", padding: 6, minWidth: 258, maxWidth: 300 }}>
             {name && (
               <div style={{ padding: "8px 12px 6px", fontSize: 12, color: C.mut, borderBottom: `1px solid ${C.line}`, marginBottom: 4 }}>
                 Signed in as<div style={{ color: C.ink, fontWeight: 700, fontSize: 13, ...TRUNC }}>{name}</div>
@@ -140,7 +140,9 @@ export default function AccountMenu() {
             <Link href="/feed" style={{ ...ITEM, ...(onCompany ? {} : active) }}>
               <Icon name="user" size={16} />
               <span style={TRUNC}>{name ?? "You"}</span>
-              <span style={{ marginLeft: "auto", fontSize: 11, color: C.mut, fontWeight: 500 }}>Job search</span>
+              {/* flex:none + nowrap, or a long name squeezes this into two
+                  lines ("Job" / "search") instead of shortening the name. */}
+              <span style={{ marginLeft: "auto", flex: "none", whiteSpace: "nowrap", fontSize: 11, color: C.mut, fontWeight: 500 }}>Job search</span>
             </Link>
             {(companies ?? []).map((c) => (
               <button key={c.id} type="button" onClick={() => openCompany(c.id)} style={{ ...BTN_ITEM, ...(onCompany && c.id === activeId ? active : { color: C.ink }) }}>
