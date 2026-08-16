@@ -33,7 +33,7 @@ type Data = {
   invites: { id: string; email: string; name: string | null; status: string; sent: boolean; sendError: string | null; at: string }[];
   needsProfile: boolean;
   googleReady: boolean;
-  pendingImport: { id: string; total: number; expiresAt: string } | null;
+  pendingImport: { id: string; total: number; importedAt: string; expiresAt: string | null } | null;
 };
 
 const CARD: React.CSSProperties = {
@@ -117,23 +117,12 @@ export default function NetworkClient() {
         </div>
       ) : null}
 
-      {/* ── An import left half-finished ─────────────────────────────────── */}
+      {/* ── Your imported contacts, kept between visits ──────────────────── */}
       {data?.pendingImport ? (
-        <div style={{ ...CARD, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", borderColor: "#C7D2FE", background: "#EEF2FF" }}>
-          <Icon name="user" size={18} color={C.c1} />
-          <div style={{ flex: 1, minWidth: 180 }}>
-            <div style={{ fontWeight: 650, fontSize: 14.5, color: C.ink }}>You have contacts waiting</div>
-            <div style={{ fontSize: 12.5, color: C.mut, marginTop: 2 }}>
-              {data.pendingImport.total.toLocaleString()} imported contacts you haven&apos;t finished with. They&apos;re deleted automatically after a day.
-            </div>
-          </div>
-          <Link
-            href={`/network/import/${data.pendingImport.id}`}
-            style={{ ...BTN_PRIMARY, textDecoration: "none", display: "inline-block", flex: "none" }}
-          >
-            Pick up where you left off
-          </Link>
-        </div>
+        <ImportedContacts
+          info={data.pendingImport}
+          onDeleted={load}
+        />
       ) : null}
 
       {/* ── Find people you know ─────────────────────────────────────────── */}
@@ -408,6 +397,78 @@ function InviteByEmail({ onSent }: { onSent: () => Promise<void> }) {
       </div>
 
       {result ? <p style={{ fontSize: 13, color: "#15803D", margin: "10px 0 0" }}>{result}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * The imported address book, still here.
+ *
+ * Kept between visits rather than self-destructing: a member with hundreds of
+ * contacts invites a few at a time over days, and a list that evaporated
+ * between sessions made that impossible. Google's Limited Use rules govern
+ * what the data may be USED for — this feature, nothing else, never
+ * transferred or advertised against — not whether it may persist while it is
+ * still doing that job.
+ *
+ * The delete control is what makes keeping it honest, so it sits on the card
+ * rather than buried in settings: the member can see the list exists and end
+ * it in one click.
+ */
+function ImportedContacts({
+  info, onDeleted,
+}: {
+  info: { id: string; total: number; importedAt: string; expiresAt: string | null };
+  onDeleted: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  const remove = useCallback(async () => {
+    setBusy(true);
+    try {
+      await fetch(`/api/network/import/${info.id}`, { method: "DELETE" }).catch(() => {});
+      await onDeleted();
+    } finally {
+      setBusy(false);
+    }
+  }, [info.id, onDeleted]);
+
+  const imported = new Date(info.importedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+
+  return (
+    <div style={{ ...CARD, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", borderColor: "#C7D2FE", background: "#EEF2FF" }}>
+      <Icon name="user" size={18} color={C.c1} />
+      <div style={{ flex: 1, minWidth: 180 }}>
+        <div style={{ fontWeight: 650, fontSize: 14.5, color: C.ink }}>Your imported contacts</div>
+        <div style={{ fontSize: 12.5, color: C.mut, marginTop: 2 }}>
+          {info.total.toLocaleString()} contacts from {imported}.{" "}
+          {info.expiresAt
+            ? "These were imported under the old rules and will be deleted automatically."
+            : "Kept here so you can invite a few at a time — anyone you've already invited drops off the list."}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, flex: "none", flexWrap: "wrap" }}>
+        {confirming ? (
+          <>
+            <button style={BTN} disabled={busy} onClick={() => setConfirming(false)}>Keep</button>
+            <button
+              style={{ ...BTN, borderColor: "#FECACA", color: "#B42318" }}
+              disabled={busy}
+              onClick={remove}
+            >
+              {busy ? "Deleting…" : "Yes, delete"}
+            </button>
+          </>
+        ) : (
+          <>
+            <button style={BTN} disabled={busy} onClick={() => setConfirming(true)}>Delete</button>
+            <Link href={`/network/import/${info.id}`} style={{ ...BTN_PRIMARY, textDecoration: "none", display: "inline-block" }}>
+              Open contacts
+            </Link>
+          </>
+        )}
+      </div>
     </div>
   );
 }

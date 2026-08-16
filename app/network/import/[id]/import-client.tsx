@@ -75,7 +75,7 @@ export default function ImportClient({ importId }: { importId: string }) {
   // the stored address book now rather than leaving it to the TTL.
   useEffect(() => {
     if (notice && data && data.members.length === 0 && data.invitable.length === 0 && !done) {
-      void finishRef.current?.("That's everyone — your imported contacts have been deleted.");
+      void finishRef.current?.("That's everyone on the list.");
     }
   }, [notice, data, done]);
 
@@ -85,11 +85,16 @@ export default function ImportClient({ importId }: { importId: string }) {
     update(next);
   };
 
-  /** Finish: destroy the stored address book rather than waiting for the TTL. */
+  /**
+   * Step away from the list — it is KEPT, not destroyed.
+   *
+   * This used to DELETE the import, which is how inviting one person threw
+   * away the other 600. The list now lives until the member deletes it from
+   * /network, so finishing is just navigation plus a summary.
+   */
   const finish = useCallback(async (message: string) => {
-    await fetch(`/api/network/import/${importId}`, { method: "DELETE" }).catch(() => {});
     setDone(message);
-  }, [importId]);
+  }, []);
 
   // Held in a ref so the "worked through the whole list" effect can call it
   // without taking finish as a dependency and re-running on every render.
@@ -165,7 +170,8 @@ export default function ImportClient({ importId }: { importId: string }) {
         <Icon name="check" size={30} color="#16A34A" />
         <h1 style={{ fontSize: 20, color: C.ink, margin: "10px 0 6px" }}>{done}</h1>
         <p style={{ color: C.mut, fontSize: 14, margin: "0 0 18px" }}>
-          Your imported contacts have been deleted from our side.
+          Your contacts stay on your network page — anyone you've invited won't
+          show up again.
         </p>
         {error ? <p style={{ color: "#991B1B", fontSize: 13, margin: "0 0 16px" }}>{error}</p> : null}
         <button style={{ ...BTN_PRIMARY, padding: "10px 20px" }} onClick={() => router.push("/network")}>
@@ -209,7 +215,7 @@ export default function ImportClient({ importId }: { importId: string }) {
 
       {notice ? (
         <div style={{ ...CARD, padding: "12px 16px", borderColor: "#BBF7D0", background: "#F0FDF4", color: "#15803D", fontSize: 13.5 }}>
-          {notice} The rest are still here — keep going, or press Done when you've finished.
+          {notice} The rest stay on your list — keep going, or come back another time.
         </div>
       ) : null}
 
@@ -305,7 +311,7 @@ export default function ImportClient({ importId }: { importId: string }) {
             <button
               style={BTN}
               disabled={busy}
-              onClick={() => finish(notice ? "Finished — the rest of your contacts have been deleted." : "Skipped — nothing was sent.")}
+              onClick={() => finish(notice ? "Done for now — the rest are saved for next time." : "Skipped — nothing was sent.")}
             >
               {notice ? "Done" : "Skip"}
             </button>

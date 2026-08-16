@@ -52,9 +52,13 @@ export async function GET() {
   // handle on it is the URL, so navigating away lost a list of 600 contacts
   // that was still sitting there — see docs/runbooks/network-google-oauth.md.
   const pending = await prisma.contactImport.findFirst({
-    where: { profileId: profile.id, expiresAt: { gt: new Date() } },
+    where: {
+      profileId: profile.id,
+      // Kept lists (null) plus any legacy row still inside its old TTL.
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
     orderBy: { createdAt: "desc" },
-    select: { id: true, total: true, expiresAt: true },
+    select: { id: true, total: true, expiresAt: true, createdAt: true },
   });
 
   // Stamped AFTER the read, so this response still shows what was new. Failure
@@ -69,7 +73,14 @@ export async function GET() {
     needsProfile: false,
     googleReady: googleContactsConfigured(),
     pendingImport: pending
-      ? { id: pending.id, total: pending.total, expiresAt: pending.expiresAt.toISOString() }
+      ? {
+          id: pending.id,
+          total: pending.total,
+          importedAt: pending.createdAt.toISOString(),
+          // Null = kept until deleted. The UI says which, because "we keep
+          // these" and "these vanish soon" are very different promises.
+          expiresAt: pending.expiresAt?.toISOString() ?? null,
+        }
       : null,
     limits: NETWORK_LIMITS,
   });

@@ -42,7 +42,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   if (!found.ok) return NextResponse.json({ error: found.error }, { status: found.status });
   const { row, profileId } = found;
 
-  if (row.expiresAt.getTime() < Date.now()) {
+  // Only rows carrying an expiry can expire — lists kept deliberately have
+  // null and live until the member deletes them (migration 075).
+  if (row.expiresAt && row.expiresAt.getTime() < Date.now()) {
     // Do not serve it, and do not leave it lying around either.
     await prisma.contactImport.delete({ where: { id: row.id } }).catch(() => {});
     return NextResponse.json(
@@ -60,12 +62,38 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const degrees = await degreesTo(profileId, payload.members.map((m) => m.profileId));
   const members = payload.members.map((m) => ({ ...m, degree: degrees.get(m.profileId) ?? m.degree }));
 
+  // The stored payload is the RAW import and is never rewritten — so anyone
+  // already invited, or on the do-not-contact list, is filtered out here on
+  // every read. That is what lets the list be kept and revisited: it reflects
+  // who is still worth reaching today, not who was on it the day it was made.
+  const emails = payload.invitable.map((c) => c.email);
+  const [alreadyInvited, suppressed] = emails.length
+    ? await Promise.all([
+        prisma.networkInvite.findMany({
+          where: { inviterId: profileId, email: { in: emails } },
+          select: { email: true },
+        }),
+        prisma.inviteSuppression.findMany({
+          where: { email: { in: emails } },
+          select: { email: true },
+        }),
+      ])
+    : [[], []];
+  const handled = new Set([
+    ...alreadyInvited.map((i) => i.email),
+    ...suppressed.map((s) => s.email),
+  ]);
+  const invitable = payload.invitable.filter((c) => !handled.has(c.email));
+
   return NextResponse.json({
     id: row.id,
     scanned: row.total,
     truncated: payload.truncated,
     members,
-    invitable: payload.invitable,
+    invitable,
+    // How many of the original list have already been dealt with, so the
+    // screen can say so rather than looking like contacts went missing.
+    alreadyHandled: payload.invitable.length - invitable.length,
   });
 }
 

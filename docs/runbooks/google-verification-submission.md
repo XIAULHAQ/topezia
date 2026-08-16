@@ -8,13 +8,13 @@ used?* when you add the video URL.
 ## Scope justification (paste verbatim — check the counter stays under 1000)
 
 ```
-Topezia is a professional network. Members connect Google so we can show which of their contacts already have a Topezia profile, and invite those who don't.
+Topezia is a professional network. Members connect Google so we can show which of their contacts are already on Topezia, and invite those who aren't.
 
 contacts.readonly reads saved contacts. contacts.other.readonly reads "Other contacts" (corresponded with, never saved) - where most professional contacts live; without it the feature finds almost nothing for members who don't curate contacts.
 
-We read only names and email addresses, once, on an explicit click, and match them server-side against members. Nothing is emailed until the member ticks names. No narrower scope exists: the People API has no read-only scope limited to email addresses.
+We read only names and email addresses, on an explicit click, and match them server-side against members. Nothing is emailed until the member ticks names. No narrower scope exists: the People API has none limited to email addresses.
 
-The token is never stored (access_type=online; no refresh token). The contact list is encrypted at rest (AES-256-GCM), used only for this screen, deleted as soon as the member finishes, and purged within 24 hours at the latest. It is never transferred, sold, used for ads, or read by a human.
+The token is never stored (access_type=online; no refresh token). Contacts are encrypted at rest (AES-256-GCM) and kept so the member can invite a few at a time across visits - that is the feature. They are used for nothing else, never transferred, sold, advertised against, or read by a human, and the member can delete them in one click, or by deleting their account.
 ```
 
 Every claim in it is checkable against the code, which is the point — the
@@ -24,8 +24,9 @@ reviewer compares it to the demo:
 |---|---|
 | token never stored, no refresh token | `lib/network/google.ts` — `access_type=online` |
 | encrypted at rest | `ContactImport.payload`, AES-256-GCM via `lib/crypto/secrets.ts` |
-| deleted when the member finishes | `DELETE /api/network/import/[id]`, called by the results screen |
-| purged within 24 hours | `NETWORK_LIMITS.IMPORT_TTL_MINUTES` + sweep in the callback |
+| kept only for this feature | `ContactImport`, read only by `/api/network/import/[id]` |
+| deletable in one click | `ImportedContacts` card on /network -> `DELETE /api/network/import/[id]` |
+| deleted with the account | `ContactImport.profileId` FK, `onDelete: Cascade` |
 | nothing emailed until names are ticked | `SELECT_ALL_DEFAULT = false`, `lib/network/doc.ts` |
 
 ## The demo video
@@ -41,8 +42,9 @@ Shot list:
 4. The Google consent screen, with both contacts scopes visible
 5. The results page: matched members, and contacts who aren't members
 6. Tick two people, send
-7. Say aloud: the access token is never stored, and the contact list is deleted
-   when you finish
+7. Say aloud: the access token is never stored, contacts are used only to
+   power this screen, and the member can delete them at any time — then show
+   the Delete button on /network doing it
 
 Point 7 is the part the reviewer is actually assessing. The Limited Use claim is
 only credible if the video demonstrates the flow the justification describes.

@@ -74,12 +74,19 @@ export async function GET(req: NextRequest) {
 
     const result = await matchContacts(profileId, contacts, { truncated });
 
+    // One current list per member. Re-importing REPLACES rather than stacks:
+    // two address books for one person would leave the older one to rot, and
+    // /network can only offer to open one of them.
+    await prisma.contactImport.deleteMany({ where: { profileId } });
+
     const row = await prisma.contactImport.create({
       data: {
         profileId,
         payload: encryptJson(result),
         total: result.scanned,
-        expiresAt: new Date(Date.now() + NETWORK_LIMITS.IMPORT_TTL_MINUTES * 60 * 1000),
+        // Null: kept until the member deletes it. See migration 075 — the list
+        // exists to be worked through over days, not minutes.
+        expiresAt: null,
       },
       select: { id: true },
     });
@@ -89,11 +96,11 @@ export async function GET(req: NextRequest) {
     return back("We couldn't read your contacts from Google. Nothing was saved — try again.");
   }
 
-  // Best-effort sweep of anything that timed out, so an abandoned import does
-  // not sit in the database for longer than its TTL just because nobody came
-  // back for it. Failure here must not fail the member's import.
+  // Sweep only rows that carry an expiry — imports made under the old
+  // self-destructing behaviour, whose owners were told they would go. Lists
+  // kept deliberately have expiresAt null and are never touched here.
   prisma.contactImport
-    .deleteMany({ where: { expiresAt: { lt: new Date() } } })
+    .deleteMany({ where: { expiresAt: { not: null, lt: new Date() } } })
     .catch(() => {});
 
   if (scannedTotal === 0) {

@@ -2078,8 +2078,8 @@ model Connection {
   @@index([status, acceptNotifiedAt])
 }
 
-/// One run of "find people I know" — the imported address book, encrypted and
-/// on a short timer.
+/// The member's imported address book — encrypted, and kept until they say
+/// otherwise.
 ///
 /// WHY THIS IS STORED AT ALL, AND WHY IT EXPIRES. Google's OAuth consent lands
 /// on a redirect, which cannot hand JSON back to the page that started it, and
@@ -2106,7 +2106,10 @@ model ContactImport {
   total     Int      @default(0)
 
   consumedAt DateTime?
-  expiresAt DateTime
+  /// NULL means "keep until the member deletes it" — the normal case since
+  /// migration 075. A timestamp is honoured for rows created under the old
+  /// self-destructing behaviour, and is all the sweep ever looks at.
+  expiresAt DateTime?
   createdAt DateTime @default(now())
 
   @@index([profileId, createdAt])
