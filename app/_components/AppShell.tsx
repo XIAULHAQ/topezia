@@ -13,10 +13,10 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
-import { C, GRAD, FONT, Icon, BrandMark, initials } from "./ui";
+import { C, GRAD, FONT, Icon, BrandMark } from "./ui";
 import { fetchProfileShared, readProfileCache } from "@/lib/fetch-profile";
-import { cachedFetchJson, clearClientCaches, writeCache } from "@/lib/client-cache";
+import AccountMenu from "./AccountMenu";
+import { cachedFetchJson, writeCache } from "@/lib/client-cache";
 
 /**
  * Fired by /network when it accepts or ignores a request. Accepting happens on
@@ -76,11 +76,6 @@ const NAV: NavItem[] = [
   { icon: "gauge", label: "Skill Assessment", soon: true },
 ];
 
-const S_menuItem: CSSProperties = {
-  display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 8,
-  fontSize: 13.5, fontWeight: 500, color: C.slate, textDecoration: "none", cursor: "pointer",
-};
-
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -91,19 +86,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
   // Find row before the measurement lands.
   const [winW, setWinW] = useState(1440);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false); // account dropdown (top-right)
-  // The account's companies (migration 076: there can be several). Fetched
-  // when the menu first OPENS, not on every page load — the dropdown is the
-  // only thing here that needs them. null = not loaded yet.
-  const [companies, setCompanies] = useState<{ id: string; name: string }[] | null>(null);
-  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [findHint, setFindHint] = useState(false); // one-time pulse on the active Find button
   // With prefetch disabled, a nav click waits a full server round-trip with no
   // feedback — people click 3-4 times thinking it didn't register. This flag
   // paints a progress bar the INSTANT any nav link is clicked.
   const [navigating, setNavigating] = useState(false);
-  const [name, setName] = useState<string | null>(null);
-  const [photo, setPhoto] = useState<string | null>(null);
   const [tier, setTier] = useState<string | null>(null);
   const [searchQ, setSearchQ] = useState("");
   // Requests waiting on me + acceptances I haven't seen. One number, because
@@ -111,15 +98,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState(0);
 
   useEffect(() => {
-    // Self-contained identity: the top-bar avatar needs the signed-in name/photo,
-    // and this shell wraps pages that don't otherwise fetch it.
-    // Shared with the page inside the shell — /feed needs the same endpoint,
-    // and two parallel calls cost two auth round-trips for one answer.
+    // The membership card needs the signed-in tier, and this shell wraps
+    // pages that don't otherwise fetch it. Shared with the page inside the
+    // shell (and with AccountMenu) — /feed needs the same endpoint, and
+    // parallel calls cost an auth round-trip each for one answer.
     const applyIdentity = (d: Awaited<ReturnType<typeof fetchProfileShared>>) => {
-      const pr = d?.profile as { fullName?: string; photoUrl?: string; tier?: string } | null | undefined;
-      if (pr) { setName(pr.fullName ?? null); setPhoto(pr.photoUrl ?? null); setTier(pr.tier ?? null); }
+      const pr = d?.profile as { tier?: string } | null | undefined;
+      if (pr) setTier(pr.tier ?? null);
     };
-    applyIdentity(readProfileCache()); // instant avatar on repeat visits
+    applyIdentity(readProfileCache()); // instant on repeat visits
     fetchProfileShared().then(applyIdentity).catch(() => {});
   }, []);
 
@@ -159,30 +146,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
-  // Close the drawer + account menu and clear the progress bar on navigation.
-  useEffect(() => { setMobileOpen(false); setMenuOpen(false); setNavigating(false); }, [pathname]);
-
-  useEffect(() => {
-    if (!menuOpen || companies !== null) return;
-    fetch("/api/company", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        setCompanies(Array.isArray(d?.companies) ? d.companies.map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })) : []);
-        setActiveCompanyId(d?.company?.id ?? null);
-      })
-      .catch(() => setCompanies([]));
-  }, [menuOpen, companies]);
-
-  /** Open a company's dashboard. Switches the ACTIVE company first (server-set
-   *  cookie), then does a full navigation so every /employer surface agrees. */
-  async function openCompany(id: string) {
-    setMenuOpen(false);
-    setNavigating(true);
-    if (id !== activeCompanyId) {
-      await fetch("/api/company", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyId: id }) }).catch(() => {});
-    }
-    window.location.href = "/employer";
-  }
+  // Close the drawer and clear the progress bar on navigation.
+  useEffect(() => { setMobileOpen(false); setNavigating(false); }, [pathname]);
 
   // A link back to the CURRENT page never changes pathname, so clear the bar
   // ourselves after a beat rather than letting it spin forever.
@@ -248,19 +213,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }
 
   function navClicked() {
-    setMenuOpen(false);
     setMobileOpen(false);
     setNavigating(true);
-  }
-
-  async function logout() {
-    clearClientCaches(); // this account's dashboard data must not outlive it
-    try {
-      await createClient().auth.signOut();
-    } catch {
-      /* anon session — nothing to sign out */
-    }
-    router.push("/login"); // land on sign-in, not the marketing page
   }
 
   // Mobile: the sidebar is an off-canvas drawer (always full labels). Desktop:
@@ -414,57 +368,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           {/* Desktop: inline beside the avatar. Mobile gets its own row below. */}
           {inlineFind && <nav style={{ display: "flex", alignItems: "center", gap: 6, flex: "none" }}>{findLinks(false)}</nav>}
 
-          <div style={{ position: "relative" }}>
-            <button onClick={() => setMenuOpen((o) => !o)} style={{ display: "flex", alignItems: "center", gap: 9, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 999, padding: "4px 14px 4px 4px", cursor: "pointer", color: C.ink, fontFamily: "inherit" }}>
-              {photo ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={photo} alt={name ?? "You"} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", objectPosition: "center top", display: "block" }} />
-              ) : (
-                <div style={{ width: 32, height: 32, borderRadius: "50%", background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700 }}>{initials(name)}</div>
-              )}
-              {/* Capped and ellipsised: "Muhammad Zia Ul Haq" is wider than the
-                  bar can spare once the sidebar is out, and an untruncated name
-                  pushed the whole row past the edge. */}
-              {name && (
-                <span style={{ fontSize: 13, fontWeight: 600, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {name}
-                </span>
-              )}
-              <Icon name="chev" size={14} />
-            </button>
-            {menuOpen && (
-              <>
-                <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-                <div style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", zIndex: 41, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, boxShadow: "0 12px 32px rgba(15,23,42,.14)", padding: 6, minWidth: 190 }}>
-                  {name && <div style={{ padding: "8px 12px 6px", fontSize: 12, color: C.mut, borderBottom: `1px solid ${C.line}`, marginBottom: 4 }}>Signed in as<div style={{ color: C.ink, fontWeight: 700, fontSize: 13 }}>{name}</div></div>}
-                  <Link href="/profile/edit" prefetch={false} onClick={navClicked} style={S_menuItem}><Icon name="edit" size={16} />Edit profile</Link>
-                  {/* Your companies, then "Create company". Before the list
-                      loads (or with none) the single link still goes to the
-                      employer area, so nothing here is ever a dead end. */}
-                  {companies && companies.length > 0 ? (
-                    <>
-                      <div style={{ padding: "8px 12px 2px", fontSize: 11, fontWeight: 700, color: C.mut, letterSpacing: ".4px", textTransform: "uppercase" }}>Your companies</div>
-                      {companies.map((c) => (
-                        <button key={c.id} type="button" onClick={() => openCompany(c.id)} style={{ ...S_menuItem, width: "100%", background: "none", border: "none", textAlign: "left", fontFamily: "inherit", fontWeight: c.id === activeCompanyId ? 700 : 500, color: C.ink }}>
-                          <Icon name="briefcase" size={16} />
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{c.name}</span>
-                        </button>
-                      ))}
-                      {/* Plain anchor on purpose: /employer reads ?new=1 on mount. */}
-                      <a href="/employer?new=1" onClick={() => setMenuOpen(false)} style={{ ...S_menuItem, color: "#4F46E5", fontWeight: 600 }}><Icon name="plus" size={16} />Create company</a>
-                    </>
-                  ) : companies && companies.length === 0 ? (
-                    <a href="/employer" onClick={() => setMenuOpen(false)} style={S_menuItem}><Icon name="plus" size={16} />Create a company</a>
-                  ) : (
-                    <Link href="/employer" prefetch={false} onClick={navClicked} style={S_menuItem}><Icon name="briefcase" size={16} />Company page</Link>
-                  )}
-                  <Link href="/settings" prefetch={false} onClick={navClicked} style={S_menuItem}><Icon name="settings" size={16} />Settings</Link>
-                  <div style={{ height: 1, background: C.line, margin: "4px 0" }} />
-                  <button onClick={() => { setMenuOpen(false); logout(); }} style={{ ...S_menuItem, width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", color: "#b42318" }}><Icon name="logout" size={16} />Log out</button>
-                </div>
-              </>
-            )}
-          </div>
+          <AccountMenu />
         </div>
 
         {/* Whenever they aren't inline they get this row, so they are never

@@ -27,20 +27,27 @@ import { clearClientCaches } from "@/lib/client-cache";
 // The canonical path→URL helper. Pure, reads only a NEXT_PUBLIC_ var, so it
 // is safe in a client component and beats hardcoding the bucket path here.
 import { companyLogoUrl } from "@/lib/company/storage";
+import AccountMenu from "@/app/_components/AccountMenu";
 
 type Company = { id: string; name: string; slug: string; logoUrl: string | null } | null;
 type CompanyOption = { id: string; name: string; slug: string; logoPath: string | null };
 
-const NAV: { icon: string; label: string; href: string }[] = [
+/**
+ * The rail. "Plan" is deliberately NOT here: the only plan a company buys
+ * today is the site-chat plan, and a top-level "Plan" next to "Site chat"
+ * read as a second, separate subscription — members confused it with the
+ * personal membership. It lives where the thing it pays for lives, under
+ * Site chat → Usage & plan, and /employer/billing still works as a URL.
+ */
+const NAV: { icon: string; label: string; href: string; needs?: "siteChat" }[] = [
   { icon: "gauge", label: "Overview", href: "/employer" },
   { icon: "mail", label: "Messages", href: "/employer/inquiries" },
-  { icon: "chat", label: "Site chat", href: "/employer/widget" },
+  { icon: "chat", label: "Site chat", href: "/employer/widget", needs: "siteChat" },
   { icon: "image", label: "Work", href: "/employer/work" },
   { icon: "star", label: "Testimonials", href: "/employer/testimonials" },
   { icon: "briefcase", label: "Clients", href: "/employer/clients" },
   { icon: "doc", label: "Articles", href: "/employer/articles" },
   { icon: "user", label: "Team", href: "/employer/team" },
-  { icon: "coins", label: "Plan", href: "/employer/billing" },
 ];
 
 export default function EmployerShell({ children }: { children: ReactNode }) {
@@ -51,6 +58,10 @@ export default function EmployerShell({ children }: { children: ReactNode }) {
   // when there is more than one — a single-company owner never sees it.
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [switching, setSwitching] = useState(false);
+  // Is the chat actually running on a website? Until it is, the nav item is
+  // greyed with an honest label — it stays clickable, because the page it
+  // leads to is where you turn it on.
+  const [siteChat, setSiteChat] = useState<{ sites: number; enabled: boolean } | null>(null);
   // null = not known yet. Kept three-valued so the footer doesn't flash a
   // "Log out" that a signed-out visitor never had anything to log out of.
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -63,6 +74,7 @@ export default function EmployerShell({ children }: { children: ReactNode }) {
         if (!d) { setAuthed(false); return; }
         setAuthed(Boolean(d.authed));
         setCompanies(Array.isArray(d.companies) ? d.companies : []);
+        setSiteChat(d.siteChat ?? { sites: 0, enabled: false });
         if (!d.company) return;
         // /api/company returns the raw row, so the path is turned into a URL
         // here rather than assumed to have been done server-side.
@@ -159,10 +171,22 @@ export default function EmployerShell({ children }: { children: ReactNode }) {
         <nav style={S.nav}>
           {NAV.map((item) => {
             const active = item.href === "/employer" ? pathname === "/employer" : pathname.startsWith(item.href);
+            // Greyed only once we KNOW it is off — before the fetch lands it
+            // renders normally, so the rail doesn't flicker grey on load.
+            const off = item.needs === "siteChat" && siteChat !== null && !siteChat.enabled;
             return (
-              <Link key={item.href} href={item.href} style={{ ...S.navItem, ...(active ? S.navItemOn : {}) }} aria-current={active ? "page" : undefined}>
+              <Link
+                key={item.href}
+                href={item.href}
+                style={{ ...S.navItem, ...(off ? S.navItemOff : {}), ...(active ? S.navItemOn : {}) }}
+                aria-current={active ? "page" : undefined}
+                title={off ? (siteChat?.sites ? "Site chat is switched off" : "Site chat isn't set up yet") : undefined}
+              >
                 <Icon name={item.icon} size={17} />
                 {item.label}
+                {off && !active && (
+                  <span style={S.offTag}>{siteChat?.sites ? "Off" : "Not set up"}</span>
+                )}
               </Link>
             );
           })}
@@ -194,9 +218,17 @@ export default function EmployerShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div style={S.main}>
-        <button type="button" className="es-burger" onClick={() => setMobileOpen(true)} aria-label="Open company menu">
-          ☰ <span style={{ marginLeft: 8, fontWeight: 700 }}>{company?.name ?? "Company"}</span>
-        </button>
+        {/* Top bar. The rail says which COMPANY you are in; this says which
+            ACCOUNT you are, and is where you switch between your own job
+            search and each company you own — the same menu as the member
+            side, deliberately, so the switch is in one place. */}
+        <div style={S.topbar}>
+          <button type="button" className="es-burger" onClick={() => setMobileOpen(true)} aria-label="Open company menu">
+            ☰ <span style={{ marginLeft: 8, fontWeight: 700 }}>{company?.name ?? "Company"}</span>
+          </button>
+          <div style={{ flex: 1 }} />
+          <AccountMenu />
+        </div>
         <div style={S.content}>{children}</div>
       </div>
     </div>
@@ -210,7 +242,7 @@ const CSS = `
   .es-rail{position:fixed!important;transform:translateX(-100%);transition:transform .25s ease;z-index:60;box-shadow:none}
   .es-rail-open{transform:translateX(0)!important;box-shadow:0 0 40px rgba(15,23,42,.25)}
   .es-scrim{position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:55}
-  .es-burger{display:flex;align-items:center;margin:0 0 18px;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:9px 14px;font-size:13.5;color:#334155;cursor:pointer;font-family:inherit}
+  .es-burger{display:flex;align-items:center;margin:0;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:9px 14px;font-size:13.5;color:#334155;cursor:pointer;font-family:inherit}
 }
 `;
 
@@ -231,10 +263,13 @@ const S: Record<string, CSSProperties> = {
   nav: { display: "flex", flexDirection: "column", gap: 2 },
   navItem: { display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", borderRadius: 10, fontSize: 13.5, fontWeight: 600, color: C.slate, textDecoration: "none" },
   navItemOn: { background: "#EEF2FF", color: "#4F46E5" },
+  navItemOff: { color: "#94A3B8", fontWeight: 500 },
+  offTag: { marginLeft: "auto", fontSize: 10.5, fontWeight: 700, color: "#94A3B8", background: "#F1F5F9", borderRadius: 999, padding: "1px 7px", letterSpacing: ".2px" },
   postBtn: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 16, background: GRAD, color: "#fff", borderRadius: 11, padding: "11px 16px", fontSize: 13.5, fontWeight: 700, textDecoration: "none" },
   railFoot: { marginTop: "auto", paddingTop: 18, borderTop: `1px solid ${C.line}`, display: "flex", flexDirection: "column", gap: 2 },
   footLink: { display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", borderRadius: 10, fontSize: 13, fontWeight: 600, color: C.mut, textDecoration: "none" },
   brandRow: { display: "flex", alignItems: "center", gap: 8, padding: "12px 12px 4px", textDecoration: "none" },
   main: { flex: 1, minWidth: 0 },
-  content: { padding: "30px 28px 70px", maxWidth: 1140, margin: "0 auto" },
+  topbar: { display: "flex", alignItems: "center", gap: 12, maxWidth: 1140, margin: "0 auto", padding: "18px 28px 0" },
+  content: { padding: "18px 28px 70px", maxWidth: 1140, margin: "0 auto" },
 };

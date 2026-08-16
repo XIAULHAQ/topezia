@@ -149,7 +149,11 @@ export async function POST(req: NextRequest) {
   const site = existing
     ? await prisma.widgetSite.update({ where: { id: existing.id }, data: { enabled: true }, select: { id: true } })
     : await prisma.widgetSite.create({
-        data: { companyId: company.id, domain: norm.host, siteToken: randomBytes(16).toString("base64url") },
+        // enabled: true explicitly — new sites are OFF by default since
+        // migration 078, but here the owner pressed Connect in their own WP
+        // admin and approved it on this screen. That IS the publish decision,
+        // and a one-click connect that leaves the chat dark is a broken one.
+        data: { companyId: company.id, domain: norm.host, siteToken: randomBytes(16).toString("base64url"), enabled: true },
         select: { id: true },
       });
 

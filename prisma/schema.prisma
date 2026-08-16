@@ -1243,7 +1243,11 @@ model WidgetSite {
   // Public key in the embed snippet. Identifies, never authorizes — every
   // owner action still goes through requireCompanyOwner.
   siteToken    String   @unique
-  enabled      Boolean  @default(true)
+  /// OFF by default since migration 078: adding a website and putting a bot
+  /// in front of its customers are two different decisions. The owner turns
+  /// it on from /employer/widget. The WordPress connect flow sets it true
+  /// explicitly — there, connecting IS the publish decision.
+  enabled      Boolean  @default(false)
   // The free tier's "Powered by Topezia · Add AI chat to your site. Free."
   // line under the chat. True until a paid plan turns it off — the switch is
   // real, the plan that flips it isn't built yet (no employer billing).

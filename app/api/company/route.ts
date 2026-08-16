@@ -8,7 +8,7 @@
  * requires a real account — an employer must be reachable, and an anon cookie
  * isn't an identity anyone can hold to.
  *
- *   GET   → { company: active | null, companies: [all owned], authed }
+ *   GET   → { company: active | null, companies: [all owned], siteChat, authed }
  *   POST  → create a company (first or additional); becomes active
  *   PATCH → edit the active company
  *   PUT   → { companyId } switch the active company (must be one you own)
@@ -54,7 +54,21 @@ export async function GET() {
   const { userId, authed } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   const [company, companies] = await Promise.all([activeCompany(userId), ownedCompanies(userId)]);
-  return NextResponse.json({ company, companies, authed });
+  // Whether the site chat is actually LIVE on this company — the employer
+  // sidebar greys the item out until it is, so "Site chat" never looks like
+  // something that is running when nothing is. Two counts, not one: a site
+  // that exists but is switched off is still "not enabled", and the shell
+  // says "Off" rather than "Not set up" for it.
+  const siteChat = company
+    ? await (async () => {
+        const [total, live] = await Promise.all([
+          prisma.widgetSite.count({ where: { companyId: company.id } }),
+          prisma.widgetSite.count({ where: { companyId: company.id, enabled: true } }),
+        ]);
+        return { sites: total, enabled: live > 0 };
+      })()
+    : { sites: 0, enabled: false };
+  return NextResponse.json({ company, companies, siteChat, authed });
 }
 
 export async function POST(req: NextRequest) {

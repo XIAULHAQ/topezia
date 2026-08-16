@@ -989,6 +989,22 @@ export default function WidgetClient({ offers }: { offers: PlanOffer[] }) {
           {/* ── INSTALL ──────────────────────────────────────────────────── */}
           {tab === "install" && site && (
             <>
+              {/* Sites start switched off (migration 078). Pasting the snippet
+                  while it is off installs a widget that renders nothing, which
+                  looks exactly like a broken install — so say it here, where
+                  the person is about to do it, with the switch one click away. */}
+              {!live && (
+                <div style={{ ...CARD, padding: "13px 16px", marginBottom: 14, borderColor: "#FDE68A", background: "#FFFBEB", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 12.8, color: "#92400E", flex: 1, minWidth: 220, lineHeight: 1.6 }}>
+                    <b>The chat is off</b>, so the code below won&apos;t show anything yet. Install it whenever you like — turn the chat on when you&apos;re ready for visitors to see it.
+                  </span>
+                  <button type="button"
+                    onClick={() => patchSite({ enabled: true }, { enabled: true })}
+                    style={{ ...GHOST, borderColor: "#A7F3D0", color: "#047857", borderRadius: 10, padding: "9px 15px", fontSize: 12.5 }}>
+                    <Icon n="power" s={15} />Turn on
+                  </button>
+                </div>
+              )}
               <Section icon="code" title="Any site — paste one line"
                 sub="Right before </body>. Works on Wix, Squarespace, Webflow, plain HTML.">
                 <div style={{ background: NIGHT, borderRadius: 12, padding: "15px 17px", overflowX: "auto" }}>

@@ -2351,3 +2351,31 @@ All three from one screenshot of a real visitor on an iPhone.
   Clear resolved. Monday 13:10 UTC cron `/api/cron/error-digest` emails
   `ERROR_DIGEST_TO` (defaults to Brandon) even on a clean week, so "no email"
   can never be mistaken for "no errors". Needs `CRON_SECRET` like the others.
+
+## Site chat off by default, and one account menu (added 2026-08-16, migration 078)
+
+- 🔴 **`WidgetSite.enabled` now defaults to FALSE.** Adding a website and
+  putting a bot in front of its customers are two different decisions (same
+  rule as `orderLookup`). The migration changes the DEFAULT only — every site
+  that was live stayed live. The WordPress connect flow passes
+  `enabled: true` EXPLICITLY, because there the handshake is the publish
+  decision; don't "tidy" that away.
+- 🟡 **The Install tab warns when the chat is off** — pasting the snippet with
+  the widget disabled renders nothing, which is indistinguishable from a
+  broken install.
+- 🟡 **The employer rail greys "Site chat" until it is actually live** (from
+  `siteChat` on `GET /api/company`), labelled "Not set up" or "Off". It stays
+  CLICKABLE on purpose: the page it leads to is where you turn it on. It is
+  never greyed before the fetch lands, so the rail doesn't flicker.
+- 🟡 **"Plan" was removed from the employer rail.** The only plan a company
+  buys is the site-chat plan, and a top-level "Plan" beside "Site chat" read
+  as a second subscription — it was being confused with personal membership.
+  It lives under Site chat → Usage & plan; `/employer/billing` still works as
+  a URL and is still linked from there. Don't re-add it to the rail without
+  solving that confusion.
+- 🟡 **`app/_components/AccountMenu.tsx` is the ONE account/profile switcher**,
+  used by both AppShell (member side) and EmployerShell (top-right of the
+  company area). It lists "you" plus every company you own, marks the one you
+  are viewing, and switching a company does a full page load (the cookie is
+  read independently by every /employer surface). Two copies of this menu
+  would drift — add items here, not in a shell.

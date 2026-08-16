@@ -1,0 +1,24 @@
+-- 078_site_chat_off_by_default — a new site chat starts OFF.
+--
+-- HAND-WRITTEN, applied with `prisma db execute` and recorded with
+-- `prisma migrate resolve --applied`. Do NOT regenerate with
+-- `prisma migrate diff` (pgvector drift trap, same as 044-077).
+--
+-- WHY. `enabled` defaulted to true, so the moment an owner added a domain the
+-- chat was live: a bot answering the public from a crawl nobody had read yet,
+-- on a website whose owner had not said "publish". Adding a site and putting
+-- a bot in front of customers are two different decisions — the same reason
+-- `orderLookup` has always defaulted to false.
+--
+-- This changes the DEFAULT only. Every existing site keeps the value it has;
+-- nothing that is live today goes dark. The owner turns a new site on from
+-- the big on/off control on /employer/widget, which already exists and
+-- already says "Widget is off".
+--
+-- EXCEPTION, in code not schema: the WordPress one-click connect
+-- (app/api/connect/wordpress/approve) sets enabled: true explicitly. There
+-- the handshake IS the publish decision — the owner pressed Connect in their
+-- own WP admin and approved it here — and it already did exactly this when
+-- re-connecting an existing site.
+
+ALTER TABLE "WidgetSite" ALTER COLUMN "enabled" SET DEFAULT false;
