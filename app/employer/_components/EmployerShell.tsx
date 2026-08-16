@@ -227,7 +227,9 @@ export default function EmployerShell({ children }: { children: ReactNode }) {
             ☰ <span style={{ marginLeft: 8, fontWeight: 700 }}>{company?.name ?? "Company"}</span>
           </button>
           <div style={{ flex: 1 }} />
-          <AccountMenu />
+          {/* The button wears THIS company — the avatar is the profile you
+              are on, so the menu below only lists the other places to go. */}
+          <AccountMenu company={company} />
         </div>
         <div style={S.content}>{children}</div>
       </div>
