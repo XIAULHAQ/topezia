@@ -86,6 +86,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [open, setOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  // Defaults wide so the first paint assumes desktop, matching isMobile's
+  // optimistic default — otherwise every desktop load would flash the stacked
+  // Find row before the measurement lands.
+  const [winW, setWinW] = useState(1440);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false); // account dropdown (top-right)
   const [findHint, setFindHint] = useState(false); // one-time pulse on the active Find button
@@ -145,7 +149,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
+    const check = () => { setIsMobile(window.innerWidth < 768); setWinW(window.innerWidth); };
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
@@ -235,6 +239,25 @@ export default function AppShell({ children }: { children: ReactNode }) {
   // Mobile: the sidebar is an off-canvas drawer (always full labels). Desktop:
   // in-flow sticky rail that collapses to icons.
   const expanded = isMobile || open;
+
+  /**
+   * Is there room for the Find links INLINE in the top bar?
+   *
+   * Between 768 and roughly 1000px there was not, and the bar simply
+   * overflowed: the desktop sidebar still renders below 768's mobile
+   * breakpoint, so `main` loses 236px while the bar still tries to fit a menu
+   * button, a search box, both Find links and an avatar carrying a full name.
+   * A long name ("Muhammad Zia Ul Haq") pushed it well past the edge.
+   *
+   * Rather than invent a third layout, fall back to the row-underneath
+   * treatment mobile already uses. The arithmetic below is what the bar
+   * actually needs, which is why COLLAPSING THE SIDEBAR brings the links back
+   * inline — it hands back 158px, and the check notices.
+   */
+  const sidebarW = isMobile ? 0 : open ? 236 : 78;
+  const INLINE_FIND_NEEDS =
+    40 + 200 + 270 + 220 + 56; // menu + usable search + both links + avatar + gaps
+  const inlineFind = !isMobile && winW - sidebarW - 56 >= INLINE_FIND_NEEDS;
   const disp = expanded ? "inline" : "none";
   const just = expanded ? "flex-start" : "center";
   const asideStyle: CSSProperties = isMobile
@@ -362,7 +385,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <div style={{ flex: 1 }} />
 
           {/* Desktop: inline beside the avatar. Mobile gets its own row below. */}
-          {!isMobile && <nav style={{ display: "flex", alignItems: "center", gap: 6, flex: "none" }}>{findLinks(false)}</nav>}
+          {inlineFind && <nav style={{ display: "flex", alignItems: "center", gap: 6, flex: "none" }}>{findLinks(false)}</nav>}
 
           <div style={{ position: "relative" }}>
             <button onClick={() => setMenuOpen((o) => !o)} style={{ display: "flex", alignItems: "center", gap: 9, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 999, padding: "4px 14px 4px 4px", cursor: "pointer", color: C.ink, fontFamily: "inherit" }}>
@@ -372,7 +395,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
               ) : (
                 <div style={{ width: 32, height: 32, borderRadius: "50%", background: GRAD, color: "#fff", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700 }}>{initials(name)}</div>
               )}
-              {name && <span style={{ fontSize: 13, fontWeight: 600 }}>{name}</span>}
+              {/* Capped and ellipsised: "Muhammad Zia Ul Haq" is wider than the
+                  bar can spare once the sidebar is out, and an untruncated name
+                  pushed the whole row past the edge. */}
+              {name && (
+                <span style={{ fontSize: 13, fontWeight: 600, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {name}
+                </span>
+              )}
               <Icon name="chev" size={14} />
             </button>
             {menuOpen && (
@@ -391,7 +421,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        {isMobile && (
+        {/* Whenever they aren't inline they get this row, so they are never
+            simply missing — on mobile, and on the tablet widths where the
+            sidebar leaves the bar too little room. */}
+        {!inlineFind && (
           <nav style={{ display: "flex", gap: 10, marginBottom: 20 }}>{findLinks(true)}</nav>
         )}
 
