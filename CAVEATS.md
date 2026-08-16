@@ -2327,3 +2327,27 @@ All three from one screenshot of a real visitor on an iPhone.
   A first-time account still gets a company minted from the detected site.
 - 🟢 Billing, widget sites, brands, team, inquiries were all already keyed on
   `Company.id`, not the owner — none of them changed.
+
+## The error log (added 2026-08-16, migration 077)
+
+- 🔴 **Every server `console.error` is captured** by `instrumentation.ts`
+  (needs `experimental.instrumentationHook` in next.config.js) into the
+  `ErrorLog` table via `lib/errors/log.ts`. Console output is unchanged. Do
+  not `console.error` routine, expected conditions — they will show up in the
+  weekly review as bugs. `console.warn` is NOT captured; use it for "refused,
+  by design" (the crons already do).
+- 🔴 **`lib/errors/log.ts` must never import Node built-ins at top level.**
+  Next also compiles instrumentation.ts for the edge runtime; `import
+  "crypto"` broke the whole dev server (and the log dutifully recorded its own
+  build error as the first row). The hash is plain JS for that reason.
+- 🟡 **Grouping is by fingerprint** = source + message with numbers/ids/quoted
+  strings stripped + path. Occurrences bump `count`; writes are batched to
+  ~1/minute per fingerprint. A RESOLVED row that fires again REOPENS with its
+  old note — that is how a regression looks.
+- 🟡 **Client crashes** go through public `POST /api/errors` (rate-limited per
+  IP, all fields truncated) from `ErrorReporter.tsx` (window error /
+  unhandledrejection) and `app/error.tsx` (render errors, tagged `[page]`).
+- 🟡 **The loop:** `/hq/errors` (HQ password) — fix → Resolve with a note →
+  Clear resolved. Monday 13:10 UTC cron `/api/cron/error-digest` emails
+  `ERROR_DIGEST_TO` (defaults to Brandon) even on a clean week, so "no email"
+  can never be mistaken for "no errors". Needs `CRON_SECRET` like the others.

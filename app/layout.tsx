@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Analytics from "@/app/_components/Analytics";
 import RouteProgress from "@/app/_components/RouteProgress";
+import ErrorReporter from "@/app/_components/ErrorReporter";
 import { Sora, Plus_Jakarta_Sans, EB_Garamond, Instrument_Serif, Archivo, IBM_Plex_Mono } from "next/font/google";
 
 /**
@@ -74,7 +75,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         */}
         <style dangerouslySetInnerHTML={{ __html: "*,*::before,*::after{box-sizing:border-box}" }} />
       </head>
-      <body style={{ margin: 0 }}><RouteProgress />{children}<Analytics /></body>
+      <body style={{ margin: 0 }}><RouteProgress /><ErrorReporter />{children}<Analytics /></body>
     </html>
   );
 }

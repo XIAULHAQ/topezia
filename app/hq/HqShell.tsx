@@ -22,6 +22,7 @@ export interface HqNavCounts {
   members?: number;
   waitlist?: number;
   queue?: number;
+  errors?: number;
 }
 
 const NAV = [
@@ -29,6 +30,7 @@ const NAV = [
   { href: "/hq/waitlist", label: "Employer waitlist", key: "waitlist" as const },
   { href: "/hq/posts", label: "Blog posts", key: null },
   { href: "/hq/spam", label: "Review queue", key: "queue" as const },
+  { href: "/hq/errors", label: "Error log", key: "errors" as const },
 ];
 
 async function signOut() {

@@ -92,6 +92,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [winW, setWinW] = useState(1440);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false); // account dropdown (top-right)
+  // The account's companies (migration 076: there can be several). Fetched
+  // when the menu first OPENS, not on every page load — the dropdown is the
+  // only thing here that needs them. null = not loaded yet.
+  const [companies, setCompanies] = useState<{ id: string; name: string }[] | null>(null);
+  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [findHint, setFindHint] = useState(false); // one-time pulse on the active Find button
   // With prefetch disabled, a nav click waits a full server round-trip with no
   // feedback — people click 3-4 times thinking it didn't register. This flag
@@ -156,6 +161,28 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }, []);
   // Close the drawer + account menu and clear the progress bar on navigation.
   useEffect(() => { setMobileOpen(false); setMenuOpen(false); setNavigating(false); }, [pathname]);
+
+  useEffect(() => {
+    if (!menuOpen || companies !== null) return;
+    fetch("/api/company", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        setCompanies(Array.isArray(d?.companies) ? d.companies.map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })) : []);
+        setActiveCompanyId(d?.company?.id ?? null);
+      })
+      .catch(() => setCompanies([]));
+  }, [menuOpen, companies]);
+
+  /** Open a company's dashboard. Switches the ACTIVE company first (server-set
+   *  cookie), then does a full navigation so every /employer surface agrees. */
+  async function openCompany(id: string) {
+    setMenuOpen(false);
+    setNavigating(true);
+    if (id !== activeCompanyId) {
+      await fetch("/api/company", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyId: id }) }).catch(() => {});
+    }
+    window.location.href = "/employer";
+  }
 
   // A link back to the CURRENT page never changes pathname, so clear the bar
   // ourselves after a beat rather than letting it spin forever.
@@ -411,7 +438,26 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 <div style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", zIndex: 41, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, boxShadow: "0 12px 32px rgba(15,23,42,.14)", padding: 6, minWidth: 190 }}>
                   {name && <div style={{ padding: "8px 12px 6px", fontSize: 12, color: C.mut, borderBottom: `1px solid ${C.line}`, marginBottom: 4 }}>Signed in as<div style={{ color: C.ink, fontWeight: 700, fontSize: 13 }}>{name}</div></div>}
                   <Link href="/profile/edit" prefetch={false} onClick={navClicked} style={S_menuItem}><Icon name="edit" size={16} />Edit profile</Link>
-                  <Link href="/employer" prefetch={false} onClick={navClicked} style={S_menuItem}><Icon name="briefcase" size={16} />Company page</Link>
+                  {/* Your companies, then "Create company". Before the list
+                      loads (or with none) the single link still goes to the
+                      employer area, so nothing here is ever a dead end. */}
+                  {companies && companies.length > 0 ? (
+                    <>
+                      <div style={{ padding: "8px 12px 2px", fontSize: 11, fontWeight: 700, color: C.mut, letterSpacing: ".4px", textTransform: "uppercase" }}>Your companies</div>
+                      {companies.map((c) => (
+                        <button key={c.id} type="button" onClick={() => openCompany(c.id)} style={{ ...S_menuItem, width: "100%", background: "none", border: "none", textAlign: "left", fontFamily: "inherit", fontWeight: c.id === activeCompanyId ? 700 : 500, color: C.ink }}>
+                          <Icon name="briefcase" size={16} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{c.name}</span>
+                        </button>
+                      ))}
+                      {/* Plain anchor on purpose: /employer reads ?new=1 on mount. */}
+                      <a href="/employer?new=1" onClick={() => setMenuOpen(false)} style={{ ...S_menuItem, color: "#4F46E5", fontWeight: 600 }}><Icon name="plus" size={16} />Create company</a>
+                    </>
+                  ) : companies && companies.length === 0 ? (
+                    <a href="/employer" onClick={() => setMenuOpen(false)} style={S_menuItem}><Icon name="plus" size={16} />Create a company</a>
+                  ) : (
+                    <Link href="/employer" prefetch={false} onClick={navClicked} style={S_menuItem}><Icon name="briefcase" size={16} />Company page</Link>
+                  )}
                   <Link href="/settings" prefetch={false} onClick={navClicked} style={S_menuItem}><Icon name="settings" size={16} />Settings</Link>
                   <div style={{ height: 1, background: C.line, margin: "4px 0" }} />
                   <button onClick={() => { setMenuOpen(false); logout(); }} style={{ ...S_menuItem, width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", color: "#b42318" }}><Icon name="logout" size={16} />Log out</button>

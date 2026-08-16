@@ -2177,3 +2177,24 @@ model InviteSuppression {
   reason    String   @default("unsubscribed")
   createdAt DateTime @default(now())
 }
+
+/// Errors the product hits, one row per distinct failure (migration 077).
+/// Written by lib/errors/log.ts; reviewed weekly at /hq/errors; RESOLVED rows
+/// are cleared from there. See ErrorLog migration for the reasoning.
+model ErrorLog {
+  id          String   @id @default(uuid())
+  fingerprint String   @unique
+  source      String   // "server" | "client" | "api"
+  message     String
+  stack       String?
+  path        String?
+  meta        Json?
+  count       Int      @default(1)
+  status      String   @default("OPEN") // OPEN | RESOLVED
+  note        String?
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  resolvedAt  DateTime?
+
+  @@index([status, lastSeenAt])
+}

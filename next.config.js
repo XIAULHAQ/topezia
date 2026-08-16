@@ -92,6 +92,8 @@ const nextConfig = {
     ];
   },
   experimental: {
+    // Loads instrumentation.ts at server boot — the error-log console hook.
+    instrumentationHook: true,
     /**
      * Keep the PDF stack out of the webpack bundle.
      *
