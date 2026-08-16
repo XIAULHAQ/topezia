@@ -17,12 +17,13 @@ import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { employerStats, companyChecklist, strengthPct, ownedPostingsWhere, AWAITING_REVIEW_DAYS } from "@/lib/employer/stats";
 import { companyLogoUrl } from "@/lib/company/storage";
+import { activeCompany } from "@/lib/company/active";
 
 export async function GET() {
   const { userId, authed } = await currentIdentity();
   if (!userId) return NextResponse.json({ authed: false, company: null, postings: [] }, { status: 200 });
 
-  const company = await prisma.company.findUnique({ where: { ownerUserId: userId } });
+  const company = await activeCompany(userId);
 
   const rows = await prisma.job.findMany({
     where: ownedPostingsWhere(userId, company?.id ?? null),

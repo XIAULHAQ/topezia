@@ -11,8 +11,9 @@
  *   from our own origin would be stored XSS.
  * - The storage PATH is chosen server-side from the company id. If the client
  *   picked it, one employer could overwrite another's logo.
- * - Ownership is the Company row's ownerUserId. There is one company per
- *   account (schema-enforced), so "my company" is unambiguous.
+ * - Ownership is the Company row's ownerUserId. An account may own several
+ *   companies (migration 076); the logo goes on the ACTIVE one, chosen the
+ *   same way every other /employer surface chooses it — lib/company/active.ts.
  * - Uploads use the service role, because the bucket deliberately grants
  *   clients no INSERT/UPDATE/DELETE policy (see scripts/setup-logo-storage.sql).
  *
@@ -21,6 +22,7 @@
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { activeCompany } from "@/lib/company/active";
 import { currentIdentity } from "@/lib/identity";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sniffImageType, extensionFor } from "@/lib/portfolio/image";
@@ -35,7 +37,7 @@ export const dynamic = "force-dynamic";
 const MAX_BYTES = 2 * 1024 * 1024;
 
 async function ownCompany(userId: string) {
-  return prisma.company.findUnique({ where: { ownerUserId: userId }, select: { id: true, logoPath: true } });
+  return activeCompany(userId, { id: true, logoPath: true });
 }
 
 export async function POST(request: Request) {
@@ -86,7 +88,7 @@ export async function POST(request: Request) {
   }
 
   // Owner-scoped write: the where clause IS the authorization.
-  await prisma.company.updateMany({ where: { ownerUserId: userId }, data: { logoPath: path } });
+  await prisma.company.updateMany({ where: { id: company.id, ownerUserId: userId }, data: { logoPath: path } });
 
   // Old object goes only after the row points at the new one.
   if (company.logoPath) {
@@ -105,7 +107,7 @@ export async function DELETE() {
   const company = await ownCompany(userId);
   if (!company) return NextResponse.json({ error: "No company to edit." }, { status: 404 });
 
-  await prisma.company.updateMany({ where: { ownerUserId: userId }, data: { logoPath: null } });
+  await prisma.company.updateMany({ where: { id: company.id, ownerUserId: userId }, data: { logoPath: null } });
 
   if (company.logoPath) {
     const admin = createAdminClient();

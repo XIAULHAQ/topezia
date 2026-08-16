@@ -60,14 +60,16 @@ function utcMidnight(d: Date): Date {
 }
 
 /**
- * All postings belonging to this employer — the same ownership rule
- * /api/postings uses (posted by me, or owned by my company), so the dashboard
- * can never show a number computed over a different set than the list beneath
- * it.
+ * The postings this dashboard is about. The dashboard is the ACTIVE company's
+ * (lib/company/active.ts), so it shows that company's postings plus anything
+ * the account posted as an individual (no company at all). Postings under the
+ * account's OTHER companies belong to those companies' dashboards — switch to
+ * see them. Without a company, it is simply everything the account posted.
+ * The list and the numbers above it are always computed over this one set.
  */
 export function ownedPostingsWhere(userId: string, companyId: string | null) {
   return companyId
-    ? { OR: [{ postedByUserId: userId }, { companyId }] }
+    ? { OR: [{ companyId }, { postedByUserId: userId, companyId: null }] }
     : { postedByUserId: userId };
 }
 

@@ -1,13 +1,22 @@
 /**
  * /api/company — the employer identity behind native postings.
  *
- * One company per signed-in account (schema-enforced). Anonymous visitors
- * can browse; POSTING requires a real account — an employer must be
- * reachable, and an anon cookie isn't an identity anyone can hold to.
+ * An account may own several companies (migration 076). Every method here
+ * acts on the ACTIVE one — the company the browser last switched to, see
+ * lib/company/active.ts — except POST, which creates another and makes it
+ * active, and PUT, which switches. Anonymous visitors can browse; CREATING
+ * requires a real account — an employer must be reachable, and an anon cookie
+ * isn't an identity anyone can hold to.
+ *
+ *   GET   → { company: active | null, companies: [all owned], authed }
+ *   POST  → create a company (first or additional); becomes active
+ *   PATCH → edit the active company
+ *   PUT   → { companyId } switch the active company (must be one you own)
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
+import { activeCompany, ownedCompanies, ownedCompanyById, setActiveCompanyCookie } from "@/lib/company/active";
 
 const str = (v: unknown, max: number) =>
   typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "";
@@ -44,8 +53,8 @@ function sanitize(raw: Record<string, unknown>) {
 export async function GET() {
   const { userId, authed } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
-  const company = await prisma.company.findUnique({ where: { ownerUserId: userId } });
-  return NextResponse.json({ company, authed });
+  const [company, companies] = await Promise.all([activeCompany(userId), ownedCompanies(userId)]);
+  return NextResponse.json({ company, companies, authed });
 }
 
 export async function POST(req: NextRequest) {
@@ -61,8 +70,10 @@ export async function POST(req: NextRequest) {
   const data = sanitize(body);
   if (!data.name) return NextResponse.json({ error: "Company name is required." }, { status: 400 });
 
-  const existing = await prisma.company.findUnique({ where: { ownerUserId: userId } });
-  if (existing) return NextResponse.json({ error: "You already have a company." }, { status: 409 });
+  // A generous ceiling, not a plan limit: it exists so a script can't mint
+  // company pages (each is a public URL). Real multi-brand owners have a few.
+  const owned = await prisma.company.count({ where: { ownerUserId: userId } });
+  if (owned >= 10) return NextResponse.json({ error: "You've reached the limit of 10 companies on one account." }, { status: 409 });
 
   // Slug: name, with a short suffix only on collision — clean URLs by default.
   const base = slugify(data.name);
@@ -70,7 +81,10 @@ export async function POST(req: NextRequest) {
     const slug = i === 0 ? base : `${base}-${Math.random().toString(36).slice(2, 8)}`;
     try {
       const company = await prisma.company.create({ data: { ownerUserId: userId, slug, ...data } });
-      return NextResponse.json({ company });
+      // The one you just made is the one you want to be working on.
+      const res = NextResponse.json({ company });
+      setActiveCompanyCookie(res, company.id);
+      return res;
     } catch {
       /* slug collision — retry with suffix */
     }
@@ -91,9 +105,31 @@ export async function PATCH(req: NextRequest) {
   const data = sanitize(body);
   if (!data.name) return NextResponse.json({ error: "Company name is required." }, { status: 400 });
 
+  const active = await activeCompany(userId, { id: true });
+  if (!active) return NextResponse.json({ error: "No company to edit." }, { status: 404 });
   // Owner-scoped write: updateMany's where IS the authorization.
-  const r = await prisma.company.updateMany({ where: { ownerUserId: userId }, data });
+  const r = await prisma.company.updateMany({ where: { id: active.id, ownerUserId: userId }, data });
   if (r.count === 0) return NextResponse.json({ error: "No company to edit." }, { status: 404 });
-  const company = await prisma.company.findUnique({ where: { ownerUserId: userId } });
+  const company = await prisma.company.findUnique({ where: { id: active.id } });
   return NextResponse.json({ company });
+}
+
+/** Switch the active company. The cookie is set only for a company you own. */
+export async function PUT(req: NextRequest) {
+  const { userId, authed } = await currentIdentity();
+  if (!userId || !authed) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const companyId = typeof body.companyId === "string" ? body.companyId : "";
+  const company = await ownedCompanyById(userId, companyId, { id: true, name: true, slug: true, logoPath: true });
+  if (!company) return NextResponse.json({ error: "Not one of your companies." }, { status: 404 });
+
+  const res = NextResponse.json({ company });
+  setActiveCompanyCookie(res, company.id);
+  return res;
 }

@@ -22,6 +22,7 @@
 import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { activeCompany } from "@/lib/company/active";
 import { currentIdentity } from "@/lib/identity";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 import { normalizeDomain, crawlSite, type CrawlResult } from "@/lib/widget/crawl";
@@ -75,10 +76,10 @@ export async function POST(req: NextRequest) {
   const wants = (field: string) => accept[field] !== false; // default yes
 
   // ── The company ──────────────────────────────────────────────────────
-  let company = await prisma.company.findUnique({
-    where: { ownerUserId: userId },
-    select: { id: true, name: true, tagline: true, about: true, website: true, location: true, logoPath: true, plan: true },
-  });
+  // The ACTIVE company (lib/company/active.ts) — the one the person was
+  // working on when they pressed Connect. A first-time account has none and
+  // gets one made from the detected site details below.
+  let company = await activeCompany(userId, { id: true, name: true, tagline: true, about: true, website: true, location: true, logoPath: true, plan: true });
 
   if (!company) {
     const name = (wants("name") && detected.name) || norm.host;

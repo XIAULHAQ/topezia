@@ -28,7 +28,8 @@ import { clearClientCaches } from "@/lib/client-cache";
 // is safe in a client component and beats hardcoding the bucket path here.
 import { companyLogoUrl } from "@/lib/company/storage";
 
-type Company = { name: string; slug: string; logoUrl: string | null } | null;
+type Company = { id: string; name: string; slug: string; logoUrl: string | null } | null;
+type CompanyOption = { id: string; name: string; slug: string; logoPath: string | null };
 
 const NAV: { icon: string; label: string; href: string }[] = [
   { icon: "gauge", label: "Overview", href: "/employer" },
@@ -46,6 +47,10 @@ export default function EmployerShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const [company, setCompany] = useState<Company>(null);
+  // Every company the account owns (migration 076). The switcher only renders
+  // when there is more than one — a single-company owner never sees it.
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
+  const [switching, setSwitching] = useState(false);
   // null = not known yet. Kept three-valued so the footer doesn't flash a
   // "Log out" that a signed-out visitor never had anything to log out of.
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -57,10 +62,11 @@ export default function EmployerShell({ children }: { children: ReactNode }) {
       .then((d) => {
         if (!d) { setAuthed(false); return; }
         setAuthed(Boolean(d.authed));
+        setCompanies(Array.isArray(d.companies) ? d.companies : []);
         if (!d.company) return;
         // /api/company returns the raw row, so the path is turned into a URL
         // here rather than assumed to have been done server-side.
-        setCompany({ name: d.company.name, slug: d.company.slug, logoUrl: companyLogoUrl(d.company.logoPath) });
+        setCompany({ id: d.company.id, name: d.company.name, slug: d.company.slug, logoUrl: companyLogoUrl(d.company.logoPath) });
       })
       .catch(() => setAuthed(false));
   }, []);
@@ -68,6 +74,25 @@ export default function EmployerShell({ children }: { children: ReactNode }) {
   // Close on navigation: Next keeps this mounted across client routing, so
   // without this the mobile panel stays open over the page you just opened.
   useEffect(() => { setMobileOpen(false); }, [pathname]);
+
+  /** Switch the active company. Server sets the cookie; every page under
+   *  /employer reads it, so a full reload is what makes them all agree. */
+  async function switchCompany(companyId: string) {
+    if (!companyId || companyId === company?.id) return;
+    setSwitching(true);
+    try {
+      const res = await fetch("/api/company", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId }),
+      });
+      if (!res.ok) throw new Error();
+      clearClientCaches();
+      window.location.href = "/employer";
+    } catch {
+      setSwitching(false);
+    }
+  }
 
   async function signOut() {
     // Same order AppShell uses: clear the client caches BEFORE the session, or
@@ -104,6 +129,32 @@ export default function EmployerShell({ children }: { children: ReactNode }) {
             <span style={S.identityMeta}>{company ? "View public page ↗" : "Not set up yet"}</span>
           </span>
         </Link>
+
+        {/* Which company. Only shown once there IS a choice; "New company" is
+            always available to a signed-in owner — the second company is the
+            whole point of migration 076. */}
+        {authed && (company || companies.length > 0) && (
+          <div style={S.switcher}>
+            {companies.length > 1 && (
+              <select
+                aria-label="Switch company"
+                value={company?.id ?? ""}
+                disabled={switching}
+                onChange={(e) => switchCompany(e.target.value)}
+                style={S.switchSelect}
+              >
+                {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            )}
+            {/* A plain anchor on purpose: the overview reads ?new=1 on mount,
+                and a client-side Link from /employer to /employer?new=1 would
+                not remount it. */}
+            <a href="/employer?new=1" style={S.newCompany}>
+              <Icon name="plus" size={13} />
+              New company
+            </a>
+          </div>
+        )}
 
         <nav style={S.nav}>
           {NAV.map((item) => {
@@ -174,6 +225,9 @@ const S: Record<string, CSSProperties> = {
   logo: { flex: "none", width: 40, height: 40, borderRadius: 11, background: GRAD, display: "grid", placeItems: "center", overflow: "hidden", padding: 3 },
   identityName: { display: "block", fontSize: 14, fontWeight: 800, color: C.ink, letterSpacing: "-0.2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   identityMeta: { display: "block", fontSize: 11.5, color: C.mut, marginTop: 2 },
+  switcher: { display: "flex", flexDirection: "column", gap: 6, padding: "0 4px 12px" },
+  switchSelect: { width: "100%", padding: "8px 10px", borderRadius: 9, border: `1px solid ${C.line}`, background: "#F8FAFC", fontSize: 13, fontWeight: 600, color: C.ink, fontFamily: "inherit" },
+  newCompany: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: "#4F46E5", textDecoration: "none", padding: "2px 6px" },
   nav: { display: "flex", flexDirection: "column", gap: 2 },
   navItem: { display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", borderRadius: 10, fontSize: 13.5, fontWeight: 600, color: C.slate, textDecoration: "none" },
   navItemOn: { background: "#EEF2FF", color: "#4F46E5" },

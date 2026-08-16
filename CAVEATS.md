@@ -1354,11 +1354,12 @@ already true and the exceptions are the interesting part.
 - 🟡 **Applicants and sourcing show member profiles too**, and must. That is
   the hiring product working, not leakage.
 - 🔴 **There is no separate company login.** `Company.ownerUserId` is a
-  personal Supabase account id, and one company per account is
-  schema-enforced. "Log in as Rodeo Graphics", or two people administering one
-  company, is an auth change — not a small one — and nothing in the current
-  design assumes it will never happen. `requireCompanyOwner()` is the single
-  gate, so the blast radius of changing it later is one file.
+  personal Supabase account id. Since migration 076 one account may own
+  SEVERAL companies (see below), but "log in as Rodeo Graphics", or two people
+  administering one company, is still an auth change — not a small one — and
+  nothing in the current design assumes it will never happen.
+  `requireCompanyOwner()` is the single gate, so the blast radius of changing
+  it later is one file.
 
 ## JobPosting: jobLocation and addressCountry (Search Console, 2026-07-31)
 
@@ -2297,3 +2298,32 @@ All three from one screenshot of a real visitor on an iPhone.
 - 🟡 IP-based verification is NOT available to us: Vercel egress is shared
   and not ours to publish. The signature route is the only one open.
 - 🟡 Rotating the key is one env var; the directory is cached for an hour.
+
+## Several companies on one account (added 2026-08-16, migration 076)
+
+- 🔴 **`Company.ownerUserId` is no longer UNIQUE.** "My company" now means
+  the ACTIVE company: an httpOnly cookie (`tz_company`) read by
+  `lib/company/active.ts`, verified against ownership on every read, falling
+  back to the account's oldest company. The cookie is a hint, never an
+  authorization — a forged one can only pick a different one of YOUR
+  companies. Every `/employer` surface and `/api/company*` route goes through
+  `activeCompany()` / `requireCompanyOwner()`; do not add a new
+  `findFirst({ where: { ownerUserId } })` anywhere else.
+- 🟡 **Switching is a full page reload** (PUT `/api/company` then
+  `window.location`). The sidebar, the overview and every sub-page fetch "the
+  company" independently on mount; a client-side transition would leave them
+  disagreeing about which company they are showing.
+- 🟡 **Postings carry `postAs`**: a company id you own, `"self"`, or nothing
+  (= active company, else yourself). Individuals could always post without a
+  company; what is new is choosing WHICH company. The dashboard shows the
+  active company's postings plus your personal (no-company) ones — a posting
+  under company B is on B's dashboard, not A's. `/api/postings` GET, used by
+  nothing today but kept honest, returns everything the account owns.
+- 🟡 **The 10-company ceiling in `/api/company` POST is anti-abuse, not a
+  plan limit** — every company is a public URL. Raise it, don't gate it, if a
+  real owner hits it.
+- 🟡 **The WordPress connect handshake attaches the site to the ACTIVE
+  company** — switch first if the plugin's site belongs to your other brand.
+  A first-time account still gets a company minted from the detected site.
+- 🟢 Billing, widget sites, brands, team, inquiries were all already keyed on
+  `Company.id`, not the owner — none of them changed.

@@ -15,6 +15,7 @@ import { resolveRole, resolveSkills } from "@/lib/ingestion/resolve-taxonomy";
 import { embedText, buildJobEmbeddingInput, writeJobEmbedding } from "@/lib/ingestion/embed";
 import { jobPath } from "@/lib/seo/job-slug";
 import { extractCountry } from "@/lib/ingestion/normalize-rules";
+import { activeCompany, ownedCompanies, ownedCompanyById } from "@/lib/company/active";
 
 export const maxDuration = 60; // LLM extraction + embedding on create
 
@@ -31,22 +32,40 @@ const text = (v: unknown, max: number) =>
   typeof v === "string" ? v.replace(/[ \t]+/g, " ").trim().slice(0, max) : "";
 const int = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.round(v) : null);
 
-async function ownCompany(userId: string) {
-  return prisma.company.findUnique({ where: { ownerUserId: userId }, select: { id: true, name: true, slug: true, website: true, location: true } });
+const COMPANY_SELECT = { id: true, name: true, slug: true, website: true, location: true } as const;
+
+/**
+ * Who a posting is published AS. The account may own several companies
+ * (migration 076) or none, so the form sends `postAs`:
+ *   - a company id  → that company (must be one you own, else 404)
+ *   - "self"        → yourself, under your profile name, no company branding
+ *   - absent        → the active company if you have one, else yourself —
+ *                     what every pre-076 client sent, and what it meant.
+ */
+async function posterCompany(userId: string, postAs: unknown) {
+  if (postAs === "self") return { ok: true as const, company: null };
+  if (typeof postAs === "string" && postAs) {
+    const company = await ownedCompanyById(userId, postAs, COMPANY_SELECT);
+    return company ? { ok: true as const, company } : { ok: false as const };
+  }
+  return { ok: true as const, company: await activeCompany(userId, COMPANY_SELECT) };
 }
 
-/** GET — the poster's own postings, with pipeline counts per stage. */
+/** GET — every posting the account is responsible for (its own, and every
+ *  company it owns), with pipeline counts per stage; plus the "post as"
+ *  options for the form. */
 export async function GET() {
   const { userId } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
-  const company = await ownCompany(userId);
+  const [company, companies] = await Promise.all([activeCompany(userId, COMPANY_SELECT), ownedCompanies(userId)]);
 
   const rows = await prisma.job.findMany({
-    where: { OR: [{ postedByUserId: userId }, ...(company ? [{ companyId: company.id }] : [])] },
+    where: { OR: [{ postedByUserId: userId }, { company: { ownerUserId: userId } }] },
     orderBy: { createdAt: "desc" },
     select: {
       id: true, kind: true, titleRaw: true, status: true, createdAt: true,
       salaryMin: true, salaryMax: true, salaryCurrency: true, salaryPeriod: true,
+      companyId: true, companyName: true,
       applications: { select: { stage: true } },
     },
   });
@@ -55,7 +74,7 @@ export async function GET() {
     for (const a of r.applications) by[a.stage] = (by[a.stage] ?? 0) + 1;
     return { ...r, applications: undefined, total: r.applications.length, byStage: by };
   });
-  return NextResponse.json({ postings, company });
+  return NextResponse.json({ postings, company, companies });
 }
 
 /** POST — publish a job or project. Live immediately: the poster is an
@@ -64,19 +83,21 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const { userId, authed } = await currentIdentity();
   if (!userId || !authed) return NextResponse.json({ error: "Sign in to post." }, { status: 401 });
-  // Anyone can post — a company page is optional branding. Individuals post
-  // under their own profile name, and the posting says so.
-  const company = await ownCompany(userId);
-  const profile = await prisma.profile.findUnique({ where: { userId }, select: { fullName: true } });
-  const posterName = company?.name ?? profile?.fullName ?? null;
-  if (!posterName) return NextResponse.json({ error: "Complete your profile (or create a company page) first — applicants must see who's posting." }, { status: 409 });
-
   let body: Record<string, unknown>;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
+
+  // Anyone can post — a company page is optional branding. Individuals post
+  // under their own profile name, and the posting says so.
+  const poster = await posterCompany(userId, body.postAs);
+  if (!poster.ok) return NextResponse.json({ error: "That isn't one of your companies." }, { status: 404 });
+  const company = poster.company;
+  const profile = company ? null : await prisma.profile.findUnique({ where: { userId }, select: { fullName: true } });
+  const posterName = company?.name ?? profile?.fullName ?? null;
+  if (!posterName) return NextResponse.json({ error: "Complete your profile (or create a company page) first — applicants must see who's posting." }, { status: 409 });
 
   const kind = body.kind === "PROJECT" ? "PROJECT" : "JOB";
   const title = str(body.title, 140);

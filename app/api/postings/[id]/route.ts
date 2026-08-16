@@ -32,8 +32,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     body.status === "LIVE" ? "LIVE" : body.status === "EXPIRED" ? "EXPIRED" : body.status === "DRAFT" ? "DRAFT" : null;
   if (!status) return NextResponse.json({ error: "status must be LIVE, EXPIRED or DRAFT." }, { status: 400 });
 
-  const company = await prisma.company.findUnique({ where: { ownerUserId: userId }, select: { id: true } });
-  const owned = { id: params.id, OR: [{ postedByUserId: userId }, ...(company ? [{ companyId: company.id }] : [])] };
+  // Any of the caller's companies — a posting under company B is still theirs
+  // while company A is the active one.
+  const owned = { id: params.id, OR: [{ postedByUserId: userId }, { company: { ownerUserId: userId } }] };
 
   // Read-then-act, but the WRITE below is still owner-scoped — this lookup
   // only decides which path to take, it isn't the authorization.

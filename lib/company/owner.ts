@@ -5,8 +5,9 @@
  * real account behind this request, does it own a company, and which one. Nine
  * routes each doing their own version of that is nine chances for one of them
  * to check two of the three. The Company row's `ownerUserId` IS the
- * authorization — there is one company per account (schema-enforced), so "my
- * company" is unambiguous.
+ * authorization. Since migration 076 an account may own several companies, so
+ * "my company" means the ACTIVE one — see lib/company/active.ts for how that
+ * is chosen and why it can never widen access.
  *
  * Team MEMBERS deliberately fail this check. They are listed on the company
  * page and nothing more; giving every invitee write access to the employer's
@@ -17,6 +18,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
+import { activeCompany } from "@/lib/company/active";
 
 export type CompanyOwner = {
   userId: string;
@@ -33,10 +35,7 @@ export async function requireCompanyOwner(): Promise<OwnerResult> {
     return { ok: false, response: NextResponse.json({ error: "Sign in first." }, { status: 401 }) };
   }
 
-  const company = await prisma.company.findUnique({
-    where: { ownerUserId: userId },
-    select: { id: true, slug: true, name: true },
-  });
+  const company = await activeCompany(userId, { id: true, slug: true, name: true });
   if (!company) {
     return {
       ok: false,

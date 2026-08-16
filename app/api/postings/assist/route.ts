@@ -8,6 +8,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { activeCompany, ownedCompanyById } from "@/lib/company/active";
 import { currentIdentity } from "@/lib/identity";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 
@@ -24,8 +25,6 @@ export async function POST(req: NextRequest) {
   if (!rateLimit(`postings-assist:${userId}`, 20, 60 * 60 * 1000)) {
     return NextResponse.json(RATE_LIMITED, { status: 429 });
   }
-  const company = await prisma.company.findUnique({ where: { ownerUserId: userId }, select: { name: true, tagline: true, about: true, location: true } });
-  const profile = company ? null : await prisma.profile.findUnique({ where: { userId }, select: { fullName: true, currentLocation: true } });
   if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "AI writing isn't available right now." }, { status: 503 });
 
   let body: Record<string, unknown>;
@@ -34,6 +33,15 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
+  // Same "post as" choice the posting form sends to /api/postings: a company
+  // id, "self", or nothing (= the active company, or yourself if none).
+  const postAs = typeof body.postAs === "string" ? body.postAs : "";
+  const companySelect = { name: true, tagline: true, about: true, location: true } as const;
+  const company =
+    postAs === "self" ? null
+    : postAs ? await ownedCompanyById(userId, postAs, companySelect)
+    : await activeCompany(userId, companySelect);
+  const profile = company ? null : await prisma.profile.findUnique({ where: { userId }, select: { fullName: true, currentLocation: true } });
   const kind = body.kind === "PROJECT" ? "project" : "job";
   const title = str(body.title, 140);
   const role = str(body.role, 100);

@@ -25,11 +25,10 @@ export async function GET(req: NextRequest) {
   const jobId = req.nextUrl.searchParams.get("jobId");
   if (!jobId) return NextResponse.json({ error: "jobId required." }, { status: 400 });
 
-  const company = await prisma.company.findUnique({ where: { ownerUserId: userId }, select: { id: true } });
   const job = await prisma.job.findFirst({
     where: {
       id: jobId,
-      OR: [{ postedByUserId: userId }, ...(company ? [{ companyId: company.id }] : [])],
+      OR: [{ postedByUserId: userId }, { company: { ownerUserId: userId } }],
     },
     select: { id: true, titleRaw: true },
   });

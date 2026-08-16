@@ -31,8 +31,22 @@ export default function PostingForm() {
   const [error, setError] = useState<string | null>(null);
   const set = (k: string, v: string) => setF((x) => ({ ...x, [k]: v }));
 
+  // Who this is posted AS. An account may own several companies (migration
+  // 076) or none; a posting always carries exactly one poster identity —
+  // one of those companies, or the person under their own profile name.
+  // Defaults to the active company, or "self" when there is none. Sent to
+  // /api/postings and /api/postings/assist as `postAs`.
+  const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
+  const [postAs, setPostAs] = useState<string>("");
+
   useEffect(() => {
     fetch("/api/taxonomy/roles").then((r) => (r.ok ? r.json() : null)).then((d) => d && setRoleGroups(d.roleGroups ?? [])).catch(() => {});
+    fetch("/api/company", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (!d) return;
+      const list: { id: string; name: string }[] = Array.isArray(d.companies) ? d.companies : [];
+      setCompanies(list);
+      setPostAs(d.company?.id ?? "self");
+    }).catch(() => {});
   }, []);
 
   const addSkill = () => {
@@ -56,7 +70,7 @@ export default function PostingForm() {
       const res = await fetch("/api/postings/assist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind, title: f.title, role: f.role, notes, skills }),
+        body: JSON.stringify({ kind, title: f.title, role: f.role, notes, skills, postAs: postAs || undefined }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
@@ -78,6 +92,7 @@ export default function PostingForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           draft,
+          postAs: postAs || undefined,
           kind, title: f.title, role: f.role, description: f.description, skills,
           employmentType: f.employmentType, remoteType: f.remoteType, location: f.location,
           salaryMin: f.salaryMin ? Number(f.salaryMin) : null,
@@ -110,6 +125,16 @@ export default function PostingForm() {
           </button>
         ))}
       </div>
+
+      {companies.length > 0 && (
+        <div>
+          <div style={S.label}>Post as *</div>
+          <select style={S.input} value={postAs} onChange={(e) => setPostAs(e.target.value)} aria-label="Post as">
+            {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            <option value="self">Yourself — under your own name, no company page</option>
+          </select>
+        </div>
+      )}
 
       <div style={S.two}>
         <div>

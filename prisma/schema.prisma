@@ -1103,7 +1103,9 @@ enum EndorsementStatus {
 // The employer identity behind a NATIVE posting. One per account for now.
 model Company {
   id          String  @id @default(uuid())
-  ownerUserId String  @unique
+  // One account may own SEVERAL companies (migration 076). "Which one am I
+  // working on right now" is the active-company cookie — lib/company/active.ts.
+  ownerUserId String
   name        String
   slug        String  @unique // public page at /company/{slug}
 
@@ -1172,6 +1174,8 @@ model Company {
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([ownerUserId])
 }
 
 // NEW = sitting in the company inbox, nothing has happened. REPLIED = the

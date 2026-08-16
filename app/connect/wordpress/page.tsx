@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
+import { activeCompany } from "@/lib/company/active";
 import { currentIdentity } from "@/lib/identity";
 import { planCatalogue } from "@/lib/billing/catalogue";
 import { billingConfigured } from "@/lib/billing/stripe";
@@ -74,10 +75,7 @@ export default async function ConnectWordPressPage({
     );
   }
 
-  const company = await prisma.company.findUnique({
-    where: { ownerUserId: userId },
-    select: { id: true, name: true, tagline: true, about: true, location: true, logoPath: true, plan: true },
-  });
+  const company = await activeCompany(userId, { id: true, name: true, tagline: true, about: true, location: true, logoPath: true, plan: true });
 
   // Already finished — a refresh, or a second tab. Say so rather than
   // offering to do it again.
