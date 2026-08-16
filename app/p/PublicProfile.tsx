@@ -13,7 +13,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import ShareButton from "./ShareButton";
-import { SiteFooter } from "@/app/_components/SiteChrome";
+import { SiteFooter, SiteHeader } from "@/app/_components/SiteChrome";
 // Every link on this page whose destination a MEMBER chose passes no ranking
 // signal — see lib/ugc.ts. A public profile is otherwise a free backlink on a
 // real domain, which is precisely what profile-spam farms are built to collect.
@@ -56,10 +56,6 @@ const PUB_TYPE_LABELS: Record<string, string> = {
 function Ic({ n, s = 16, color }: { n: string; s?: number; color?: string }) {
   return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color ?? "currentColor"} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none" }}>{(PATHS[n] ?? []).map((d, i) => <path key={i} d={d} />)}</svg>;
 }
-function Brand({ h = 24 }: { h?: number }) {
-  return <svg width={(h / 26) * 36} height={h} viewBox="0 0 36 26" aria-hidden><defs><linearGradient id="tzpb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={C.c1} /><stop offset="1" stopColor={C.c2} /></linearGradient></defs><circle cx="10.5" cy="13" r="7.2" stroke="url(#tzpb)" strokeWidth="4.2" fill="none" /><circle cx="25.5" cy="13" r="7.2" stroke="url(#tzpb)" strokeWidth="4.2" fill="none" /></svg>;
-}
-
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");
 const PROF_PCT: Record<string, number> = { EXPERT: 96, ADVANCED: 86, PROFICIENT: 72, FAMILIAR: 55 };
 const initials = (name: string | null) => {
@@ -151,15 +147,13 @@ export default function PublicProfile({ p, tab: initialTab }: { p: PubProfile; t
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: C.bg, fontFamily: FONT, color: C.ink, overflowX: "clip" }}>
       <style>{"@media (max-width:820px){.pp-grid{grid-template-columns:1fr!important}.pp-2col{grid-template-columns:1fr!important}.pp-hero{padding:24px 20px!important}}"}</style>
-      {/* header */}
-      <header style={{ background: "#fff", borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, zIndex: 20 }}>
-        <div style={{ maxWidth: 1180, margin: "0 auto", padding: "12px 24px", display: "flex", alignItems: "center", gap: 14 }}>
-          <Link href="/" style={{ display: "flex", alignItems: "center", gap: 9, color: C.ink, textDecoration: "none" }}><Brand /><span style={{ fontSize: 19, fontWeight: 700, letterSpacing: "-0.5px" }}>topezia</span></Link>
-          <div style={{ flex: 1 }} />
-          <Link href="/login" style={{ fontSize: 13, fontWeight: 600, color: C.slate, padding: "9px 14px", textDecoration: "none" }}>Sign in</Link>
-          <Link href="/onboard" style={{ background: GRAD, color: "#fff", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, textDecoration: "none", boxShadow: "0 5px 14px rgba(99,102,241,.3)" }}>Join Topezia</Link>
-        </div>
-      </header>
+      {/* THE shared public header, not a copy of it. This page used to draw
+          its own bar with hardcoded "Sign in" / "Join Topezia" links, so a
+          signed-in member looking at somebody else's profile was told to sign
+          in. The shared one hydrates the session and swaps those for the
+          account menu — and the footer here was always the shared one, which
+          is exactly why the mismatch went unnoticed. */}
+      <SiteHeader />
 
       <main style={{ flex: 1, width: "100%", maxWidth: 1180, margin: "0 auto", padding: "24px 24px 48px" }}>
         {/* hero */}

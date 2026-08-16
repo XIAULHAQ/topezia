@@ -17,6 +17,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import AccountMenu from "./AccountMenu";
 
 const C = { c1: "#8B5CF6", c2: "#3B82F6", ink: "#0F172A", slate: "#334155", mut: "#64748B", line: "#E2E8F0" };
 const FONT = "var(--font-sora), system-ui, sans-serif";
@@ -116,8 +117,13 @@ export function SiteHeader() {
         <div className="tzc-auth" style={S.authRow}>
           {authed ? (
             <>
+              {/* The avatar is how you know you're signed in — same menu as
+                  the app shells, so "who am I?" looks identical on a public
+                  page as it does on the feed. Rendered only when authed, so
+                  an anonymous visitor to a cached SEO page still makes no
+                  profile request. */}
               <Link href="/feed" className="tzc-link" style={{ ...S.hlink, padding: "9px 14px" }}>My feed</Link>
-              <Link href="/profile" className="tzc-bright" style={S.joinBtn}>My profile</Link>
+              <AccountMenu />
             </>
           ) : (
             <>
