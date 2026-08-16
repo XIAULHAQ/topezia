@@ -68,6 +68,27 @@ const CHROME_CSS = `
 @media (min-width:721px){ .tzc-menu{display:none!important} }
 `;
 
+/**
+ * Is there a Supabase auth cookie in this browser?
+ *
+ * Synchronous, so the header can paint the SIGNED-IN bar on the first client
+ * render. `getSession()` is the authority, but it can take a network
+ * round-trip when the access token needs refreshing — and while it ran, a
+ * signed-in member was shown "Sign in" and "Join free", which is what these
+ * public pages were reported as doing. getSession() still runs below and
+ * corrects this if the cookie turns out to be dead.
+ *
+ * Deliberately NOT matching `-auth-token-code-verifier`, which is present
+ * during a sign-in attempt and after signing OUT — treating it as a session
+ * would flash an avatar at logged-out visitors, the opposite bug.
+ */
+function hasAuthCookie(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.cookie
+    .split("; ")
+    .some((c) => /^sb-.+-auth-token(\.\d+)?=/.test(c) && c.split("=").slice(1).join("=").trim().length > 2);
+}
+
 export function SiteHeader() {
   // null = unknown (render anonymous default; no wrong flash for visitors).
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -75,6 +96,8 @@ export function SiteHeader() {
   const pathname = usePathname();
 
   useEffect(() => {
+    // Cookie first (instant, no flash), then the real check.
+    if (hasAuthCookie()) setAuthed(true);
     createClient().auth.getSession().then(({ data }) => setAuthed(Boolean(data.session))).catch(() => {});
   }, []);
 
