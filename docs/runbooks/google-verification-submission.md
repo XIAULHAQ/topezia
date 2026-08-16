@@ -5,7 +5,7 @@ form **Save** without a YouTube link, so the justification below is kept here
 rather than lost: paste it back into *Data Access → How will the scopes be
 used?* when you add the video URL.
 
-## Scope justification (931 / 1000 chars — paste verbatim)
+## Scope justification (paste verbatim — check the counter stays under 1000)
 
 ```
 Topezia is a professional network. Members connect Google so we can show which of their contacts already have a Topezia profile, and invite those who don't.
@@ -14,7 +14,7 @@ contacts.readonly reads saved contacts. contacts.other.readonly reads "Other con
 
 We read only names and email addresses, once, on an explicit click, and match them server-side against members. Nothing is emailed until the member ticks names. No narrower scope exists: the People API has no read-only scope limited to email addresses.
 
-The token is never stored (access_type=online; no refresh token). The contact list is encrypted at rest (AES-256-GCM), used only for this screen, deleted when the member finishes, and purged within 60 minutes. It is never transferred, sold, used for ads, or read by a human.
+The token is never stored (access_type=online; no refresh token). The contact list is encrypted at rest (AES-256-GCM), used only for this screen, deleted as soon as the member finishes, and purged within 24 hours at the latest. It is never transferred, sold, used for ads, or read by a human.
 ```
 
 Every claim in it is checkable against the code, which is the point — the
@@ -25,7 +25,7 @@ reviewer compares it to the demo:
 | token never stored, no refresh token | `lib/network/google.ts` — `access_type=online` |
 | encrypted at rest | `ContactImport.payload`, AES-256-GCM via `lib/crypto/secrets.ts` |
 | deleted when the member finishes | `DELETE /api/network/import/[id]`, called by the results screen |
-| purged within 60 minutes | `NETWORK_LIMITS.IMPORT_TTL_MINUTES` + sweep in the callback |
+| purged within 24 hours | `NETWORK_LIMITS.IMPORT_TTL_MINUTES` + sweep in the callback |
 | nothing emailed until names are ticked | `SELECT_ALL_DEFAULT = false`, `lib/network/doc.ts` |
 
 ## The demo video

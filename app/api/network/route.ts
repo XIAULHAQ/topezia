@@ -48,6 +48,15 @@ export async function GET() {
 
   const data = await loadNetwork(profile.id, profile.networkSeenAt);
 
+  // An import the member started but hasn't finished. Without this the only
+  // handle on it is the URL, so navigating away lost a list of 600 contacts
+  // that was still sitting there — see docs/runbooks/network-google-oauth.md.
+  const pending = await prisma.contactImport.findFirst({
+    where: { profileId: profile.id, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, total: true, expiresAt: true },
+  });
+
   // Stamped AFTER the read, so this response still shows what was new. Failure
   // here must not fail the page — a badge that stays up one visit too long is a
   // far smaller problem than a network page that won't load.
@@ -59,6 +68,9 @@ export async function GET() {
     ...data,
     needsProfile: false,
     googleReady: googleContactsConfigured(),
+    pendingImport: pending
+      ? { id: pending.id, total: pending.total, expiresAt: pending.expiresAt.toISOString() }
+      : null,
     limits: NETWORK_LIMITS,
   });
 }

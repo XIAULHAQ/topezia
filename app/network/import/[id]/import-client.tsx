@@ -15,7 +15,7 @@
  * click away for the member who genuinely wants it; it is just not the default.
  * See SELECT_ALL_DEFAULT in lib/network/doc.ts.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { C, GRAD, Icon } from "@/app/_components/ui";
@@ -44,6 +44,8 @@ export default function ImportClient({ importId }: { importId: string }) {
   const [pickedContacts, setPickedContacts] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+  /** What the last batch did, shown while the member keeps working. */
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let stop = false;
@@ -69,6 +71,14 @@ export default function ImportClient({ importId }: { importId: string }) {
   const connectable = useMemo(() => (data?.members ?? []).filter((m) => m.degree === "none"), [data]);
   const invitable = data?.invitable ?? [];
 
+  // Worked all the way through the list: nothing is left to hold, so destroy
+  // the stored address book now rather than leaving it to the TTL.
+  useEffect(() => {
+    if (notice && data && data.members.length === 0 && data.invitable.length === 0 && !done) {
+      void finishRef.current?.("That's everyone — your imported contacts have been deleted.");
+    }
+  }, [notice, data, done]);
+
   const toggle = <T,>(set: Set<T>, key: T, update: (next: Set<T>) => void) => {
     const next = new Set(set);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -80,6 +90,11 @@ export default function ImportClient({ importId }: { importId: string }) {
     await fetch(`/api/network/import/${importId}`, { method: "DELETE" }).catch(() => {});
     setDone(message);
   }, [importId]);
+
+  // Held in a ref so the "worked through the whole list" effect can call it
+  // without taking finish as a dependency and re-running on every render.
+  const finishRef = useRef(finish);
+  finishRef.current = finish;
 
   const sendAll = useCallback(async () => {
     if (busy) return;
@@ -121,7 +136,22 @@ export default function ImportClient({ importId }: { importId: string }) {
       if (requested) parts.push(`${requested} connection request${requested === 1 ? "" : "s"} sent`);
       if (invited) parts.push(`${invited} invitation${invited === 1 ? "" : "s"} emailed`);
       if (problems.length) setError(problems.join(" "));
-      await finish(parts.length ? parts.join(", ") + "." : "Nothing was sent.");
+
+      // Sending a batch does NOT end the import. This used to call finish(),
+      // which deleted the whole address book — so inviting one person threw
+      // away the other 600, while the screen was promising "you can invite 50
+      // at a time". Whoever was just handled drops off the list; everyone else
+      // stays put for the next batch.
+      const handledMembers = new Set(memberIds);
+      const handledContacts = new Set(contacts.map((c) => c.email));
+      setData((prev) => prev && {
+        ...prev,
+        members: prev.members.filter((m) => !handledMembers.has(m.profileId)),
+        invitable: prev.invitable.filter((c) => !handledContacts.has(c.email)),
+      });
+      setPickedMembers(new Set());
+      setPickedContacts(new Set());
+      setNotice(parts.length ? parts.join(", ") + "." : "Nothing was sent.");
     } finally {
       setBusy(false);
     }
@@ -174,6 +204,12 @@ export default function ImportClient({ importId }: { importId: string }) {
       {error ? (
         <div style={{ ...CARD, padding: "12px 16px", borderColor: "#FECACA", background: "#FEF2F2", color: "#991B1B", fontSize: 13.5 }}>
           {error}
+        </div>
+      ) : null}
+
+      {notice ? (
+        <div style={{ ...CARD, padding: "12px 16px", borderColor: "#BBF7D0", background: "#F0FDF4", color: "#15803D", fontSize: 13.5 }}>
+          {notice} The rest are still here — keep going, or press Done when you've finished.
         </div>
       ) : null}
 
@@ -262,8 +298,16 @@ export default function ImportClient({ importId }: { importId: string }) {
               every width, and marginLeft:auto keeps them right-aligned when
               they do share the row with the count. */}
           <div style={{ display: "flex", gap: 10, marginLeft: "auto", flex: "none" }}>
-            <button style={BTN} disabled={busy} onClick={() => finish("Skipped — nothing was sent.")}>
-              Skip
+            {/* "Skip" before anything has been sent, "Done" after — the button
+                destroys the imported list either way, and calling it Skip once
+                the member is mid-way through several batches would read as
+                "throw away what I just did". */}
+            <button
+              style={BTN}
+              disabled={busy}
+              onClick={() => finish(notice ? "Finished — the rest of your contacts have been deleted." : "Skipped — nothing was sent.")}
+            >
+              {notice ? "Done" : "Skip"}
             </button>
             <button
               style={{ ...BTN_PRIMARY, opacity: total === 0 || busy ? 0.5 : 1, cursor: total === 0 || busy ? "not-allowed" : "pointer" }}

@@ -33,6 +33,7 @@ type Data = {
   invites: { id: string; email: string; name: string | null; status: string; sent: boolean; sendError: string | null; at: string }[];
   needsProfile: boolean;
   googleReady: boolean;
+  pendingImport: { id: string; total: number; expiresAt: string } | null;
 };
 
 const CARD: React.CSSProperties = {
@@ -113,6 +114,25 @@ export default function NetworkClient() {
       {error ? (
         <div style={{ ...CARD, padding: "12px 16px", borderColor: "#FECACA", background: "#FEF2F2", color: "#991B1B", fontSize: 13.5 }}>
           {error}
+        </div>
+      ) : null}
+
+      {/* ── An import left half-finished ─────────────────────────────────── */}
+      {data?.pendingImport ? (
+        <div style={{ ...CARD, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", borderColor: "#C7D2FE", background: "#EEF2FF" }}>
+          <Icon name="user" size={18} color={C.c1} />
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <div style={{ fontWeight: 650, fontSize: 14.5, color: C.ink }}>You have contacts waiting</div>
+            <div style={{ fontSize: 12.5, color: C.mut, marginTop: 2 }}>
+              {data.pendingImport.total.toLocaleString()} imported contacts you haven&apos;t finished with. They&apos;re deleted automatically after a day.
+            </div>
+          </div>
+          <Link
+            href={`/network/import/${data.pendingImport.id}`}
+            style={{ ...BTN_PRIMARY, textDecoration: "none", display: "inline-block", flex: "none" }}
+          >
+            Pick up where you left off
+          </Link>
         </div>
       ) : null}
 

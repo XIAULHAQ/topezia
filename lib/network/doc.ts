@@ -55,8 +55,21 @@ export const NETWORK_LIMITS = {
    *  first N and tell the member how many we skipped — silently truncating an
    *  address book would make the screen lie about what it looked at. */
   MAX_CONTACTS: 2000,
-  /** How long an imported address book may sit in the database. */
-  IMPORT_TTL_MINUTES: 60,
+  /**
+   * How long an imported address book may sit in the database.
+   *
+   * A day, not an hour. The screen offers 50 invitations at a time, so a member
+   * with 600 contacts needs a dozen passes — an hour made that impossible and
+   * silently binned the list mid-way. Google's Limited Use rule is "only as
+   * long as necessary to provide the feature", and a feature that asks someone
+   * to review hundreds of people plainly needs longer than one sitting.
+   *
+   * It is still a hard ceiling, and it is still deleted the moment the member
+   * presses Done or works through the list — the TTL is the backstop, not the
+   * plan. If this number changes, change the verification justification with
+   * it: docs/runbooks/google-verification-submission.md states it to Google.
+   */
+  IMPORT_TTL_MINUTES: 24 * 60,
   /** How long an emailed invitation stays good. */
   INVITE_TTL_DAYS: 60,
 } as const;
