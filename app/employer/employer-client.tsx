@@ -132,23 +132,17 @@ export default function EmployerClient() {
       .catch(() => {});
   }, [sourceTarget?.id]);
 
+  /** EDIT only. Creating a company — the first or the fifth — happens on
+   *  /employer/company/new, which wears no other company's identity. */
   async function saveCompany() {
     setSaving(true); setError(null);
     try {
-      const isCreate = !company;
       const res = await fetch("/api/company", {
-        method: isCreate ? "POST" : "PATCH",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
       if (!res.ok) throw new Error((await res.json()).error);
-      if (isCreate) {
-        // The server made the new company the active one (cookie). The
-        // sidebar fetched its identity on mount, so a full load is the only
-        // way every part of the page agrees on which company this now is.
-        window.location.href = "/employer";
-        return;
-      }
       await load();
       setEditing(false);
     } catch (e) {
@@ -337,9 +331,15 @@ export default function EmployerClient() {
             )}
           </div>
           <div style={{ flex: "none", display: "flex", gap: 9, flexWrap: "wrap" }}>
-            <button type="button" onClick={openEdit} style={S.heroGhost}>
-              <Icon name="edit" size={14} />{company ? "Edit company" : "Add company page"}
-            </button>
+            {company ? (
+              <button type="button" onClick={openEdit} style={S.heroGhost}>
+                <Icon name="edit" size={14} />Edit company
+              </button>
+            ) : (
+              <Link href="/employer/company/new" style={S.heroGhost}>
+                <Icon name="plus" size={14} />Add company page
+              </Link>
+            )}
             <Link href="/employer/new" style={S.heroCta}><Icon name="plus" size={15} />Post a job or project</Link>
           </div>
         </div>
@@ -381,7 +381,7 @@ export default function EmployerClient() {
 
       {editing && (
         <Card style={{ marginBottom: 22 }}>
-          <h2 style={S.h2}>{company ? "Edit company" : "Create your company page"}</h2>
+          <h2 style={S.h2}>Edit company</h2>
           {(["name", "tagline", "location", "website"] as const).map((k) => (
             <div key={k} style={{ marginBottom: 10 }}>
               <div style={S.label}>{k === "name" ? "Company name *" : k[0].toUpperCase() + k.slice(1)}</div>
@@ -393,7 +393,7 @@ export default function EmployerClient() {
           <textarea style={{ ...S.input, resize: "vertical" }} rows={4} value={form.about} onChange={(e) => setForm((f) => ({ ...f, about: e.target.value }))} placeholder="What you build, how you work, why people join." />
           {error && <div style={{ color: "#b42318", fontSize: 13, marginTop: 8 }}>{error}</div>}
           <div style={{ display: "flex", gap: 9, marginTop: 14 }}>
-            <button type="button" onClick={saveCompany} disabled={saving} style={{ ...S.cta, border: "none", cursor: "pointer", fontFamily: "inherit" }}>{saving ? "Saving…" : company ? "Save" : "Create company"}</button>
+            <button type="button" onClick={saveCompany} disabled={saving} style={{ ...S.cta, border: "none", cursor: "pointer", fontFamily: "inherit" }}>{saving ? "Saving…" : "Save"}</button>
             <button type="button" onClick={() => setEditing(false)} style={S.ghost}>Cancel</button>
           </div>
         </Card>
@@ -557,7 +557,9 @@ export default function EmployerClient() {
                       {ch.done && <Icon name="check" size={11} color="#fff" />}
                     </span>
                     <span style={{ flex: 1, textDecoration: ch.done ? "line-through" : "none" }}>{ch.label}</span>
-                    {!ch.done && ch.action === "company" && <button type="button" onClick={openEdit} style={S.miniLink}>Add</button>}
+                    {!ch.done && ch.action === "company" && (company
+                      ? <button type="button" onClick={openEdit} style={S.miniLink}>Add</button>
+                      : <Link href="/employer/company/new" style={S.miniLink}>Add</Link>)}
                     {!ch.done && ch.action === "post" && <Link href="/employer/new" style={S.miniLink}>Post</Link>}
                     {!ch.done && ch.action === "logo" && (
                       <label style={{ ...S.miniLink, cursor: "pointer" }}>
