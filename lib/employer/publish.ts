@@ -67,14 +67,22 @@ export async function publishDraft(jobId: string): Promise<{ ok: true } | { ok: 
 
   // Same enrichment a crawled job gets. The employer's explicit picks WIN:
   // the LLM only ADDS skills and fills the fields they never chose.
-  const llm = await extractWithLlm(job.titleRaw, job.descriptionRaw);
-  const roleId = job.roleId ?? (await resolveRole(job.titleRaw, llm.roleGuess));
-  const skillNames = [...new Set([...ownSkills, ...llm.skills])];
+  // Never fatal — see the same note in app/api/postings/route.ts. A draft the
+  // employer has already written must be publishable when the model is not
+  // reachable; it just goes live with their own picks.
+  let llm: Awaited<ReturnType<typeof extractWithLlm>> | null = null;
+  try {
+    llm = await extractWithLlm(job.titleRaw, job.descriptionRaw);
+  } catch (err) {
+    console.error("[publish] enrichment unavailable, publishing without it:", err instanceof Error ? err.message : err);
+  }
+  const roleId = job.roleId ?? (llm ? await resolveRole(job.titleRaw, llm.roleGuess) : null);
+  const skillNames = [...new Set([...ownSkills, ...(llm?.skills ?? [])])];
   const skillIds = await resolveSkills(skillNames);
 
   const role = roleId ? await prisma.role.findUnique({ where: { id: roleId }, select: { verticalId: true } }) : null;
   let verticalId = role?.verticalId ?? null;
-  if (!verticalId && llm.vertical) {
+  if (!verticalId && llm?.vertical) {
     verticalId = (await prisma.vertical.findUnique({ where: { slug: llm.vertical }, select: { id: true } }))?.id ?? null;
   }
   if (!verticalId) verticalId = (await prisma.vertical.findUnique({ where: { slug: UNSORTED }, select: { id: true } }))!.id;
@@ -92,8 +100,8 @@ export async function publishDraft(jobId: string): Promise<{ ok: true } | { ok: 
         lastVerifiedAt: new Date(),
         roleId,
         verticalId,
-        seniority: llm.seniority,
-        titleNormalized: llm.roleGuess || null,
+        seniority: llm?.seniority ?? "NOT_APPLICABLE",
+        titleNormalized: llm?.roleGuess || null,
         descriptionHash: hashDescription(`${job.titleRaw}\n${job.descriptionRaw}`),
         skills: { create: skillIds.map((skillId) => ({ skillId })) },
       },
@@ -106,7 +114,7 @@ export async function publishDraft(jobId: string): Promise<{ ok: true } | { ok: 
   try {
     const embedding = await embedText(
       buildJobEmbeddingInput({
-        titleNormalized: llm.roleGuess || null,
+        titleNormalized: llm?.roleGuess || null,
         titleRaw: job.titleRaw,
         skills: skillNames,
         descriptionText: job.descriptionRaw,

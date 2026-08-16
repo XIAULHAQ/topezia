@@ -138,7 +138,23 @@ export async function POST(req: NextRequest) {
   //
   // Drafts skip all of it (no LLM call, no embedding) and get enriched by
   // lib/employer/publish.ts when they actually go live.
-  const llm = asDraft ? null : await extractWithLlm(title, description);
+  // Enrichment is a BONUS, never a gate. The employer already supplied the
+  // title, the category and at least two skills — the form requires them —
+  // and the model only adds to that. When it is unavailable (an expired API
+  // key, an empty credit balance, a provider outage) the posting still goes
+  // live with exactly what they typed. It used to throw here, which lost the
+  // whole posting and showed the browser's own JSON parse error, because the
+  // crashed function answers with no body at all.
+  let llm: Awaited<ReturnType<typeof extractWithLlm>> | null = null;
+  if (!asDraft) {
+    try {
+      llm = await extractWithLlm(title, description);
+    } catch (err) {
+      // console.error is captured by the error log (lib/errors/log.ts), so a
+      // silently unenriched posting is still visible at the weekly review.
+      console.error("[postings] enrichment unavailable, publishing without it:", err instanceof Error ? err.message : err);
+    }
+  }
   const roleId = pickedRole
     ? await resolveRole(pickedRole, pickedRole)
     : llm ? await resolveRole(title, llm.roleGuess) : null;

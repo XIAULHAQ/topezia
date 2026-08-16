@@ -49,6 +49,24 @@ export default function PostingForm() {
     }).catch(() => {});
   }, []);
 
+  /**
+   * Read a response without ever throwing a parse error at the user.
+   *
+   * A serverless function that crashes or times out answers with no body (or
+   * an HTML error page), so `await res.json()` threw "Unexpected end of JSON
+   * input" — which is what a real employer saw instead of a usable message
+   * when the enrichment step failed mid-publish.
+   */
+  async function readJson(res: Response): Promise<Record<string, unknown>> {
+    const text = await res.text().catch(() => "");
+    if (!text.trim()) return {};
+    try {
+      return JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+
   const addSkill = () => {
     const s = newSkill.trim();
     if (s && !skills.some((x) => x.toLowerCase() === s.toLowerCase())) setSkills((xs) => [...xs, s].slice(0, 20));
@@ -72,9 +90,9 @@ export default function PostingForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind, title: f.title, role: f.role, notes, skills, postAs: postAs || undefined }),
       });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error);
-      set("description", d.draft);
+      const d = await readJson(res);
+      if (!res.ok) throw new Error(typeof d.error === "string" ? d.error : "");
+      set("description", String(d.draft ?? ""));
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : "Couldn't draft that — try again.");
     } finally {
@@ -101,11 +119,17 @@ export default function PostingForm() {
           salaryPeriod: kind === "PROJECT" ? "PROJECT" : f.salaryPeriod,
         }),
       });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error);
+      const d = await readJson(res);
+      if (!res.ok) throw new Error(typeof d.error === "string" ? d.error : "");
       router.push("/employer");
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : draft ? "Couldn't save that draft — try again." : "Couldn't publish — try again.");
+      setError(
+        e instanceof Error && e.message
+          ? e.message
+          : draft
+            ? "Couldn't save that draft — try again."
+            : "Couldn't publish that — nothing was lost, your posting is still here. Try again, and if it keeps failing the team has been notified."
+      );
       setState("idle");
     }
   }
