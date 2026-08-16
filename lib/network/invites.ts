@@ -96,7 +96,7 @@ export function renderInviteEmail(opts: {
       <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 14px;">${hi}</p>
       <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 20px;"><strong>${who}</strong> ${
         source === "contacts" ? "found you in their contacts and would like to connect" : "would like to connect with you"
-      } on Topezia — where people keep a profile of their work, get matched to roles, and vouch for the people they've worked with.</p>
+      } on Topezia — where the world’s best talent can showcase their work, exchange ideas, connect with like-minded people, and discover opportunities they might never find elsewhere.</p>
       <a href="${inviteUrl(token)}" style="display:inline-block;padding:12px 24px;background:#4f46e5;color:#fff;border-radius:10px;font-weight:700;font-size:15px;text-decoration:none;">See ${name}'s invitation</a>
       <p style="color:#9ca3af;font-size:13px;line-height:1.6;margin:20px 0 0;">Connecting is mutual — nothing is shared with ${name} until you accept, and we never email your contacts without you asking us to.</p>
     </div>
