@@ -183,12 +183,9 @@ export default function AccountMenu({
                   <span style={TRUNC}>{c.name}</span>
                 </button>
               ))}
-            {/* Plain anchor on purpose: /employer reads ?new=1 on mount, and a
-                client-side Link from /employer to /employer?new=1 would not
-                remount it. */}
-            <a href="/employer?new=1" style={{ ...ITEM, color: "#4F46E5", fontWeight: 600 }}>
+            <Link href="/employer/company/new" style={{ ...ITEM, color: "#4F46E5", fontWeight: 600 }}>
               <Icon name="plus" size={16} />Create company
-            </a>
+            </Link>
 
             <div style={{ height: 1, background: C.line, margin: "6px 0 4px" }} />
             <Link href="/profile/edit" prefetch={false} style={ITEM}><Icon name="edit" size={16} />Edit profile</Link>

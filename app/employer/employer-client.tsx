@@ -88,10 +88,6 @@ export default function EmployerClient() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [tab, setTab] = useState<Tab>("Live");
   const [editing, setEditing] = useState(false);
-  // "Add another company" — the editor opens EMPTY and saves with POST even
-  // though a company already exists. Entered via /employer?new=1 (the
-  // sidebar's "New company"), so the shell can send you here without props.
-  const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ name: "", tagline: "", about: "", website: "", location: "" });
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -112,13 +108,13 @@ export default function EmployerClient() {
   }
   useEffect(() => { load(); }, []);
   useEffect(() => {
+    // ?new=1 used to unfold an empty "add another company" form halfway down
+    // THIS company's dashboard, which read as the button not working — the
+    // top of the page still wore the current company. Creating has its own
+    // screen now; old links land there instead of doing nothing.
     if (typeof window === "undefined") return;
     if (new URLSearchParams(window.location.search).get("new") === "1") {
-      setForm({ name: "", tagline: "", about: "", website: "", location: "" });
-      setCreating(true);
-      setEditing(true);
-      // Drop the flag so a refresh doesn't reopen an empty form over a saved company.
-      window.history.replaceState(null, "", "/employer");
+      window.location.replace("/employer/company/new");
     }
   }, []);
 
@@ -139,7 +135,7 @@ export default function EmployerClient() {
   async function saveCompany() {
     setSaving(true); setError(null);
     try {
-      const isCreate = creating || !company;
+      const isCreate = !company;
       const res = await fetch("/api/company", {
         method: isCreate ? "POST" : "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -228,7 +224,6 @@ export default function EmployerClient() {
   }
 
   const openEdit = () => {
-    setCreating(false);
     setForm({
       name: company?.name ?? "", tagline: company?.tagline ?? "", about: company?.about ?? "",
       website: company?.website ?? "", location: company?.location ?? "",
@@ -386,12 +381,7 @@ export default function EmployerClient() {
 
       {editing && (
         <Card style={{ marginBottom: 22 }}>
-          <h2 style={S.h2}>{creating ? "Add another company" : company ? "Edit company" : "Create your company page"}</h2>
-          {creating && (
-            <p style={{ fontSize: 13, color: C.mut, margin: "-6px 0 12px" }}>
-              Its own public page, postings, plan and team. You can switch between your companies from the sidebar.
-            </p>
-          )}
+          <h2 style={S.h2}>{company ? "Edit company" : "Create your company page"}</h2>
           {(["name", "tagline", "location", "website"] as const).map((k) => (
             <div key={k} style={{ marginBottom: 10 }}>
               <div style={S.label}>{k === "name" ? "Company name *" : k[0].toUpperCase() + k.slice(1)}</div>
@@ -403,8 +393,8 @@ export default function EmployerClient() {
           <textarea style={{ ...S.input, resize: "vertical" }} rows={4} value={form.about} onChange={(e) => setForm((f) => ({ ...f, about: e.target.value }))} placeholder="What you build, how you work, why people join." />
           {error && <div style={{ color: "#b42318", fontSize: 13, marginTop: 8 }}>{error}</div>}
           <div style={{ display: "flex", gap: 9, marginTop: 14 }}>
-            <button type="button" onClick={saveCompany} disabled={saving} style={{ ...S.cta, border: "none", cursor: "pointer", fontFamily: "inherit" }}>{saving ? "Saving…" : company && !creating ? "Save" : "Create company"}</button>
-            <button type="button" onClick={() => { setEditing(false); setCreating(false); }} style={S.ghost}>Cancel</button>
+            <button type="button" onClick={saveCompany} disabled={saving} style={{ ...S.cta, border: "none", cursor: "pointer", fontFamily: "inherit" }}>{saving ? "Saving…" : company ? "Save" : "Create company"}</button>
+            <button type="button" onClick={() => setEditing(false)} style={S.ghost}>Cancel</button>
           </div>
         </Card>
       )}

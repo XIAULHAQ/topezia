@@ -158,13 +158,10 @@ export default function EmployerShell({ children }: { children: ReactNode }) {
                 {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             )}
-            {/* A plain anchor on purpose: the overview reads ?new=1 on mount,
-                and a client-side Link from /employer to /employer?new=1 would
-                not remount it. */}
-            <a href="/employer?new=1" style={S.newCompany}>
+            <Link href="/employer/company/new" style={S.newCompany}>
               <Icon name="plus" size={13} />
               New company
-            </a>
+            </Link>
           </div>
         )}
 
