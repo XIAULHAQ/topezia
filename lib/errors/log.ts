@@ -14,7 +14,10 @@
  *
  * Rules this file keeps, because a logger that breaks the thing it is logging
  * is worse than none:
- *   - NEVER throws, never awaits anything the caller waits on. Fire and forget.
+ *   - NEVER throws. Returns the write promise so a route handler CAN await it
+ *     (or hand it to Vercel's waitUntil) — on serverless the function is
+ *     frozen the moment the response is sent, and a write nobody waited for
+ *     is a write that never happens. Callers that don't care just ignore it.
  *   - Re-entrancy guarded: if writing the log itself errors (DB down), that
  *     error is NOT logged through this path — it would recurse forever.
  *   - Throttled per fingerprint in memory: a hot loop logging the same error
@@ -103,7 +106,7 @@ export function describeError(err: unknown): { message: string; stack: string | 
  * Record an error. Safe to call from anywhere on the server; returns
  * immediately. Nothing about the caller's control flow depends on it.
  */
-export function logError(input: LogErrorInput): void {
+export function logError(input: LogErrorInput): Promise<void> {
   try {
     const message = stripAnsi(input.message || "Unknown error").slice(0, MAX_MESSAGE);
     const path = input.path ? input.path.slice(0, MAX_PATH) : null;
@@ -117,20 +120,38 @@ export function logError(input: LogErrorInput): void {
         // Batched into the next write — scheduled once, so a burst that then
         // stops still gets its full count recorded.
         if (!entry.timer) {
-          entry.timer = setTimeout(() => { entry.timer = undefined; void flush(fp); }, WRITE_EVERY_MS - (now - entry.lastWrite));
+          entry.timer = setTimeout(() => { entry.timer = undefined; keepAlive(flush(fp)); }, WRITE_EVERY_MS - (now - entry.lastWrite));
           // Never keep a serverless instance alive just for this.
           (entry.timer as { unref?: () => void }).unref?.();
         }
-        return;
+        return Promise.resolve();
       }
     } else {
-      if (pending.size >= MAX_TRACKED) return;
+      if (pending.size >= MAX_TRACKED) return Promise.resolve();
       pending.set(fp, { count: 1, lastWrite: 0, input: { ...input, message, path, stack: input.stack?.slice(0, MAX_STACK) ?? null } });
     }
-    void flush(fp);
+    return keepAlive(flush(fp));
   } catch {
-    /* never */
+    return Promise.resolve();
   }
+}
+
+/**
+ * On Vercel, ask the platform to keep the function alive until the write
+ * finishes even if the response has already gone out. Elsewhere (dev, tests,
+ * scripts) it is a no-op and the promise simply runs. Loaded lazily and
+ * defensively: this file must import nothing that could fail at boot.
+ */
+function keepAlive(p: Promise<void>): Promise<void> {
+  const safe = p.catch(() => {});
+  try {
+    if (process.env.VERCEL) {
+      void import("@vercel/functions").then((m) => m.waitUntil(safe)).catch(() => {});
+    }
+  } catch {
+    /* no platform hook — the promise still runs while the process lives */
+  }
+  return safe;
 }
 
 async function flush(fp: string): Promise<void> {

@@ -30,7 +30,9 @@ export async function POST(req: NextRequest) {
   const message = str(body.message, 500);
   if (!message) return NextResponse.json({ ok: false }, { status: 400 });
 
-  logError({
+  // Awaited on purpose: see lib/errors/log.ts — a serverless function that
+  // answers before the write lands has not written anything.
+  await logError({
     source: "client",
     message,
     stack: str(body.stack, 4000) || null,
