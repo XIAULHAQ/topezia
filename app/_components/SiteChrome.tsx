@@ -17,6 +17,9 @@ import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+// One implementation, shared with the chatbot landing page — see the file for
+// why a cookie is read at all.
+import { hasAuthCookie } from "@/lib/auth/session-cookie";
 import AccountMenu from "./AccountMenu";
 
 const C = { c1: "#8B5CF6", c2: "#3B82F6", ink: "#0F172A", slate: "#334155", mut: "#64748B", line: "#E2E8F0" };
@@ -67,27 +70,6 @@ const CHROME_CSS = `
 }
 @media (min-width:721px){ .tzc-menu{display:none!important} }
 `;
-
-/**
- * Is there a Supabase auth cookie in this browser?
- *
- * Synchronous, so the header can paint the SIGNED-IN bar on the first client
- * render. `getSession()` is the authority, but it can take a network
- * round-trip when the access token needs refreshing — and while it ran, a
- * signed-in member was shown "Sign in" and "Join free", which is what these
- * public pages were reported as doing. getSession() still runs below and
- * corrects this if the cookie turns out to be dead.
- *
- * Deliberately NOT matching `-auth-token-code-verifier`, which is present
- * during a sign-in attempt and after signing OUT — treating it as a session
- * would flash an avatar at logged-out visitors, the opposite bug.
- */
-function hasAuthCookie(): boolean {
-  if (typeof document === "undefined") return false;
-  return document.cookie
-    .split("; ")
-    .some((c) => /^sb-.+-auth-token(\.\d+)?=/.test(c) && c.split("=").slice(1).join("=").trim().length > 2);
-}
 
 export function SiteHeader() {
   // null = unknown (render anonymous default; no wrong flash for visitors).

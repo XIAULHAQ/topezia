@@ -143,6 +143,11 @@ export default function AccountMenu({
 
   return (
     <div style={{ position: "relative", flex: "none" }}>
+      {/* The name is the first thing to go when the bar runs out of room —
+          the avatar alone still answers "am I signed in, and as whom". Without
+          this the pill plus a call-to-action overflows a 375px phone on the
+          public pages, which have no burger to fold into. */}
+      <style>{"@media (max-width:600px){.tzam-name{display:none}}"}</style>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -154,7 +159,7 @@ export default function AccountMenu({
         {/* Capped and ellipsised: "Muhammad Zia Ul Haq" is wider than the bar
             can spare once the sidebar is out, and an untruncated name pushed
             the whole row past the edge. */}
-        <span style={{ fontSize: 13, fontWeight: 600, maxWidth: 150, ...TRUNC }}>{viewing ? viewing.name : name}</span>
+        <span className="tzam-name" style={{ fontSize: 13, fontWeight: 600, maxWidth: 150, ...TRUNC }}>{viewing ? viewing.name : name}</span>
         <Icon name="chev" size={14} />
       </button>
 

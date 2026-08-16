@@ -15,6 +15,9 @@
  */
 import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import { hasAuthCookie } from "@/lib/auth/session-cookie";
+import AccountMenu from "@/app/_components/AccountMenu";
 import { Icon, type IconName } from "./icons";
 import { FAQS, type PlanCard } from "./content";
 
@@ -235,6 +238,17 @@ export default function ChatbotLanding({ plans, badgeOff }: { plans: PlanCard[];
   const [tab, setTab] = useState<TabKey>("answers");
   const [open, setOpen] = useState(0);
   const [copied, setCopied] = useState(false);
+  /**
+   * This page is public and statically cached, so the session is a
+   * client-side question. It used to show a bare "Sign in" link to everyone,
+   * signed-in members included. Cookie first so the right bar paints on the
+   * first frame, then the real check — see lib/auth/session-cookie.ts.
+   */
+  const [authed, setAuthed] = useState(false);
+  useEffect(() => {
+    if (hasAuthCookie()) setAuthed(true);
+    createClient().auth.getSession().then(({ data }) => setAuthed(Boolean(data.session))).catch(() => {});
+  }, []);
 
   const shown = Math.min(HERO_SCRIPT.length, step + 1);
   const t = TABS[tab];
@@ -277,7 +291,12 @@ export default function ChatbotLanding({ plans, badgeOff }: { plans: PlanCard[];
               <a key={href} href={href} className="fac-link" style={{ fontSize: 13, fontWeight: 600, color: SLATE, padding: "9px 11px", textDecoration: "none" }}>{label}</a>
             ))}
           </div>
-          <Link href="/login" className="fac-link" style={{ fontSize: 13, fontWeight: 600, color: SLATE, padding: "9px 12px", textDecoration: "none" }}>Sign in</Link>
+          {/* "Get it free" stays in both states — it is the point of the page,
+              and it lands on the widget setup either way. Only the sign-in
+              link is wrong for someone already signed in. */}
+          {authed
+            ? <AccountMenu />
+            : <Link href="/login" className="fac-link" style={{ fontSize: 13, fontWeight: 600, color: SLATE, padding: "9px 12px", textDecoration: "none" }}>Sign in</Link>}
           <Link href="/employer/widget" style={{ background: GRAD, color: "#fff", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, boxShadow: "0 5px 14px rgba(99,102,241,.3)", textDecoration: "none" }}>Get it free</Link>
         </div>
       </header>
