@@ -16,6 +16,9 @@ const REMOTE = [["ONSITE", "On-site"], ["HYBRID", "Hybrid"], ["REMOTE_INTL", "Re
 // Level is asked for rather than guessed. It is one of the things the matcher
 // weighs ("seniority fit"), and the employer knows it — an empty value is the
 // only case left for the model, and it is not required to post.
+/** Marks a picked CATEGORY rather than a role, so the value stays one field. */
+const VERTICAL_PREFIX = "vertical:";
+
 const SENIORITY = [
   ["", "Not specified"],
   ["INTERN", "Intern"],
@@ -29,7 +32,11 @@ const SENIORITY = [
 export default function PostingForm() {
   const router = useRouter();
   const [kind, setKind] = useState<"JOB" | "PROJECT">("JOB");
-  const [roleGroups, setRoleGroups] = useState<{ field: string; roles: string[] }[]>([]);
+  // Every category, including ones with no roles yet — see the note in
+  // /api/taxonomy/roles. A missing role is our gap, not a reason to block a
+  // posting, so each category also offers "something else in …", which posts
+  // under the category with no role attached.
+  const [roleGroups, setRoleGroups] = useState<{ field: string; slug: string; roles: string[] }[]>([]);
   const [f, setF] = useState({
     title: "", role: "", description: "", employmentType: "FULL_TIME", remoteType: "ONSITE", seniority: "",
     location: "", salaryMin: "", salaryMax: "", salaryCurrency: "USD", salaryPeriod: "YEAR",
@@ -42,6 +49,8 @@ export default function PostingForm() {
   const [state, setState] = useState<"idle" | "sending">("idle");
   const [error, setError] = useState<string | null>(null);
   const set = (k: string, v: string) => setF((x) => ({ ...x, [k]: v }));
+  /** The picked ROLE name, empty when they picked a bare category. */
+  const pickedRoleName = f.role.startsWith(VERTICAL_PREFIX) ? "" : f.role;
 
   // Who this is posted AS. An account may own several companies (migration
   // 076) or none; a posting always carries exactly one poster identity —
@@ -100,7 +109,8 @@ export default function PostingForm() {
       const res = await fetch("/api/postings/assist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind, title: f.title, role: f.role, notes, skills, postAs: postAs || undefined }),
+        // The writer wants a human-readable role, never the "vertical:" marker.
+        body: JSON.stringify({ kind, title: f.title, role: pickedRoleName, notes, skills, postAs: postAs || undefined }),
       });
       const d = await readJson(res);
       if (!res.ok) throw new Error(typeof d.error === "string" ? d.error : "");
@@ -123,7 +133,13 @@ export default function PostingForm() {
         body: JSON.stringify({
           draft,
           postAs: postAs || undefined,
-          kind, title: f.title, role: f.role, description: f.description, skills,
+          kind,
+          title: f.title,
+          // One picker, two kinds of answer: a role name, or a category when
+          // the role isn't in the taxonomy yet.
+          role: f.role.startsWith(VERTICAL_PREFIX) ? "" : f.role,
+          vertical: f.role.startsWith(VERTICAL_PREFIX) ? f.role.slice(VERTICAL_PREFIX.length) : undefined,
+          description: f.description, skills,
           employmentType: f.employmentType, remoteType: f.remoteType, location: f.location,
           seniority: f.seniority || undefined,
           salaryMin: f.salaryMin ? Number(f.salaryMin) : null,
@@ -184,8 +200,13 @@ export default function PostingForm() {
           <select style={S.input} value={f.role} onChange={(e) => set("role", e.target.value)}>
             <option value="">Choose the closest role…</option>
             {roleGroups.map((g) => (
-              <optgroup key={g.field} label={g.field}>
+              <optgroup key={g.slug} label={g.field}>
                 {g.roles.map((r) => <option key={r} value={r}>{r}</option>)}
+                {/* The escape hatch, on EVERY category — the taxonomy will
+                    always trail what people actually hire for. */}
+                <option value={`${VERTICAL_PREFIX}${g.slug}`}>
+                  {g.roles.length ? `Something else in ${g.field}` : `${g.field} — other`}
+                </option>
               </optgroup>
             ))}
           </select>

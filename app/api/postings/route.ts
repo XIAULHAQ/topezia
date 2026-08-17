@@ -115,6 +115,12 @@ export async function POST(req: NextRequest) {
   // every SEO surface (they all filter status = LIVE). It deliberately skips
   // the publish bar AND the LLM/embedding enrichment — see lib/employer/
   // publish.ts for why enriching half-written text is worse than not doing it.
+  // A category with no matching role yet is a legitimate answer: the taxonomy
+  // trails what people actually hire for, and that is ours to fix, not theirs
+  // to work around. Such a posting carries the vertical with roleId null — it
+  // still embeds, still matches, it simply isn't part of a role hub.
+  const pickedVertical = str(body.vertical, 60).toLowerCase().replace(/[^a-z0-9-]/g, "");
+
   const asDraft = body.draft === true;
 
   if (asDraft) {
@@ -123,7 +129,7 @@ export async function POST(req: NextRequest) {
     // Posting requirements — enforced here, shown as a live checklist in the
     // form. A thin posting wastes every applicant's time and poisons matching.
     if (title.length < 8) return NextResponse.json({ error: "Give it a real title (8+ characters)." }, { status: 400 });
-    if (!pickedRole) return NextResponse.json({ error: "Pick a category — it routes the right people to you." }, { status: 400 });
+    if (!pickedRole && !pickedVertical) return NextResponse.json({ error: "Pick a category — it routes the right people to you." }, { status: 400 });
     if (description.length < 200) return NextResponse.json({ error: "The description needs at least 200 characters — use the AI writer if you're stuck." }, { status: 400 });
     if (pickedSkills.length < 2) return NextResponse.json({ error: "List at least 2 required skills." }, { status: 400 });
   }
@@ -146,10 +152,15 @@ export async function POST(req: NextRequest) {
     : null;
 
   const roleId = pickedRole ? await resolveRole(pickedRole, pickedRole) : null;
+  // Never "unsorted": that is the internal fallback for jobs we couldn't
+  // classify, and choosing it explicitly would be a different claim.
+  const chosenVertical = pickedVertical && pickedVertical !== UNSORTED
+    ? await prisma.vertical.findUnique({ where: { slug: pickedVertical }, select: { id: true } })
+    : null;
   const skillNames = [...new Set(pickedSkills)];
   const skillIds = await resolveSkills(skillNames);
   const role = roleId ? await prisma.role.findUnique({ where: { id: roleId }, select: { verticalId: true } }) : null;
-  let verticalId = role?.verticalId ?? null;
+  let verticalId = role?.verticalId ?? chosenVertical?.id ?? null;
   if (!verticalId) verticalId = (await prisma.vertical.findUnique({ where: { slug: UNSORTED }, select: { id: true } }))!.id;
 
   const id = randomUUID();
