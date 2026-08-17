@@ -29,19 +29,43 @@ const SENIORITY = [
   ["EXEC", "Executive"],
 ] as const;
 
-export default function PostingForm() {
+export type PostingDraft = {
+  id: string; kind: "JOB" | "PROJECT"; title: string; description: string; status: string;
+  role: string; skills: string[]; employmentType: string; remoteType: string; seniority: string;
+  location: string; salaryMin: number | string; salaryMax: number | string;
+  salaryCurrency: string; salaryPeriod: string;
+};
+
+/**
+ * One form, two jobs: writing a new posting and editing an existing one.
+ * Editing was missing entirely — a typo in a live title could only be fixed by
+ * closing the posting and writing it again, which threw away its pipeline —
+ * and a second copy of a 300-line form would drift from this one within a
+ * release. `existing` is the only difference.
+ */
+export default function PostingForm({ existing }: { existing?: PostingDraft }) {
   const router = useRouter();
-  const [kind, setKind] = useState<"JOB" | "PROJECT">("JOB");
+  const editing = Boolean(existing);
+  const [kind, setKind] = useState<"JOB" | "PROJECT">(existing?.kind ?? "JOB");
   // Every category, including ones with no roles yet — see the note in
   // /api/taxonomy/roles. A missing role is our gap, not a reason to block a
   // posting, so each category also offers "something else in …", which posts
   // under the category with no role attached.
   const [roleGroups, setRoleGroups] = useState<{ field: string; slug: string; roles: string[] }[]>([]);
   const [f, setF] = useState({
-    title: "", role: "", description: "", employmentType: "FULL_TIME", remoteType: "ONSITE", seniority: "",
-    location: "", salaryMin: "", salaryMax: "", salaryCurrency: "USD", salaryPeriod: "YEAR",
+    title: existing?.title ?? "",
+    role: existing?.role ?? "",
+    description: existing?.description ?? "",
+    employmentType: existing?.employmentType ?? "FULL_TIME",
+    remoteType: existing?.remoteType ?? "ONSITE",
+    seniority: existing?.seniority ?? "",
+    location: existing?.location ?? "",
+    salaryMin: existing?.salaryMin ? String(existing.salaryMin) : "",
+    salaryMax: existing?.salaryMax ? String(existing.salaryMax) : "",
+    salaryCurrency: existing?.salaryCurrency ?? "USD",
+    salaryPeriod: existing?.salaryPeriod ?? "YEAR",
   });
-  const [skills, setSkills] = useState<string[]>([]);
+  const [skills, setSkills] = useState<string[]>(existing?.skills ?? []);
   const [newSkill, setNewSkill] = useState("");
   const [notes, setNotes] = useState("");
   const [aiOpen, setAiOpen] = useState(false);
@@ -163,23 +187,57 @@ export default function PostingForm() {
     }
   }
 
+  async function saveEdit() {
+    if (!existing) return;
+    setState("sending"); setError(null);
+    try {
+      const res = await fetch(`/api/postings/${existing.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: f.title,
+          role: pickedRoleName,
+          vertical: f.role.startsWith(VERTICAL_PREFIX) ? f.role.slice(VERTICAL_PREFIX.length) : undefined,
+          description: f.description, skills,
+          employmentType: f.employmentType, remoteType: f.remoteType, location: f.location,
+          seniority: f.seniority || undefined,
+          salaryMin: f.salaryMin ? Number(f.salaryMin) : null,
+          salaryMax: f.salaryMax ? Number(f.salaryMax) : null,
+          salaryCurrency: f.salaryCurrency,
+          salaryPeriod: kind === "PROJECT" ? "PROJECT" : f.salaryPeriod,
+        }),
+      });
+      const d = await readJson(res);
+      if (!res.ok) throw new Error(typeof d.error === "string" ? d.error : "");
+      router.push("/employer/postings");
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : "Couldn't save those changes — try again.");
+      setState("idle");
+    }
+  }
+
   const publish = () => submit(false);
   const saveDraft = () => submit(true);
 
   return (
     <div style={{ maxWidth: 680, fontFamily: FONT }}>
-      <Link href="/employer" style={{ fontSize: 13, color: C.mut, textDecoration: "none" }}>← Back to your postings</Link>
-      <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.4px", margin: "10px 0 18px" }}>Post {kind === "JOB" ? "a job" : "a project"}</h1>
+      <Link href="/employer/postings" style={{ fontSize: 13, color: C.mut, textDecoration: "none" }}>← Back to your postings</Link>
+      <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.4px", margin: "10px 0 18px" }}>
+        {editing ? "Edit posting" : `Post ${kind === "JOB" ? "a job" : "a project"}`}
+      </h1>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-        {(["JOB", "PROJECT"] as const).map((k) => (
-          <button key={k} type="button" onClick={() => setKind(k)} style={kind === k ? S.pillOn : S.pillOff}>
-            {k === "JOB" ? "Job — hire someone" : "Project — get proposals"}
-          </button>
-        ))}
-      </div>
+      {!editing && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+          {(["JOB", "PROJECT"] as const).map((k) => (
+            <button key={k} type="button" onClick={() => setKind(k)} style={kind === k ? S.pillOn : S.pillOff}>
+              {k === "JOB" ? "Job — hire someone" : "Project — get proposals"}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {companies.length > 0 && (
+      {!editing && companies.length > 0 && (
         <div>
           <div style={S.label}>Post as *</div>
           <select style={S.input} value={postAs} onChange={(e) => setPostAs(e.target.value)} aria-label="Post as">
@@ -314,6 +372,20 @@ export default function PostingForm() {
 
       {error && <div style={{ color: "#b42318", fontSize: 13, marginTop: 12 }}>{error}</div>}
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 16, flexWrap: "wrap" }}>
+        {editing ? (
+          <>
+            <button type="button" onClick={saveEdit} disabled={state === "sending" || (existing?.status !== "DRAFT" && !ready)} style={{ ...S.cta, opacity: state === "sending" || (existing?.status !== "DRAFT" && !ready) ? 0.55 : 1 }}>
+              {state === "sending" ? "Saving…" : "Save changes"}
+            </button>
+            <Link href="/employer/postings" style={S.ghost}>Cancel</Link>
+            <span style={{ fontSize: 12, color: C.mut }}>
+              {existing?.status === "LIVE"
+                ? "Applicants already in the pipeline keep their place."
+                : "Still private until it goes live."}
+            </span>
+          </>
+        ) : (
+        <>
         <button type="button" onClick={publish} disabled={state === "sending" || !ready} style={{ ...S.cta, opacity: state === "sending" || !ready ? 0.55 : 1 }}>
           {state === "sending" ? "Publishing…" : ready ? "Publish — it goes live now" : "Meet the requirements above to publish"}
         </button>
@@ -330,6 +402,8 @@ export default function PostingForm() {
         <span style={{ fontSize: 12, color: C.mut }}>
           {ready ? "Free while we grow. You can close it any time." : "A draft stays private until you publish it."}
         </span>
+        </>
+        )}
       </div>
     </div>
   );

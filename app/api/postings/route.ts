@@ -73,12 +73,14 @@ export async function GET() {
       salaryMin: true, salaryMax: true, salaryCurrency: true, salaryPeriod: true,
       companyId: true, companyName: true,
       applications: { select: { stage: true } },
+      _count: { select: { views: true } },
     },
   });
   const postings = rows.map((r) => {
     const by: Record<string, number> = {};
     for (const a of r.applications) by[a.stage] = (by[a.stage] ?? 0) + 1;
-    return { ...r, applications: undefined, total: r.applications.length, byStage: by };
+    const { applications, _count, ...rest } = r;
+    return { ...rest, total: applications.length, byStage: by, views: _count.views };
   });
   return NextResponse.json({ postings, company, companies });
 }

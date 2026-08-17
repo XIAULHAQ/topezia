@@ -130,6 +130,14 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
   const job = await getJob(params.id);
   if (!job) notFound();
 
+  // Never published, so there is no page to show — not even a "this job has
+  // closed" one, which would be a lie about something nobody ever saw. A
+  // DRAFT is the employer's unfinished work; PENDING_ROLE is a finished
+  // posting we are holding until it has a role (migration 079). The listing
+  // surfaces exclude both by filtering on LIVE, but this page loads by id, so
+  // it has to say so itself.
+  if (job.status === "DRAFT" || job.status === "PENDING_ROLE") notFound();
+
   // One canonical URL per job: bare-uuid links and stale slugs 301 here.
   const canonical = jobPath(job);
   if (`/job/${decodeURIComponent(params.id)}` !== canonical) {

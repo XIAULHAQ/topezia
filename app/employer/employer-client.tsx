@@ -456,15 +456,22 @@ export default function EmployerClient() {
                     </div>
                     <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8 }}>
                       {p.status === "PENDING_ROLE" ? (
-                        <button type="button" onClick={() => setStatus(p, "EXPIRED")} disabled={busyId === p.id} style={S.ghost}>
-                          {busyId === p.id ? "…" : "Withdraw"}
-                        </button>
+                        <>
+                          <Link href={`/employer/${p.id}/edit`} style={S.ghost}>Edit</Link>
+                          <button type="button" onClick={() => setStatus(p, "EXPIRED")} disabled={busyId === p.id} style={S.ghost}>
+                            {busyId === p.id ? "…" : "Withdraw"}
+                          </button>
+                        </>
                       ) : p.status === "DRAFT" ? (
-                        <button type="button" onClick={() => setStatus(p, "LIVE")} disabled={busyId === p.id} style={{ ...S.cta, border: "none", cursor: "pointer", fontFamily: "inherit", opacity: busyId === p.id ? 0.6 : 1 }}>
-                          {busyId === p.id ? "Publishing…" : "Publish"}
-                        </button>
+                        <>
+                          <Link href={`/employer/${p.id}/edit`} style={S.ghost}>Edit</Link>
+                          <button type="button" onClick={() => setStatus(p, "LIVE")} disabled={busyId === p.id} style={{ ...S.cta, border: "none", cursor: "pointer", fontFamily: "inherit", opacity: busyId === p.id ? 0.6 : 1 }}>
+                            {busyId === p.id ? "Publishing…" : "Publish"}
+                          </button>
+                        </>
                       ) : (
                         <>
+                          <Link href={`/employer/${p.id}/edit`} style={S.ghost}>Edit</Link>
                           <Link href={`/employer/${p.id}`} style={S.ghost}>View pipeline</Link>
                           <button type="button" onClick={() => setStatus(p, p.status === "LIVE" ? "EXPIRED" : "LIVE")} disabled={busyId === p.id} style={S.ghost}>
                             {p.status === "LIVE" ? "Close" : "Reopen"}

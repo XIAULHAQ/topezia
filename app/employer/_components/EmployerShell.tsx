@@ -41,6 +41,9 @@ type CompanyOption = { id: string; name: string; slug: string; logoPath: string 
  */
 const NAV: { icon: string; label: string; href: string; needs?: "siteChat" }[] = [
   { icon: "gauge", label: "Overview", href: "/employer" },
+  // The employer area's whole point, and until now the only section without a
+  // place in the rail — the list lived halfway down Overview, under the stats.
+  { icon: "briefcase", label: "Postings", href: "/employer/postings" },
   { icon: "mail", label: "Messages", href: "/employer/inquiries" },
   { icon: "chat", label: "Site chat", href: "/employer/widget", needs: "siteChat" },
   { icon: "image", label: "Work", href: "/employer/work" },
