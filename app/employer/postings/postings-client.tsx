@@ -33,6 +33,11 @@ const money = (p: Posting) => {
 
 export default function PostingsClient() {
   const [postings, setPostings] = useState<Posting[] | null>(null);
+  // Postings under this account's OTHER companies. Not shown here — each
+  // company's postings live on its own page — but named, so a missing posting
+  // reads as "switch company", not "lost".
+  const [elsewhere, setElsewhere] = useState(0);
+  const [companyName, setCompanyName] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("All");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +47,8 @@ export default function PostingsClient() {
     if (!r.ok) { setPostings([]); return; }
     const d = await r.json();
     setPostings(d.postings ?? []);
+    setElsewhere(d.elsewhere ?? 0);
+    setCompanyName(d.company?.name ?? null);
   }, []);
   useEffect(() => { void load(); }, [load]);
 
@@ -74,7 +81,11 @@ export default function PostingsClient() {
       <div style={S.head}>
         <div>
           <h1 style={S.h1}>Your postings</h1>
-          <p style={S.sub}>Every job and project you&apos;ve posted — from this company and under your own name.</p>
+          <p style={S.sub}>
+            {companyName
+              ? <>Everything posted under <b>{companyName}</b>, plus anything you posted in your own name.</>
+              : <>Every job and project you&apos;ve posted.</>}
+          </p>
         </div>
         <Link href="/employer/new" style={S.cta}><Icon name="plus" size={15} />Post a job or project</Link>
       </div>
@@ -92,6 +103,12 @@ export default function PostingsClient() {
       </div>
 
       {error && <div style={S.err}>{error}</div>}
+
+      {elsewhere > 0 && (
+        <div style={S.elsewhere}>
+          {elsewhere} more posting{elsewhere === 1 ? "" : "s"} sit{elsewhere === 1 ? "s" : ""} under your other companies. Switch company in the sidebar to see {elsewhere === 1 ? "it" : "them"}.
+        </div>
+      )}
 
       {postings === null ? <p style={S.mut}>Loading…</p>
         : shown.length === 0 ? (
@@ -165,6 +182,7 @@ const S: Record<string, CSSProperties> = {
   heldTag: { fontSize: 11, fontWeight: 700, color: "#5B21B6", background: "#EDE9FE", borderRadius: 999, padding: "3px 9px" },
   heldNote: { fontSize: 12, lineHeight: 1.55, color: "#5B21B6", background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 10, padding: "8px 11px", marginTop: 9, maxWidth: 560 },
   empty: { background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: "18px 20px", fontSize: 13.5, color: C.mut, lineHeight: 1.6 },
+  elsewhere: { background: "#F8FAFC", border: `1px solid ${C.line}`, borderRadius: 10, padding: "9px 13px", fontSize: 12.5, color: C.mut, marginBottom: 12 },
   mut: { fontSize: 13.5, color: C.mut },
   err: { background: "#FEF2F2", color: "#B42318", border: "1px solid #FECACA", borderRadius: 10, padding: "10px 14px", fontSize: 13, marginBottom: 14 },
 };

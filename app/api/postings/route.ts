@@ -16,6 +16,7 @@ import { enrichInBackground } from "@/lib/employer/enrich";
 import { jobPath } from "@/lib/seo/job-slug";
 import { extractCountry } from "@/lib/ingestion/normalize-rules";
 import { activeCompany, ownedCompanies, ownedCompanyById } from "@/lib/company/active";
+import { ownedPostingsWhere } from "@/lib/employer/stats";
 
 // The request itself is now just validation and a write; the model call and
 // the embedding run after the response (lib/employer/enrich.ts), and that
@@ -57,16 +58,21 @@ async function posterCompany(userId: string, postAs: unknown) {
   return { ok: true as const, company: await activeCompany(userId, COMPANY_SELECT) };
 }
 
-/** GET — every posting the account is responsible for (its own, and every
- *  company it owns), with pipeline counts per stage; plus the "post as"
- *  options for the form. */
+/** GET — the ACTIVE company's postings, plus any posted under the account's
+ *  own name, with pipeline counts per stage.
+ *
+ *  Scoped exactly like the Overview dashboard (ownedPostingsWhere), and for
+ *  the same reason: /employer wears one company at a time, so a list that
+ *  answered account-wide put Rodeo Graphics' posting on Bing Chun Pakistan's
+ *  page. A posting made under another company belongs on THAT company's
+ *  page — switch to it. */
 export async function GET() {
   const { userId } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   const [company, companies] = await Promise.all([activeCompany(userId, COMPANY_SELECT), ownedCompanies(userId)]);
 
   const rows = await prisma.job.findMany({
-    where: { OR: [{ postedByUserId: userId }, { company: { ownerUserId: userId } }] },
+    where: ownedPostingsWhere(userId, company?.id ?? null),
     orderBy: { createdAt: "desc" },
     select: {
       id: true, kind: true, titleRaw: true, status: true, createdAt: true,
@@ -82,7 +88,15 @@ export async function GET() {
     const { applications, _count, ...rest } = r;
     return { ...rest, total: applications.length, byStage: by, views: _count.views };
   });
-  return NextResponse.json({ postings, company, companies });
+  // Scoping to one company is right, but silence about the rest is how
+  // "where did my posting go?" happens — so say how many are elsewhere.
+  const elsewhere = company
+    ? await prisma.job.count({
+        where: { company: { ownerUserId: userId }, companyId: { not: company.id } },
+      })
+    : 0;
+
+  return NextResponse.json({ postings, company, companies, elsewhere });
 }
 
 /** POST — publish a job or project. Live immediately: the poster is an
