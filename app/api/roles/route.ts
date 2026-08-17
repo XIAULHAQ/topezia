@@ -9,7 +9,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export const revalidate = 3600; // the taxonomy changes on the order of never
+/**
+ * Served dynamically and cached at the EDGE rather than prerendered.
+ *
+ * `export const revalidate` made Next prerender this at build time, which
+ * quietly made a successful deploy depend on the database being reachable
+ * from the build. Twice in one day a pooler blip failed the whole build —
+ * once silently, so a fix sat unpublished while everything looked fine. The
+ * caching is unchanged (an hour at the CDN, stale-while-revalidate); only the
+ * build-time dependency is gone.
+ */
+export const dynamic = "force-dynamic";
+const CACHE = "public, s-maxage=3600, stale-while-revalidate=86400";
 
 export async function GET() {
   const verticals = await prisma.vertical.findMany({
@@ -19,5 +30,5 @@ export async function GET() {
   });
   return NextResponse.json({
     roleGroups: verticals.filter((v) => v.roles.length > 0).map((v) => ({ field: v.name, roles: v.roles.map((r) => r.name) })),
-  });
+  }, { headers: { "Cache-Control": CACHE } });
 }
