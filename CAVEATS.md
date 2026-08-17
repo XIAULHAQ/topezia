@@ -2379,3 +2379,22 @@ All three from one screenshot of a real visitor on an iPhone.
   are viewing, and switching a company does a full page load (the cookie is
   read independently by every /employer surface). Two copies of this menu
   would drift — add items here, not in a shell.
+
+## A posting we can't aim waits instead of shipping (added 2026-08-17, migration 079)
+
+- 🔴 **Two separate gates, deliberately.** A missing role never blocks the
+  EMPLOYER (every category is offered, each with "Something else in X"), but a
+  posting with no role does not go to seekers either — it is written as
+  `PENDING_ROLE`. Free invisibility: all 56 read paths already filter
+  `status = 'LIVE'`, the same trick DRAFT uses.
+- 🔴 **PENDING_ROLE ≠ DRAFT.** A draft is the employer's unfinished work; a
+  held posting is finished and waiting on US. The dashboard says exactly that
+  ("Waiting on us", with a note), files it under its own tab, and offers
+  Withdraw — never Publish. `PATCH /api/postings/{id}` refuses to flip one
+  live, because live-with-no-role is a posting nothing can route.
+- 🟡 **The debt has a home: `/hq/pending`.** Attach a role, or name the one we
+  are missing, and it goes live immediately and gets enriched. Naming it fixes
+  the taxonomy for everyone after — crawled titles resolve through the same
+  table.
+- 🟡 **This is a queue with real people waiting**, so it is sorted oldest-first
+  and shows the wait. If it grows, the fix is more roles, not more capacity.

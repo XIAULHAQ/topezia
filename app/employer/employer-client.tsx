@@ -54,7 +54,10 @@ type Applicant = {
 };
 type Sourced = { profileId: string; fullName: string | null; publicSlug: string | null; currentLocation: string | null; photoUrl: string | null; yearsExperience: number | null; match: number };
 
-const TABS = ["Live", "Draft", "Closed", "All"] as const;
+// "Waiting" = PENDING_ROLE (migration 079): finished postings held because no
+// role in their category fits yet. Not the employer's to fix, so it is never
+// filed under Draft, and calling it Closed would be a lie.
+const TABS = ["Live", "Waiting", "Draft", "Closed", "All"] as const;
 type Tab = (typeof TABS)[number];
 
 /** Pipeline columns, using the REAL stage names the API and the pipeline page
@@ -240,13 +243,15 @@ export default function EmployerClient() {
   const shown = (postings ?? []).filter((p) =>
     tab === "All" ? true
       : tab === "Live" ? p.status === "LIVE"
+      : tab === "Waiting" ? p.status === "PENDING_ROLE"
       : tab === "Draft" ? p.status === "DRAFT"
-      : p.status !== "LIVE" && p.status !== "DRAFT"
+      : p.status !== "LIVE" && p.status !== "DRAFT" && p.status !== "PENDING_ROLE"
   );
   const counts = {
     Live: (postings ?? []).filter((p) => p.status === "LIVE").length,
     Draft: (postings ?? []).filter((p) => p.status === "DRAFT").length,
-    Closed: (postings ?? []).filter((p) => p.status !== "LIVE" && p.status !== "DRAFT").length,
+    Waiting: (postings ?? []).filter((p) => p.status === "PENDING_ROLE").length,
+    Closed: (postings ?? []).filter((p) => p.status !== "LIVE" && p.status !== "DRAFT" && p.status !== "PENDING_ROLE").length,
     All: (postings ?? []).length,
   };
 
@@ -433,17 +438,28 @@ export default function EmployerClient() {
                       <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
                         <Link href={`/employer/${p.id}`} style={{ fontSize: 15, fontWeight: 700, color: C.ink, textDecoration: "none" }}>{p.titleRaw}</Link>
                         <span style={p.kind === "PROJECT" ? S.projTag : S.jobTag}>{p.kind === "PROJECT" ? "Project" : "Job"}</span>
-                        <span style={p.status === "LIVE" ? S.liveTag : p.status === "DRAFT" ? S.draftTag : S.closedTag}>
-                          {p.status === "LIVE" ? "Live" : p.status === "DRAFT" ? "Draft" : "Closed"}
+                        <span style={p.status === "LIVE" ? S.liveTag : p.status === "DRAFT" ? S.draftTag : p.status === "PENDING_ROLE" ? S.heldTag : S.closedTag}>
+                          {p.status === "LIVE" ? "Live" : p.status === "DRAFT" ? "Draft" : p.status === "PENDING_ROLE" ? "Waiting on us" : "Closed"}
                         </span>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginTop: 8, fontSize: 11.5, color: C.mut }}>
                         <span style={S.meta}><Icon name="clock" size={13} />{p.status === "DRAFT" ? "Saved" : "Posted"} {relDays(p.createdAt)}</span>
-                        {p.status !== "DRAFT" && <span style={S.meta}><Icon name="eye" size={13} />{p.views} view{p.views === 1 ? "" : "s"}</span>}
+                        {p.status !== "DRAFT" && p.status !== "PENDING_ROLE" && <span style={S.meta}><Icon name="eye" size={13} />{p.views} view{p.views === 1 ? "" : "s"}</span>}
                       </div>
+                      {p.status === "PENDING_ROLE" && (
+                        <div style={S.heldNote}>
+                          Nothing more for you to do. You posted this under a category we don&apos;t have a matching
+                          role for yet — without one we can&apos;t route it to the right people, so it&apos;s held
+                          rather than shown to nobody. We add the role and it goes live on its own.
+                        </div>
+                      )}
                     </div>
                     <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8 }}>
-                      {p.status === "DRAFT" ? (
+                      {p.status === "PENDING_ROLE" ? (
+                        <button type="button" onClick={() => setStatus(p, "EXPIRED")} disabled={busyId === p.id} style={S.ghost}>
+                          {busyId === p.id ? "…" : "Withdraw"}
+                        </button>
+                      ) : p.status === "DRAFT" ? (
                         <button type="button" onClick={() => setStatus(p, "LIVE")} disabled={busyId === p.id} style={{ ...S.cta, border: "none", cursor: "pointer", fontFamily: "inherit", opacity: busyId === p.id ? 0.6 : 1 }}>
                           {busyId === p.id ? "Publishing…" : "Publish"}
                         </button>
@@ -735,4 +751,6 @@ const S: Record<string, CSSProperties> = {
   liveTag: { fontSize: 11, fontWeight: 700, color: "#047857", background: "#ECFDF5", borderRadius: 999, padding: "3px 9px" },
   draftTag: { fontSize: 11, fontWeight: 700, color: "#B45309", background: "#FEF3C7", borderRadius: 999, padding: "3px 9px" },
   closedTag: { fontSize: 11, fontWeight: 700, color: "#64748B", background: "#F1F5F9", borderRadius: 999, padding: "3px 9px" },
+  heldTag: { fontSize: 11, fontWeight: 700, color: "#5B21B6", background: "#EDE9FE", borderRadius: 999, padding: "3px 9px" },
+  heldNote: { fontSize: 12, lineHeight: 1.6, color: "#5B21B6", background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 10, padding: "9px 12px", marginTop: 10 },
 };

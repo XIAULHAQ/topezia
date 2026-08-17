@@ -1,0 +1,26 @@
+-- 079_pending_role_status — a posting we cannot categorise waits, it doesn't ship.
+--
+-- HAND-WRITTEN, applied with `prisma db execute` and recorded with
+-- `prisma migrate resolve --applied`. Do NOT regenerate with
+-- `prisma migrate diff` (pgvector drift trap, same as 044-078).
+--
+-- WHY. The post form now lets an employer choose a CATEGORY when no role in
+-- it fits ("Something else in Retail & Hospitality"), so a missing role can
+-- never block a posting — the taxonomy trailing real hiring is our gap, not
+-- theirs. But such a posting has no role, which is what routes it to the
+-- right people, so publishing it straight into the feed ships something we
+-- know we cannot aim.
+--
+-- So it waits here instead. PENDING_ROLE is invisible to seekers, to the
+-- matcher and to every SEO surface for free: all 56 read paths already filter
+-- `status = 'LIVE'`, exactly as the DRAFT comment in the schema describes. It
+-- differs from DRAFT in who is waiting on whom — a draft is the employer's
+-- unfinished work, a PENDING_ROLE posting is finished and waiting on US to
+-- add the role. The employer's dashboard says so, and /hq/pending is where
+-- that debt is paid: assign a role and the posting goes live.
+--
+-- ALTER TYPE ... ADD VALUE is safe here (PG 12+ allows it in a transaction as
+-- long as the new value isn't also USED in the same transaction; nothing is
+-- written to PENDING_ROLE until code deploys).
+
+ALTER TYPE "JobStatus" ADD VALUE IF NOT EXISTS 'PENDING_ROLE';

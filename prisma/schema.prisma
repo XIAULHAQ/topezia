@@ -153,6 +153,11 @@ enum JobStatus {
   // everywhere by construction — the employer dashboard is the one place
   // that deliberately asks for it.
   DRAFT
+  // Finished by the employer, held by US: no role in the taxonomy fits it yet
+  // (migration 079). Excluded from every read path for the same reason DRAFT
+  // is — they all filter on LIVE. Released from /hq/pending by attaching a
+  // role, which is the only thing it is waiting for.
+  PENDING_ROLE
   LIVE
   EXPIRED
   SUSPECTED_DEAD

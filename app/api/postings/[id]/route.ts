@@ -47,6 +47,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ ok: true, status: "LIVE" });
   }
 
+  // A held posting is waiting on a role WE owe it (migration 079). The
+  // employer may withdraw it; they cannot flip it live, because "live" with
+  // no role means a posting nothing can route. /hq/pending is the release.
+  if (current.status === "PENDING_ROLE" && status === "LIVE") {
+    return NextResponse.json(
+      { error: "This one is waiting on a category from us — it goes live by itself once that's in." },
+      { status: 409 }
+    );
+  }
+
   // Un-publishing back to draft is deliberately not offered: the posting has
   // already been seen, and applicants may already sit in its pipeline. Close
   // it instead — that keeps the pipeline readable.

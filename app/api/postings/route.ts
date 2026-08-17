@@ -180,7 +180,12 @@ export async function POST(req: NextRequest) {
       companyId: company?.id ?? null,
       companyName: posterName,
       companyDomain: company?.website ? new URL(company.website).hostname.replace(/^www\./, "") : null,
-      status: asDraft ? "DRAFT" : "LIVE",
+      // A posting we can't aim doesn't ship. With no role attached there is
+      // nothing routing it to the right people, so it waits at PENDING_ROLE
+      // until we add the role it needs (/hq/pending) — see migration 079.
+      // Invisible everywhere in the meantime, exactly like a draft, but the
+      // debt is ours and the dashboard says so.
+      status: asDraft ? "DRAFT" : roleId ? "LIVE" : "PENDING_ROLE",
       descriptionRaw: description,
       descriptionHash: hashDescription(`${title}\n${description}`),
       seniority: (pickedSeniority ?? "NOT_APPLICABLE") as never,
@@ -205,7 +210,16 @@ export async function POST(req: NextRequest) {
   // Everything the model and the embedder add happens AFTER this response —
   // a live posting must never wait on a third party, and must never be lost
   // to one. Drafts are invisible to the matcher, so they wait for publish.
-  if (!asDraft) enrichInBackground(job.id, { seniorityIsTheirs: pickedSeniority !== null });
+  // Held postings are enriched when they are released, not now: the model may
+  // yet be the thing that identifies the role, and enrichment only ever runs
+  // against something live.
+  if (!asDraft && roleId) enrichInBackground(job.id, { seniorityIsTheirs: pickedSeniority !== null });
 
-  return NextResponse.json({ id: job.id, status: asDraft ? "DRAFT" : "LIVE" });
+  return NextResponse.json({
+    id: job.id,
+    status: asDraft ? "DRAFT" : roleId ? "LIVE" : "PENDING_ROLE",
+    // The form tells them plainly rather than letting a posting look live
+    // when it isn't.
+    held: !asDraft && !roleId,
+  });
 }
