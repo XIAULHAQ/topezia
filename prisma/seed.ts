@@ -89,6 +89,27 @@ async function main() {
     // Customer support / success
     { slug: "customer-support-rep", name: "Customer Support Representative", vertical: "customer-support", aliases: ["Support Specialist", "Customer Support Agent", "Technical Support Engineer", "Support Engineer"] },
     { slug: "customer-success-manager", name: "Customer Success Manager", vertical: "customer-support", aliases: ["CSM", "Customer Success Specialist", "Technical Customer Success Manager"] },
+    // Retail & hospitality — the vertical shipped with ZERO roles, so a
+    // restaurant hiring waiters, cooks or cashiers had literally nothing to
+    // pick and could not post. Titles are the ones people actually advertise,
+    // with the regional variants as aliases (waitress/waitstaff, kitchen
+    // porter/KP, till operator/checkout operator) so resolution catches them.
+    { slug: "server-waiter", name: "Server / Waiter", vertical: "retail-hospitality", aliases: ["Waiter", "Waitress", "Server", "Food Server", "Waitstaff", "Wait Staff"] },
+    { slug: "chef", name: "Chef", vertical: "retail-hospitality", aliases: ["Head Chef", "Executive Chef", "Sous Chef", "Chef de Partie", "Pastry Chef"] },
+    { slug: "cook", name: "Cook / Line Cook", vertical: "retail-hospitality", aliases: ["Cook", "Line Cook", "Prep Cook", "Commis Chef", "Kitchen Assistant", "Grill Cook"] },
+    { slug: "cashier", name: "Cashier", vertical: "retail-hospitality", aliases: ["Checkout Operator", "Till Operator", "Retail Cashier", "Cashier Clerk"] },
+    { slug: "food-service-crew", name: "Food Service Crew / Order Taker", vertical: "retail-hospitality", aliases: ["Order Taker", "Crew Member", "Team Member", "Counter Staff", "Fast Food Worker", "Front Counter"] },
+    { slug: "barista", name: "Barista", vertical: "retail-hospitality", aliases: ["Coffee Barista", "Cafe Assistant"] },
+    { slug: "bartender", name: "Bartender", vertical: "retail-hospitality", aliases: ["Mixologist", "Bar Staff", "Bar Tender"] },
+    { slug: "host-hostess", name: "Host / Hostess", vertical: "retail-hospitality", aliases: ["Host", "Hostess", "Greeter", "Maitre d"] },
+    { slug: "dishwasher", name: "Dishwasher / Kitchen Porter", vertical: "retail-hospitality", aliases: ["Kitchen Porter", "Steward", "Dish Washer"] },
+    { slug: "restaurant-manager", name: "Restaurant Manager", vertical: "retail-hospitality", aliases: ["Assistant Restaurant Manager", "Floor Manager", "Restaurant General Manager", "Food and Beverage Manager"] },
+    { slug: "kitchen-manager", name: "Kitchen Manager", vertical: "retail-hospitality", aliases: ["Kitchen Supervisor", "Head of Kitchen"] },
+    { slug: "housekeeper", name: "Housekeeper / Room Attendant", vertical: "retail-hospitality", aliases: ["Room Attendant", "Housekeeping Attendant", "Hotel Housekeeper"] },
+    { slug: "front-desk-agent", name: "Hotel Front Desk Agent", vertical: "retail-hospitality", aliases: ["Hotel Receptionist", "Guest Service Agent", "Front Desk Clerk", "Front Office Agent"] },
+    { slug: "retail-sales-associate", name: "Retail Sales Associate", vertical: "retail-hospitality", aliases: ["Sales Assistant", "Shop Assistant", "Store Associate", "Retail Associate", "Sales Associate"] },
+    { slug: "store-manager", name: "Store Manager", vertical: "retail-hospitality", aliases: ["Retail Store Manager", "Assistant Store Manager", "Shop Manager"] },
+    { slug: "stock-associate", name: "Stock Associate / Merchandiser", vertical: "retail-hospitality", aliases: ["Stocker", "Shelf Stacker", "Merchandiser", "Inventory Associate", "Stock Clerk"] },
     // Operations & people
     { slug: "recruiter", name: "Recruiter", vertical: "operations-hr", aliases: ["Technical Recruiter", "Talent Acquisition Specialist", "Talent Partner", "Sourcer"] },
     { slug: "people-operations", name: "People Operations", vertical: "operations-hr", aliases: ["HR Manager", "People Partner", "HR Business Partner", "HRBP"] },
