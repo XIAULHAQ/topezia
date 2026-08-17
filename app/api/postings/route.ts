@@ -10,19 +10,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
-import { extractWithLlm, hashDescription } from "@/lib/ingestion/llm-extract";
+import { hashDescription } from "@/lib/ingestion/llm-extract";
 import { resolveRole, resolveSkills } from "@/lib/ingestion/resolve-taxonomy";
-import { embedText, buildJobEmbeddingInput, writeJobEmbedding } from "@/lib/ingestion/embed";
+import { enrichInBackground } from "@/lib/employer/enrich";
 import { jobPath } from "@/lib/seo/job-slug";
 import { extractCountry } from "@/lib/ingestion/normalize-rules";
 import { activeCompany, ownedCompanies, ownedCompanyById } from "@/lib/company/active";
 
-export const maxDuration = 60; // LLM extraction + embedding on create
+// The request itself is now just validation and a write; the model call and
+// the embedding run after the response (lib/employer/enrich.ts), and that
+// background work is what still needs the headroom.
+export const maxDuration = 60;
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.topezia.com").replace(/\/$/, "");
 const UNSORTED = "unsorted";
 
 const EMPLOYMENT = new Set(["FULL_TIME", "PART_TIME", "CONTRACT", "HOURLY", "TEMP"]);
+// The employer's own answer, when they give one. Their word beats a guess,
+// and it costs a dropdown — see the picker in app/employer/new/posting-form.
+const SENIORITY = new Set(["INTERN", "JUNIOR", "MID", "SENIOR", "LEAD", "EXEC", "NOT_APPLICABLE"]);
 const REMOTE = new Set(["ONSITE", "HYBRID", "REMOTE_GLOBAL", "REMOTE_INTL"]);
 const PERIODS = new Set(["YEAR", "HOUR", "DAY", "PROJECT"]);
 
@@ -132,39 +138,18 @@ export async function POST(req: NextRequest) {
   const locationRaw = str(body.location, 140) || company?.location || null;
   const country = remoteType === "REMOTE_GLOBAL" ? null : locationRaw ? extractCountry(locationRaw) : null;
 
-  // Same enrichment a crawled job gets — the matcher must see this posting
-  // exactly the way it sees every other one. The employer's explicit picks
-  // WIN over extraction: they know their role and skills; the LLM only adds.
-  //
-  // Drafts skip all of it (no LLM call, no embedding) and get enriched by
-  // lib/employer/publish.ts when they actually go live.
-  // Enrichment is a BONUS, never a gate. The employer already supplied the
-  // title, the category and at least two skills — the form requires them —
-  // and the model only adds to that. When it is unavailable (an expired API
-  // key, an empty credit balance, a provider outage) the posting still goes
-  // live with exactly what they typed. It used to throw here, which lost the
-  // whole posting and showed the browser's own JSON parse error, because the
-  // crashed function answers with no body at all.
-  let llm: Awaited<ReturnType<typeof extractWithLlm>> | null = null;
-  if (!asDraft) {
-    try {
-      llm = await extractWithLlm(title, description);
-    } catch (err) {
-      // console.error is captured by the error log (lib/errors/log.ts), so a
-      // silently unenriched posting is still visible at the weekly review.
-      console.error("[postings] enrichment unavailable, publishing without it:", err instanceof Error ? err.message : err);
-    }
-  }
-  const roleId = pickedRole
-    ? await resolveRole(pickedRole, pickedRole)
-    : llm ? await resolveRole(title, llm.roleGuess) : null;
-  const skillNames = [...new Set([...pickedSkills, ...(llm?.skills ?? [])])];
+  // Enrichment does NOT run here — see lib/employer/enrich.ts. The posting is
+  // built from what the employer typed and goes live immediately; the model's
+  // extras land a moment later, after the response.
+  const pickedSeniority = SENIORITY.has(str(body.seniority, 20).toUpperCase())
+    ? str(body.seniority, 20).toUpperCase()
+    : null;
+
+  const roleId = pickedRole ? await resolveRole(pickedRole, pickedRole) : null;
+  const skillNames = [...new Set(pickedSkills)];
   const skillIds = await resolveSkills(skillNames);
   const role = roleId ? await prisma.role.findUnique({ where: { id: roleId }, select: { verticalId: true } }) : null;
   let verticalId = role?.verticalId ?? null;
-  if (!verticalId && llm?.vertical) {
-    verticalId = (await prisma.vertical.findUnique({ where: { slug: llm.vertical }, select: { id: true } }))?.id ?? null;
-  }
   if (!verticalId) verticalId = (await prisma.vertical.findUnique({ where: { slug: UNSORTED }, select: { id: true } }))!.id;
 
   const id = randomUUID();
@@ -177,7 +162,7 @@ export async function POST(req: NextRequest) {
       sourceCompanySlug: company?.slug ?? null,
       externalId: id,
       titleRaw: title,
-      titleNormalized: llm?.roleGuess || null,
+      titleNormalized: null, // filled by enrichment, if the model is reachable
       roleId,
       verticalId,
       postedByUserId: userId,
@@ -187,7 +172,7 @@ export async function POST(req: NextRequest) {
       status: asDraft ? "DRAFT" : "LIVE",
       descriptionRaw: description,
       descriptionHash: hashDescription(`${title}\n${description}`),
-      seniority: llm?.seniority ?? "NOT_APPLICABLE",
+      seniority: (pickedSeniority ?? "NOT_APPLICABLE") as never,
       employmentType: employmentType as never,
       salaryMin,
       salaryMax,
@@ -206,21 +191,10 @@ export async function POST(req: NextRequest) {
     select: { id: true },
   });
 
-  // Best-effort embed — a Voyage hiccup must not eat the posting. Unembedded
-  // jobs simply don't rank until a later pass embeds them. Drafts aren't
-  // embedded at all: they're invisible to the matcher until published, and
-  // publish re-embeds from the finished text.
-  if (!asDraft) {
-    try {
-      const embedding = await embedText(buildJobEmbeddingInput({
-        titleNormalized: llm?.roleGuess || null, titleRaw: title,
-        skills: skillNames, descriptionText: description,
-      }));
-      if (embedding) await writeJobEmbedding(prisma, job.id, embedding);
-    } catch (err) {
-      console.error("native posting embed failed:", err);
-    }
-  }
+  // Everything the model and the embedder add happens AFTER this response —
+  // a live posting must never wait on a third party, and must never be lost
+  // to one. Drafts are invisible to the matcher, so they wait for publish.
+  if (!asDraft) enrichInBackground(job.id, { seniorityIsTheirs: pickedSeniority !== null });
 
   return NextResponse.json({ id: job.id, status: asDraft ? "DRAFT" : "LIVE" });
 }

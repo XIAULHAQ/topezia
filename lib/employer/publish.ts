@@ -18,9 +18,8 @@
  * exact same pipeline a crawled job gets.
  */
 import { prisma } from "@/lib/prisma";
-import { extractWithLlm, hashDescription } from "@/lib/ingestion/llm-extract";
-import { resolveRole, resolveSkills } from "@/lib/ingestion/resolve-taxonomy";
-import { embedText, buildJobEmbeddingInput, writeJobEmbedding } from "@/lib/ingestion/embed";
+import { hashDescription } from "@/lib/ingestion/llm-extract";
+import { enrichInBackground } from "@/lib/employer/enrich";
 
 const UNSORTED = "unsorted";
 
@@ -50,7 +49,7 @@ export async function publishDraft(jobId: string): Promise<{ ok: true } | { ok: 
   const job = await prisma.job.findUnique({
     where: { id: jobId },
     select: {
-      id: true, titleRaw: true, descriptionRaw: true, roleId: true,
+      id: true, titleRaw: true, descriptionRaw: true, roleId: true, seniority: true,
       skills: { select: { skill: { select: { name: true } } } },
     },
   });
@@ -65,65 +64,30 @@ export async function publishDraft(jobId: string): Promise<{ ok: true } | { ok: 
   });
   if (blockers.length) return { ok: false, blockers };
 
-  // Same enrichment a crawled job gets. The employer's explicit picks WIN:
-  // the LLM only ADDS skills and fills the fields they never chose.
-  // Never fatal — see the same note in app/api/postings/route.ts. A draft the
-  // employer has already written must be publishable when the model is not
-  // reachable; it just goes live with their own picks.
-  let llm: Awaited<ReturnType<typeof extractWithLlm>> | null = null;
-  try {
-    llm = await extractWithLlm(job.titleRaw, job.descriptionRaw);
-  } catch (err) {
-    console.error("[publish] enrichment unavailable, publishing without it:", err instanceof Error ? err.message : err);
-  }
-  const roleId = job.roleId ?? (llm ? await resolveRole(job.titleRaw, llm.roleGuess) : null);
-  const skillNames = [...new Set([...ownSkills, ...(llm?.skills ?? [])])];
-  const skillIds = await resolveSkills(skillNames);
-
+  // The draft's OWN content is what goes live, immediately. The model's
+  // extras and the embedding follow after, on the background hand-off — see
+  // lib/employer/enrich.ts for why that stopped being part of the request.
+  const roleId = job.roleId;
   const role = roleId ? await prisma.role.findUnique({ where: { id: roleId }, select: { verticalId: true } }) : null;
-  let verticalId = role?.verticalId ?? null;
-  if (!verticalId && llm?.vertical) {
-    verticalId = (await prisma.vertical.findUnique({ where: { slug: llm.vertical }, select: { id: true } }))?.id ?? null;
-  }
-  if (!verticalId) verticalId = (await prisma.vertical.findUnique({ where: { slug: UNSORTED }, select: { id: true } }))!.id;
+  const verticalId =
+    role?.verticalId ??
+    (await prisma.vertical.findUnique({ where: { slug: UNSORTED }, select: { id: true } }))!.id;
 
-  // Skills are replaced wholesale rather than merged: resolveSkills already
-  // returns the union of the employer's picks and the model's, so a merge
-  // here would just risk duplicate rows against the composite key.
-  await prisma.$transaction([
-    prisma.jobSkill.deleteMany({ where: { jobId: job.id } }),
-    prisma.job.update({
-      where: { id: job.id },
-      data: {
-        status: "LIVE",
-        postedAt: new Date(),
-        lastVerifiedAt: new Date(),
-        roleId,
-        verticalId,
-        seniority: llm?.seniority ?? "NOT_APPLICABLE",
-        titleNormalized: llm?.roleGuess || null,
-        descriptionHash: hashDescription(`${job.titleRaw}\n${job.descriptionRaw}`),
-        skills: { create: skillIds.map((skillId) => ({ skillId })) },
-      },
-    }),
-  ]);
+  await prisma.job.update({
+    where: { id: job.id },
+    data: {
+      status: "LIVE",
+      postedAt: new Date(),
+      lastVerifiedAt: new Date(),
+      roleId,
+      verticalId,
+      descriptionHash: hashDescription(`${job.titleRaw}\n${job.descriptionRaw}`),
+    },
+  });
 
-  // Best-effort embed, same as the direct-publish path: a Voyage hiccup must
-  // not un-publish a posting. An unembedded job simply doesn't rank until a
-  // later pass picks it up.
-  try {
-    const embedding = await embedText(
-      buildJobEmbeddingInput({
-        titleNormalized: llm?.roleGuess || null,
-        titleRaw: job.titleRaw,
-        skills: skillNames,
-        descriptionText: job.descriptionRaw,
-      })
-    );
-    if (embedding) await writeJobEmbedding(prisma, job.id, embedding);
-  } catch (err) {
-    console.error("draft publish embed failed:", err);
-  }
+  // The draft carries whatever seniority the employer chose on the form; only
+  // an untouched NOT_APPLICABLE is left for the model to fill.
+  enrichInBackground(job.id, { seniorityIsTheirs: job.seniority !== "NOT_APPLICABLE" });
 
   return { ok: true };
 }

@@ -13,13 +13,25 @@ import { C, GRAD, FONT } from "@/app/_components/ui";
 
 const EMPLOYMENT = [["FULL_TIME", "Full-time"], ["PART_TIME", "Part-time"], ["CONTRACT", "Contract"], ["HOURLY", "Hourly"], ["TEMP", "Temp"]] as const;
 const REMOTE = [["ONSITE", "On-site"], ["HYBRID", "Hybrid"], ["REMOTE_INTL", "Remote (your region)"], ["REMOTE_GLOBAL", "Remote (worldwide)"]] as const;
+// Level is asked for rather than guessed. It is one of the things the matcher
+// weighs ("seniority fit"), and the employer knows it — an empty value is the
+// only case left for the model, and it is not required to post.
+const SENIORITY = [
+  ["", "Not specified"],
+  ["INTERN", "Intern"],
+  ["JUNIOR", "Junior"],
+  ["MID", "Mid-level"],
+  ["SENIOR", "Senior"],
+  ["LEAD", "Lead / Principal"],
+  ["EXEC", "Executive"],
+] as const;
 
 export default function PostingForm() {
   const router = useRouter();
   const [kind, setKind] = useState<"JOB" | "PROJECT">("JOB");
   const [roleGroups, setRoleGroups] = useState<{ field: string; roles: string[] }[]>([]);
   const [f, setF] = useState({
-    title: "", role: "", description: "", employmentType: "FULL_TIME", remoteType: "ONSITE",
+    title: "", role: "", description: "", employmentType: "FULL_TIME", remoteType: "ONSITE", seniority: "",
     location: "", salaryMin: "", salaryMax: "", salaryCurrency: "USD", salaryPeriod: "YEAR",
   });
   const [skills, setSkills] = useState<string[]>([]);
@@ -113,6 +125,7 @@ export default function PostingForm() {
           postAs: postAs || undefined,
           kind, title: f.title, role: f.role, description: f.description, skills,
           employmentType: f.employmentType, remoteType: f.remoteType, location: f.location,
+          seniority: f.seniority || undefined,
           salaryMin: f.salaryMin ? Number(f.salaryMin) : null,
           salaryMax: f.salaryMax ? Number(f.salaryMax) : null,
           salaryCurrency: f.salaryCurrency,
@@ -215,7 +228,7 @@ export default function PostingForm() {
         placeholder="The work, the team, the requirements, the process. Real detail attracts real applicants — our matcher also reads this to route the right people to it." />
 
       {kind === "JOB" && (
-        <div style={S.two}>
+        <div style={S.three}>
           <div>
             <div style={S.label}>Employment type</div>
             <select style={S.input} value={f.employmentType} onChange={(e) => set("employmentType", e.target.value)}>
@@ -226,6 +239,12 @@ export default function PostingForm() {
             <div style={S.label}>Where</div>
             <select style={S.input} value={f.remoteType} onChange={(e) => set("remoteType", e.target.value)}>
               {REMOTE.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={S.label}>Level <span style={{ fontWeight: 500, color: C.mut }}>— helps the right people match</span></div>
+            <select style={S.input} value={f.seniority} onChange={(e) => set("seniority", e.target.value)}>
+              {SENIORITY.map(([v, l]) => <option key={v || "none"} value={v}>{l}</option>)}
             </select>
           </div>
         </div>
@@ -300,6 +319,7 @@ const S: Record<string, CSSProperties> = {
   input: { width: "100%", border: `1px solid ${C.line}`, borderRadius: 10, padding: "10px 12px", fontSize: 13.5, fontFamily: "inherit", background: "#fff" },
   hint: { fontSize: 11.5, color: C.mut, marginTop: 6, lineHeight: 1.5 },
   two: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
+  three: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 14 },
   pillOn: { background: GRAD, color: "#fff", border: "none", borderRadius: 999, padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   pillOff: { background: "#fff", color: C.slate, border: `1px solid ${C.line}`, borderRadius: 999, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
   cta: { background: GRAD, color: "#fff", border: "none", borderRadius: 10, padding: "12px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
