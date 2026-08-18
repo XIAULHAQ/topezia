@@ -38,6 +38,11 @@ on:
         type: boolean
         required: false
         default: false
+      sync_extraction:
+        description: "One model call per posting instead of one half-price Message Batch per run"
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: ingest
@@ -70,6 +75,9 @@ jobs:
           fi
           if [ -n "${{ inputs.only }}" ]; then
             ARGS="$ARGS --only=${{ inputs.only }}"
+          fi
+          if [ "${{ inputs.sync_extraction }}" = "true" ]; then
+            ARGS="$ARGS --sync"
           fi
           echo "npx tsx scripts/run-ingestion.ts $ARGS"
           npx tsx scripts/run-ingestion.ts $ARGS

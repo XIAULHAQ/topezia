@@ -9,10 +9,21 @@
  *
  * Uses Haiku-class model per spec — cheap, fast, good enough for structured
  * extraction. Temperature 0, forced JSON output.
+ *
+ * Three ways a posting gets extracted, cheapest first (strategy §3.4):
+ *   cache   byte-identical title+text already extracted → reuse (free)
+ *   rules   title marker + role alias + skill dictionary all agree → no
+ *           model (rules-extract.ts; strict, returns null when unsure)
+ *   model   synchronously (extractWithLlm — employer publish, reclassify) or
+ *           through the Message Batches API at half price (extractMany —
+ *           the ingestion script, where nothing needs an answer in seconds).
+ * Every path is recorded on the cost page: cache and rules as zero-cost
+ * rows (`cache:extract`, `rule:extract`), the model at list or batch price.
  */
 
 import { prisma } from "@/lib/prisma";
-import { llm, HAIKU } from "@/lib/llm";
+import { llm, llmBatch, llmAvailable, recordNoModel, HAIKU, type LlmRequest } from "@/lib/llm";
+import { rulesFirstExtraction } from "./rules-extract";
 import crypto from "crypto";
 
 const EXTRACTION_MODEL = HAIKU;
@@ -79,57 +90,165 @@ const EXTRACTION_PROMPT = `You extract structured hiring data from a job posting
                                      // otherwise: null
 }`;
 
+const FAIL_SOFT = (titleRaw: string): LlmExtraction => ({
+  skills: [], seniority: "NOT_APPLICABLE", roleGuess: titleRaw.toLowerCase(), vertical: null, verticalFields: null,
+});
+
+/** The request the model gets — one place, so sync and batch send the same thing. */
+function extractionRequest(titleRaw: string, descriptionText: string): LlmRequest {
+  return {
+    model: EXTRACTION_MODEL,
+    max_tokens: 500,
+    temperature: 0,
+    system: EXTRACTION_PROMPT,
+    messages: [{ role: "user", content: `Title: ${titleRaw}\n\nDescription:\n${descriptionText.slice(0, 4000)}` }], // cap tokens in
+  };
+}
+
+/** Model text → extraction. Fail soft: an unparseable answer ships the job
+ *  with fewer enriched fields rather than dropping it from the index. */
+function parseExtraction(text: string, titleRaw: string): LlmExtraction {
+  // Model occasionally wraps JSON in a code fence despite instructions —
+  // strip defensively rather than let one malformed response kill the run.
+  const cleaned = (text || "{}").replace(/```json|```/g, "").trim();
+  try {
+    return JSON.parse(cleaned) as LlmExtraction;
+  } catch {
+    return FAIL_SOFT(titleRaw);
+  }
+}
+
+/**
+ * Cache check — this is the line that keeps ingestion inside budget. Reuses
+ * any prior extraction for byte-identical title+description text, regardless
+ * of which board it came from.
+ */
+async function cachedExtraction(hash: string): Promise<LlmExtraction | null> {
+  const cached = await prisma.job.findFirst({
+    where: { descriptionHash: hash, titleNormalized: { not: null } },
+    select: { titleNormalized: true, seniority: true, verticalFields: true, vertical: { select: { slug: true } }, skills: { select: { skill: { select: { name: true } } } } },
+  });
+  if (!cached) return null;
+  return {
+    skills: cached.skills.map((s) => s.skill.name),
+    seniority: cached.seniority as LlmExtraction["seniority"],
+    roleGuess: cached.titleNormalized || "",
+    vertical: cached.vertical?.slug ?? null,
+    verticalFields: (cached.verticalFields as Record<string, unknown>) || null,
+  };
+}
+
+export type ExtractionVia = "cache" | "rules" | "model" | "batch" | "failed";
+
+/**
+ * Cache → rules → model, for ONE posting, synchronously. The employer publish
+ * path and the reclassify script use this; the ingestion script uses
+ * extractMany below.
+ *
+ * skipCache forces a fresh model call (and skips the rules too). The cache
+ * returns a prior row's stored vertical/skills/seniority, so after the
+ * classifier PROMPT changes it would otherwise keep handing back stale
+ * classifications for jobs whose text is unchanged — a re-classification
+ * pass must bypass it (see scripts/reclassify-*).
+ */
 export async function extractWithLlm(
   titleRaw: string,
   descriptionText: string,
   opts: { skipCache?: boolean } = {}
 ): Promise<LlmExtraction> {
   const hash = hashDescription(`${titleRaw}\n${descriptionText}`);
-
-  // Cache check — this is the line that keeps Slice 2 inside budget.
-  // Reuses any prior extraction for byte-identical title+description text,
-  // regardless of which board it came from.
-  //
-  // skipCache forces a fresh model call. The cache returns a prior row's stored
-  // vertical/skills/seniority, so after the classifier PROMPT changes it would
-  // otherwise keep handing back stale classifications for jobs whose text is
-  // unchanged — a re-classification pass must bypass it (see scripts/reclassify-*).
-  const cached = opts.skipCache
-    ? null
-    : await prisma.job.findFirst({
-        where: { descriptionHash: hash, titleNormalized: { not: null } },
-        select: { titleNormalized: true, seniority: true, verticalFields: true, vertical: { select: { slug: true } }, skills: { select: { skill: { select: { name: true } } } } },
-      });
-
-  if (cached) {
-    return {
-      skills: cached.skills.map((s) => s.skill.name),
-      seniority: cached.seniority as LlmExtraction["seniority"],
-      roleGuess: cached.titleNormalized || "",
-      vertical: cached.vertical?.slug ?? null,
-      verticalFields: (cached.verticalFields as Record<string, unknown>) || null,
-    };
+  if (!opts.skipCache) {
+    const cached = await cachedExtraction(hash);
+    if (cached) { recordNoModel("ingest.extract", "cache:extract"); return cached; }
+    const ruled = await rulesFirstExtraction(titleRaw, descriptionText);
+    if (ruled) { recordNoModel("ingest.extract", "rule:extract"); return ruled; }
   }
+  const { text } = await llm("ingest.extract", extractionRequest(titleRaw, descriptionText));
+  return parseExtraction(text, titleRaw);
+}
 
-  const truncatedDescription = descriptionText.slice(0, 4000); // cap tokens in
+export type ExtractItem = { key: string; titleRaw: string; descriptionText: string };
+export type ExtractManyResult = Map<string, { extraction: LlmExtraction; via: ExtractionVia }>;
 
-  const { text } = await llm("ingest.extract", {
-    model: EXTRACTION_MODEL,
-    max_tokens: 500,
-    temperature: 0,
-    system: EXTRACTION_PROMPT,
-    messages: [{ role: "user", content: `Title: ${titleRaw}\n\nDescription:\n${truncatedDescription}` }],
+/**
+ * The same, for a whole run at once. Cache and rules first (cheap DB work,
+ * bounded concurrency), then ONE Message Batch for everything left — half
+ * price, all features, results usually in minutes — and, if the batch runs
+ * past `waitMs`, whatever is still unfinished is done synchronously so the
+ * run always completes with every posting extracted.
+ *
+ * `batch: false` keeps the old per-posting synchronous path (still cache and
+ * rules first) — for smoke tests and for when a batch is the wrong tool.
+ */
+export async function extractMany(
+  items: ExtractItem[],
+  opts: { batch?: boolean; concurrency?: number; waitMs?: number; log?: (line: string) => void } = {}
+): Promise<ExtractManyResult> {
+  const out: ExtractManyResult = new Map();
+  const log = opts.log ?? (() => {});
+  const concurrency = Math.max(1, opts.concurrency ?? 8);
+  const useBatch = opts.batch !== false;
+
+  // Pass 1: cache and rules, concurrently.
+  const needModel: ExtractItem[] = [];
+  await pool(items, concurrency, async (it) => {
+    const hash = hashDescription(`${it.titleRaw}\n${it.descriptionText}`);
+    const cached = await cachedExtraction(hash);
+    if (cached) { recordNoModel("ingest.extract", "cache:extract"); out.set(it.key, { extraction: cached, via: "cache" }); return; }
+    const ruled = await rulesFirstExtraction(it.titleRaw, it.descriptionText);
+    if (ruled) { recordNoModel("ingest.extract", "rule:extract"); out.set(it.key, { extraction: ruled, via: "rules" }); return; }
+    needModel.push(it);
   });
+  log(`extraction: ${items.length} postings — ${items.length - needModel.length} from cache/rules, ${needModel.length} for the model`);
+  if (needModel.length === 0) return out;
 
-  // Model occasionally wraps JSON in a code fence despite instructions —
-  // strip defensively rather than let one malformed response kill the run.
-  const cleaned = (text || "{}").replace(/```json|```/g, "").trim();
-
-  try {
-    return JSON.parse(cleaned) as LlmExtraction;
-  } catch {
-    // Fail soft — an unparseable extraction shouldn't drop the job from the
-    // index, it should just ship with fewer enriched fields.
-    return { skills: [], seniority: "NOT_APPLICABLE", roleGuess: titleRaw.toLowerCase(), vertical: null, verticalFields: null };
+  if (!llmAvailable("ingest.extract")) {
+    for (const it of needModel) out.set(it.key, { extraction: FAIL_SOFT(it.titleRaw), via: "failed" });
+    log("extraction: model unavailable — shipping the rest with rules-only fields");
+    return out;
   }
+
+  // Pass 2: the batch.
+  let leftover = needModel;
+  if (useBatch) {
+    try {
+      const outcome = await llmBatch(
+        "ingest.extract",
+        needModel.map((it) => ({ id: it.key, req: extractionRequest(it.titleRaw, it.descriptionText) })),
+        { waitMs: opts.waitMs, log }
+      );
+      const byKey = new Map(needModel.map((it) => [it.key, it]));
+      for (const [key, r] of outcome.results) out.set(key, { extraction: parseExtraction(r.text, byKey.get(key)!.titleRaw), via: "batch" });
+      for (const [key, err] of outcome.errors) { log(`extraction: batch error for ${key}: ${err}`); }
+      leftover = needModel.filter((it) => !outcome.results.has(it.key));
+      if (leftover.length) log(`extraction: ${leftover.length} not finished by the batch — running synchronously`);
+    } catch (err) {
+      log(`extraction: batch failed (${err instanceof Error ? err.message : err}) — running synchronously`);
+    }
+  }
+
+  // Pass 3: whatever is left, one call each.
+  await pool(leftover, concurrency, async (it) => {
+    try {
+      const { text } = await llm("ingest.extract", extractionRequest(it.titleRaw, it.descriptionText));
+      out.set(it.key, { extraction: parseExtraction(text, it.titleRaw), via: "model" });
+    } catch (err) {
+      log(`extraction: model failed for ${it.key}: ${err instanceof Error ? err.message : err}`);
+      out.set(it.key, { extraction: FAIL_SOFT(it.titleRaw), via: "failed" });
+    }
+  });
+  return out;
+}
+
+/** Fixed-size worker pool over a list; a slow item never blocks the others. */
+async function pool<T>(items: T[], size: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let cursor = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(size, items.length) }, worker));
 }

@@ -26,7 +26,7 @@ export type SiteLine = { siteId: string; domain: string | null; companyName: str
 
 /** Replies served without a model — deterministic rules (Phase 1 §3.1) and,
  *  later, cache hits. Reported next to the paid calls as the avoided share. */
-export type NoModelLine = { how: string; calls: number };
+export type NoModelLine = { feature: string; how: string; calls: number };
 
 export type CostReport = {
   since: string;
@@ -88,11 +88,11 @@ export async function costReport(days: number, now = new Date()): Promise<CostRe
        WHERE "createdAt" >= ${since} AND NOT ok
        GROUP BY status
        ORDER BY calls DESC`,
-    prisma.$queryRaw<{ how: string; calls: bigint }[]>`
-      SELECT model AS how, COUNT(*)::bigint AS calls
+    prisma.$queryRaw<{ feature: string; how: string; calls: bigint }[]>`
+      SELECT feature, model AS how, COUNT(*)::bigint AS calls
         FROM "LlmUsage"
        WHERE "createdAt" >= ${since} AND ${Prisma.raw(NO_MODEL)}
-       GROUP BY model
+       GROUP BY feature, model
        ORDER BY calls DESC`,
   ]);
 
@@ -124,7 +124,7 @@ export async function costReport(days: number, now = new Date()): Promise<CostRe
     byDay: byDayRaw.map((r) => ({ day: r.day.toISOString().slice(0, 10), bucket: r.bucket, costUsd: Number(r.cost ?? 0), calls: Number(r.calls) })),
     topSites: topSitesRaw.map((r) => ({ siteId: r.siteId, domain: r.domain, companyName: r.companyName, plan: r.plan, calls: Number(r.calls), costUsd: Number(r.cost ?? 0) })),
     failures: failuresRaw.map((r) => ({ status: r.status, calls: Number(r.calls), lastAt: r.last.toISOString() })),
-    noModel: noModelRaw.map((r) => ({ how: r.how, calls: Number(r.calls) })),
+    noModel: noModelRaw.map((r) => ({ feature: r.feature, how: r.how, calls: Number(r.calls) })),
   };
 }
 
@@ -136,14 +136,14 @@ export async function spendLine(days = 7): Promise<string> {
     const r = await costReport(days);
     const spared = r.noModel.reduce((a, n) => a + n.calls, 0);
     if (r.totalCalls === 0) {
-      return `AI spend last ${days} days: no model calls recorded${spared ? ` (${spared.toLocaleString()} widget replies answered without a model)` : ""}.`;
+      return `AI spend last ${days} days: no model calls recorded${spared ? ` (${spared.toLocaleString()} answered without a model)` : ""}.`;
     }
     const parts = Object.entries(r.byBucket)
       .sort((a, b) => b[1].costUsd - a[1].costUsd)
       .map(([b, v]) => `${b} ${usd(v.costUsd)}`)
       .join(" · ");
     const failed = r.failures.reduce((a, f) => a + f.calls, 0);
-    return `AI spend last ${days} days: ${usd(r.totalUsd)} across ${r.totalCalls.toLocaleString()} calls (${parts})${failed ? ` — ${failed} failed` : ""}${spared ? ` — ${spared.toLocaleString()} widget replies answered without a model` : ""}.`;
+    return `AI spend last ${days} days: ${usd(r.totalUsd)} across ${r.totalCalls.toLocaleString()} calls (${parts})${failed ? ` — ${failed} failed` : ""}${spared ? ` — ${spared.toLocaleString()} answered without a model` : ""}.`;
   } catch {
     return "";
   }

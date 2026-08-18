@@ -34,12 +34,15 @@ export default function AiCostClient() {
 
   const buckets = data ? Object.entries(data.byBucket).sort((a, b) => b[1].costUsd - a[1].costUsd) : [];
   const failed = data ? data.failures.reduce((a, f) => a + f.calls, 0) : 0;
-  // Widget replies that never reached the model (Phase 1 of the strategy):
-  // shown as a share of ALL widget replies, paid + spared, because that ratio
-  // is what each Phase 1 step is trying to move.
-  const spared = data ? data.noModel.reduce((a, n) => a + n.calls, 0) : 0;
-  const widgetAnswers = data ? data.byFeature.find((f) => f.feature === "widget.answer")?.calls ?? 0 : 0;
-  const sparedShare = spared + widgetAnswers > 0 ? Math.round((spared / (spared + widgetAnswers)) * 100) : 0;
+  // Work that never reached the model (Phase 1 of the strategy), per feature,
+  // shown as a share of that feature's total (paid + spared) — that ratio is
+  // what each Phase 1 step is trying to move.
+  const sparedBy = (feature: string) => (data ? data.noModel.filter((n) => n.feature === feature).reduce((a, n) => a + n.calls, 0) : 0);
+  const paidBy = (feature: string) => (data ? data.byFeature.find((f) => f.feature === feature)?.calls ?? 0 : 0);
+  const share = (spared: number, paid: number) => (spared + paid > 0 ? `${Math.round((spared / (spared + paid)) * 100)}%` : "—");
+  const widgetSpared = sparedBy("widget.shortcut");
+  const extractSpared = sparedBy("ingest.extract");
+  const spared = widgetSpared + extractSpared + (data ? data.noModel.filter((n) => n.feature !== "widget.shortcut" && n.feature !== "ingest.extract").reduce((a, n) => a + n.calls, 0) : 0);
 
   // Daily stacked bars: one column per day, one segment per bucket.
   const dayMap = new Map<string, Record<string, number>>();
@@ -81,10 +84,10 @@ export default function AiCostClient() {
               </div>
             ))}
             <div style={{ ...S.tile, ...(spared > 0 ? S.tileGood : {}) }}>
-              <div style={S.tileLabel}>Widget replies without a model</div>
+              <div style={S.tileLabel}>Done without a model</div>
               <div style={S.tileBig}>{num(spared)}</div>
               <div style={S.mut}>
-                {spared + widgetAnswers > 0 ? `${sparedShare}% of widget replies` : "no widget replies yet"}
+                widget {share(widgetSpared, paidBy("widget.answer"))} · extraction {share(extractSpared, paidBy("ingest.extract"))}
                 {data.noModel.length > 0 && ` · ${data.noModel.map((n) => `${n.how.replace(/^(rule|cache):/, "")}×${num(n.calls)}`).join(" · ")}`}
               </div>
             </div>

@@ -44,8 +44,14 @@ Companion to `docs/ai-cost-strategy.md` (Phase 0, shipped 2026-08-18).
   expecting any spend to appear). Same diagnosis as the 2026-08-16 incident.
 - **`widget` bucket dominating, with FREE-plan sites at the top of the site
   table** = the free-allowance question in strategy §4.
-- **`ingest.extract` dominating** = do strategy §3.4 (Batch API + rules-first)
-  first.
+- **`ingest.extract` dominating** = since §3.4 shipped the twice-daily crawl
+  extracts through one Message Batch at half price, after the hash cache and
+  the rules-first pass (`cache:extract` / `rule:extract` rows in the tile).
+  If `$/call` on `ingest.extract` is at full Haiku price, the batch fell back
+  to synchronous calls — read the Actions log for "batch wait ... exceeded"
+  or "batch failed", and consider a longer `--batch-wait`. `--sync` on the
+  workflow_dispatch is the escape hatch. Rules-first agreement with the model
+  is measured by `npx tsx scripts/eval-rules-extract.ts`.
 - **`match.rerank` high with few members** = since §3.3 shipped, edits to
   non-rerank fields no longer evict scores, so look for: a bumped
   `RERANK_PROMPT_VERSION` (everyone re-scores once — expected), many *new*

@@ -167,6 +167,18 @@ export function llmAvailable(feature: LlmFeature): boolean {
 // Accounting
 // ---------------------------------------------------------------------------
 
+/** Usage inserts still in flight — scripts await flushLlmUsage() before exit. */
+const pendingWrites = new Set<Promise<void>>();
+
+/**
+ * Wait for every usage row started so far to land. Request handlers never
+ * need this (waitUntil covers them); a script that calls prisma.$disconnect()
+ * at the end does, or the last few rows are lost with the connection.
+ */
+export async function flushLlmUsage(): Promise<void> {
+  await Promise.allSettled([...pendingWrites]);
+}
+
 function record(
   feature: LlmFeature,
   model: string,
@@ -175,7 +187,9 @@ function record(
   ok: boolean,
   status: number | null,
   latencyMs: number,
-  stream: boolean
+  stream: boolean,
+  /** 0.5 for Message Batches — half list price, same tokens. */
+  priceFactor = 1
 ): void {
   // Fire-and-forget: never awaited by the caller, never allowed to throw into
   // the request. On Vercel the insert is handed to waitUntil (same pattern as
@@ -192,7 +206,7 @@ function record(
         outputTokens: usage.outputTokens,
         cacheReadTokens: usage.cacheReadTokens,
         cacheWriteTokens: usage.cacheWriteTokens,
-        costUsd: ok ? estimateCostUsd(model, usage) : 0,
+        costUsd: ok ? scale(estimateCostUsd(model, usage), priceFactor) : 0,
         latencyMs,
         ok,
         status,
@@ -206,6 +220,8 @@ function record(
     .catch((err: unknown) => {
       console.error("[llm] usage row not written:", err instanceof Error ? err.message : err);
     });
+  pendingWrites.add(insert);
+  void insert.finally(() => pendingWrites.delete(insert));
   try {
     if (process.env.VERCEL) {
       void import("@vercel/functions").then((m) => m.waitUntil(insert)).catch(() => {});
@@ -214,6 +230,8 @@ function record(
     /* no platform hook — the promise still runs while the process lives */
   }
 }
+
+const scale = (n: number | null, f: number) => (n === null ? null : n * f);
 
 const ZERO: LlmUsageTokens = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
 
@@ -252,16 +270,17 @@ function headers(key: string): Record<string, string> {
   };
 }
 
-function body(req: LlmRequest, model: string, stream: boolean): string {
-  return JSON.stringify({
+function params(req: LlmRequest, model: string, stream: boolean): Record<string, unknown> {
+  return {
     model,
     max_tokens: req.max_tokens,
     ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
     ...(req.system ? { system: req.system } : {}),
     messages: req.messages,
     ...(stream ? { stream: true } : {}),
-  });
+  };
 }
+const body = (req: LlmRequest, model: string, stream: boolean) => JSON.stringify(params(req, model, stream));
 
 async function errorText(res: Response): Promise<string> {
   try {
@@ -376,4 +395,138 @@ export async function llmStream(feature: LlmFeature, req: LlmRequest, onText: (d
     record(feature, model, req, usage, true, res.status, Date.now() - t0, true);
   }
   return { text: full, stopReason, usage, model: servedModel };
+}
+
+// ---------------------------------------------------------------------------
+// Message Batches — half price for work that can wait (strategy §3.4)
+// ---------------------------------------------------------------------------
+
+export type LlmBatchItem = { id: string; req: LlmRequest };
+export type LlmBatchOutcome = {
+  /** Completed requests, by the caller's id. */
+  results: Map<string, LlmResult>;
+  /** Requests the API answered with an error (message included). */
+  errors: Map<string, string>;
+  /** Requests still unfinished when waitMs ran out (batch cancelled) —
+   *  the caller decides whether to run them synchronously or drop them. */
+  unfinished: string[];
+  batchIds: string[];
+};
+
+const BATCH_URL = "https://api.anthropic.com/v1/messages/batches";
+/** The API allows 100k per batch; smaller batches finish sooner. */
+const BATCH_CHUNK = 1000;
+
+/**
+ * Submit `items` as one or more Message Batches, poll until they end (or
+ * `waitMs` elapses, default 25 min — then cancel and return what finished),
+ * and return every result keyed by the caller's id. Each completed request
+ * is recorded at half list price. Nothing here throws for a single bad
+ * request; only submission failures and an unavailable feature do.
+ *
+ * Latency is minutes, not seconds — use it from scripts and crons only.
+ */
+export async function llmBatch(
+  feature: LlmFeature,
+  items: LlmBatchItem[],
+  opts: { waitMs?: number; pollMs?: number; log?: (line: string) => void } = {}
+): Promise<LlmBatchOutcome> {
+  const bucket = FEATURE_BUCKET[feature];
+  const key = keyFor(bucket);
+  if (!key || disabled(feature)) throw new Error(`[llm] ${feature} unavailable (${!key ? "no key" : "disabled"})`);
+  const out: LlmBatchOutcome = { results: new Map(), errors: new Map(), unfinished: [], batchIds: [] };
+  if (items.length === 0) return out;
+
+  const waitMs = opts.waitMs ?? 25 * 60 * 1000;
+  const pollMs = opts.pollMs ?? 15_000;
+  const log = opts.log ?? (() => {});
+  const t0 = Date.now();
+
+  // custom_id must be [A-Za-z0-9_-]{1,64}; ours are positional and mapped back.
+  const byCustom = new Map<string, LlmBatchItem>();
+  const chunks: LlmBatchItem[][] = [];
+  for (let i = 0; i < items.length; i += BATCH_CHUNK) chunks.push(items.slice(i, i + BATCH_CHUNK));
+
+  // Submit every chunk first so they process in parallel on Anthropic's side.
+  const submitted: { batchId: string; customIds: string[] }[] = [];
+  for (const [c, chunk] of chunks.entries()) {
+    const requests = chunk.map((it, i) => {
+      const custom = `c${c}_${i}`;
+      byCustom.set(custom, it);
+      return { custom_id: custom, params: params(it.req, it.req.model ?? HAIKU, false) };
+    });
+    const res = await fetch(BATCH_URL, { method: "POST", headers: headers(key), body: JSON.stringify({ requests }) });
+    if (!res.ok) throw new LlmError(res.status, `Anthropic batch submit ${res.status}: ${await errorText(res)}`);
+    const data = (await res.json()) as { id: string };
+    submitted.push({ batchId: data.id, customIds: requests.map((r) => r.custom_id) });
+    out.batchIds.push(data.id);
+    log(`batch ${data.id}: ${requests.length} requests submitted`);
+  }
+
+  const status = async (batchId: string) => {
+    const res = await fetch(`${BATCH_URL}/${batchId}`, { headers: headers(key) });
+    if (!res.ok) throw new LlmError(res.status, `Anthropic batch status ${res.status}: ${await errorText(res)}`);
+    return (await res.json()) as { processing_status: string; results_url: string | null; request_counts?: Record<string, number> };
+  };
+
+  // Poll. When time runs out, cancel what is left and give it a moment to
+  // settle so the finished part of the batch can still be read.
+  const pending = new Map(submitted.map((s) => [s.batchId, s]));
+  let cancelled = false;
+  while (pending.size > 0) {
+    for (const [batchId] of [...pending]) {
+      const st = await status(batchId);
+      if (st.processing_status === "ended") {
+        pending.delete(batchId);
+        if (st.results_url) await readResults(st.results_url);
+        const c = st.request_counts ?? {};
+        log(`batch ${batchId}: ended (${c.succeeded ?? 0} ok, ${c.errored ?? 0} errored, ${c.expired ?? 0} expired, ${c.canceled ?? 0} canceled)`);
+      }
+    }
+    if (pending.size === 0) break;
+    if (!cancelled && Date.now() - t0 > waitMs) {
+      cancelled = true;
+      log(`batch wait of ${Math.round(waitMs / 60000)} min exceeded — cancelling ${pending.size} batch(es), keeping what finished`);
+      for (const [batchId] of pending) {
+        await fetch(`${BATCH_URL}/${batchId}/cancel`, { method: "POST", headers: headers(key) }).catch(() => {});
+      }
+    }
+    // A cancelled batch ends within a minute or two; don't wait forever for it.
+    if (cancelled && Date.now() - t0 > waitMs + 3 * 60 * 1000) break;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+
+  async function readResults(url: string) {
+    const res = await fetch(url, { headers: headers(key!) });
+    if (!res.ok) throw new LlmError(res.status, `Anthropic batch results ${res.status}: ${await errorText(res)}`);
+    const text = await res.text();
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      let row: { custom_id: string; result: { type: string; message?: { content?: { type: string; text?: string }[]; stop_reason?: string; usage?: unknown; model?: string }; error?: { type?: string; message?: string } } };
+      try { row = JSON.parse(line); } catch { continue; }
+      const item = byCustom.get(row.custom_id);
+      if (!item) continue;
+      const model = item.req.model ?? HAIKU;
+      if (row.result.type === "succeeded" && row.result.message) {
+        const m = row.result.message;
+        const usage = usageFrom(m.usage);
+        record(feature, model, item.req, usage, true, 200, 0, false, 0.5);
+        out.results.set(item.id, {
+          text: (m.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join(""),
+          stopReason: m.stop_reason ?? null,
+          usage,
+          model: m.model ?? model,
+        });
+      } else if (row.result.type === "errored") {
+        record(feature, model, item.req, ZERO, false, null, 0, false);
+        out.errors.set(item.id, `${row.result.error?.type ?? "error"}: ${row.result.error?.message ?? ""}`.trim());
+      }
+      // expired / canceled fall through to `unfinished` below.
+    }
+  }
+
+  for (const it of items) {
+    if (!out.results.has(it.id) && !out.errors.has(it.id)) out.unfinished.push(it.id);
+  }
+  return out;
 }

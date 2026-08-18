@@ -3,6 +3,7 @@
  * "15k+ live jobs; dupe rate <3% spot-checked; freshness ≤48h"
  *
  * Run: npm run ingest [-- --limit=20] [--max-jobs-per-source=5] [--only=monzo,n26]
+ *                       [--sync] [--batch-wait=25]
  *
  * Pulls active Sources from the DB (founding-employer signups are already
  * here via the waitlist form, isPriority=true — see app/api/waitlist/route.ts),
@@ -11,6 +12,16 @@
  *
  * Priority sources (founding employers) are processed first, so your best
  * relationships show up in the index before anonymous breadth sources do.
+ *
+ * THREE PHASES, not one loop (strategy §3.4). Phase A crawls every board and
+ * runs the rules pass + "have we seen this?" checks; phase B sends every
+ * posting that still needs the model through ONE Message Batch (half price;
+ * cache and rules-first postings never reach it — see lib/ingestion/
+ * llm-extract.ts); phase C writes the jobs. `--sync` restores the old
+ * one-call-per-posting path for smoke tests. Nothing about a nightly crawl
+ * needs an answer in seconds; the batch usually returns in minutes, and if it
+ * runs past --batch-wait the stragglers are done synchronously so a run never
+ * ends with a posting un-extracted.
  */
 
 import { prisma } from "@/lib/prisma";
@@ -18,7 +29,8 @@ import { crawlGreenhouseBoard } from "@/lib/ingestion/sources/greenhouse";
 import { crawlLeverBoard } from "@/lib/ingestion/sources/lever";
 import { crawlAshbyBoard } from "@/lib/ingestion/sources/ashby";
 import { applyRulesPass } from "@/lib/ingestion/normalize-rules";
-import { extractWithLlm, hashDescription } from "@/lib/ingestion/llm-extract";
+import { extractMany, hashDescription, type LlmExtraction } from "@/lib/ingestion/llm-extract";
+import { flushLlmUsage } from "@/lib/llm";
 import { resolveRole, resolveSkills } from "@/lib/ingestion/resolve-taxonomy";
 import { embedText, buildJobEmbeddingInput, writeJobEmbedding } from "@/lib/ingestion/embed";
 import { dedupeJob } from "@/lib/ingestion/dedupe";
@@ -58,11 +70,23 @@ function titleCaseSlug(slug: string | null): string | null {
     .join(" ");
 }
 
-async function processJob(
-  job: CrawledJob,
-  source: { type: JobSource; companySlug: string | null; companyName: string | null; careersPageUrl: string | null },
-  opts: { skipEmbeddings?: boolean } = {}
-) {
+type SourceInfo = { type: JobSource; companySlug: string | null; companyName: string | null; careersPageUrl: string | null };
+
+/** A posting that got past the "seen it" checks and is waiting on extraction. */
+type PendingJob = {
+  key: string;
+  job: CrawledJob;
+  source: SourceInfo;
+  rules: ReturnType<typeof applyRulesPass>;
+  descriptionHash: string;
+  existing: { id: string } | null;
+};
+
+/**
+ * Phase A for one posting: rules pass, then the two "have we seen this?"
+ * checks that keep unchanged and duplicate postings away from the model.
+ */
+async function prepareJob(job: CrawledJob, source: SourceInfo, key: string): Promise<{ status: "already-current" } | { status: "pending"; pending: PendingJob }> {
   const rules = applyRulesPass({
     titleRaw: job.titleRaw,
     descriptionRaw: job.descriptionRaw,
@@ -90,7 +114,7 @@ async function processJob(
   // Known posting, unchanged text: just say we saw it. No LLM, no write churn.
   if (existing && existing.descriptionHash === descriptionHash) {
     await prisma.job.update({ where: { id: existing.id }, data: { lastVerifiedAt: new Date() } });
-    return { status: "already-current" as const };
+    return { status: "already-current" };
   }
 
   // Unknown posting, but we've seen byte-identical content from ANY source —
@@ -99,14 +123,19 @@ async function processJob(
     const existingByHash = await prisma.job.findFirst({ where: { descriptionHash }, select: { id: true } });
     if (existingByHash) {
       await prisma.job.update({ where: { id: existingByHash.id }, data: { lastVerifiedAt: new Date() } });
-      return { status: "already-current" as const };
+      return { status: "already-current" };
     }
   }
 
-  // Rung 2: LLM fills what rules couldn't (skills, seniority, role guess,
-  // vertical-specific fields). Cached internally by description hash.
-  const llmResult = await extractWithLlm(job.titleRaw, rules.descriptionText);
+  return { status: "pending", pending: { key, job, source, rules, descriptionHash, existing: existing ? { id: existing.id } : null } };
+}
 
+/** Phase C for one posting: taxonomy resolution, write, embed, dedup. */
+async function finishJob(
+  { job, source, rules, descriptionHash, existing }: PendingJob,
+  llmResult: LlmExtraction,
+  opts: { skipEmbeddings?: boolean } = {}
+) {
   const roleId = await resolveRole(job.titleRaw, llmResult.roleGuess);
   const skillIds = await resolveSkills(llmResult.skills);
 
@@ -277,6 +306,11 @@ async function main() {
   const concArg = process.argv.find((a) => a.startsWith("--concurrency="));
   const concurrency = Math.max(1, concArg ? parseInt(concArg.split("=")[1], 10) : 4);
   const skipEmbeddings = process.argv.includes("--skip-embeddings");
+  // --sync: one model call per posting, as before. Default is one Message
+  // Batch per run (half price) — see the file comment.
+  const sync = process.argv.includes("--sync");
+  const waitArg = process.argv.find((a) => a.startsWith("--batch-wait="));
+  const batchWaitMs = Math.max(1, waitArg ? parseInt(waitArg.split("=")[1], 10) : 25) * 60 * 1000;
 
   if (concurrency > 1 && !skipEmbeddings && process.env.VOYAGE_API_KEY) {
     console.warn(
@@ -286,13 +320,15 @@ async function main() {
   }
   console.log(
     `Ingesting ${sources.length} sources (${sources.filter((s) => s.isPriority).length} priority), ` +
-      `concurrency=${concurrency}, embeddings=${skipEmbeddings ? "deferred to backfill" : "inline"}...`
+      `concurrency=${concurrency}, embeddings=${skipEmbeddings ? "deferred to backfill" : "inline"}, extraction=${sync ? "sync" : "batch"}...`
   );
 
   const startedAt = Date.now();
   let processed = 0;
   let created = 0, refreshed = 0, duplicates = 0, alreadyCurrent = 0, failed = 0;
 
+  // ── Phase A: crawl + prepare ─────────────────────────────────────────────
+  const perSource: { source: (typeof sources)[number]; pendings: PendingJob[] }[] = [];
   for (const source of sources) {
     if (!source.companySlug) continue;
     try {
@@ -302,6 +338,8 @@ async function main() {
         `  ${source.companySlug} (${source.type}): ${allJobs.length} jobs found` +
           (maxJobsPerSource && allJobs.length > jobs.length ? ` (processing first ${jobs.length})` : "")
       );
+      const info: SourceInfo = { type: source.type, companySlug: source.companySlug, companyName: source.companyName, careersPageUrl: source.careersPageUrl };
+      const pendings: PendingJob[] = [];
 
       // Fixed-size worker pool over this board's jobs. Workers pull from a
       // shared cursor, so a slow job never blocks the others.
@@ -312,36 +350,62 @@ async function main() {
           if (i >= jobs.length) return;
           const job = jobs[i];
           try {
-            const result = await processJob(
-              job,
-              {
-                type: source.type,
-                companySlug: source.companySlug,
-                companyName: source.companyName,
-                careersPageUrl: source.careersPageUrl,
-              },
-              { skipEmbeddings }
-            );
-            if (result.status === "created") created++;
-            else if (result.status === "refreshed") refreshed++;
-            else if (result.status === "duplicate") duplicates++;
-            else alreadyCurrent++;
+            const r = await prepareJob(job, info, `${source.companySlug}:${i}`);
+            if (r.status === "already-current") { alreadyCurrent++; processed++; }
+            else pendings.push(r.pending);
           } catch (err) {
             failed++;
-            console.error(`    Failed to process job "${job.titleRaw}":`, err);
+            processed++;
+            console.error(`    Failed to prepare job "${job.titleRaw}":`, err);
           }
-          processed++;
         }
       };
       await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker));
-
-      await prisma.source.update({
-        where: { id: source.id },
-        data: { lastCrawledAt: new Date() },
-      });
+      perSource.push({ source, pendings });
     } catch (err) {
       console.error(`  Failed to crawl source ${source.companySlug}:`, err);
     }
+  }
+
+  // ── Phase B: extraction — cache, rules, then one batch ───────────────────
+  const allPending = perSource.flatMap((p) => p.pendings);
+  console.log(`\n${allPending.length} postings need extraction (${alreadyCurrent} already current).`);
+  const extracted = await extractMany(
+    allPending.map((p) => ({ key: p.key, titleRaw: p.job.titleRaw, descriptionText: p.rules.descriptionText })),
+    { batch: !sync, concurrency, waitMs: batchWaitMs, log: (m) => console.log(`  ${m}`) }
+  );
+  const via: Record<string, number> = {};
+  for (const r of extracted.values()) via[r.via] = (via[r.via] ?? 0) + 1;
+  console.log(`  extraction by path: ${Object.entries(via).map(([k, v]) => `${k}=${v}`).join(" ") || "none"}`);
+
+  // ── Phase C: write ───────────────────────────────────────────────────────
+  for (const { source, pendings } of perSource) {
+    let cursor = 0;
+    const worker = async () => {
+      for (;;) {
+        const i = cursor++;
+        if (i >= pendings.length) return;
+        const pending = pendings[i];
+        try {
+          const ex = extracted.get(pending.key);
+          if (!ex) throw new Error("no extraction result");
+          const result = await finishJob(pending, ex.extraction, { skipEmbeddings });
+          if (result.status === "created") created++;
+          else if (result.status === "refreshed") refreshed++;
+          else if (result.status === "duplicate") duplicates++;
+        } catch (err) {
+          failed++;
+          console.error(`    Failed to write job "${pending.job.titleRaw}":`, err);
+        }
+        processed++;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, pendings.length) }, worker));
+
+    await prisma.source.update({
+      where: { id: source.id },
+      data: { lastCrawledAt: new Date() },
+    });
   }
 
   const secs = (Date.now() - startedAt) / 1000;
@@ -372,6 +436,7 @@ async function main() {
     console.error("Page stats failed (ingestion itself succeeded):", err);
   }
 
+  await flushLlmUsage(); // cost rows are fire-and-forget; let them land before the connection goes
   await prisma.$disconnect();
 }
 
