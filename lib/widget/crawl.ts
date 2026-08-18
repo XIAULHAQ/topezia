@@ -16,6 +16,7 @@
  * belt-and-braces, not the security boundary.
  */
 import sanitizeHtml from "sanitize-html";
+import { invalidateAnswerCacheForSite } from "./answer-cache";
 import { prisma } from "@/lib/prisma";
 import { decodeHtmlEntities } from "@/lib/sanitize";
 import { embedBatch } from "@/lib/ingestion/embed";
@@ -728,6 +729,8 @@ async function runCrawl(siteId: string, host: string, maxPages: number): Promise
     where: { id: siteId },
     data: { pagesCrawled: pages, crawledAt: new Date(), crawlError: error, checkoutPath, storeKind },
   });
+  // The pages and prices every cached answer was written from just changed.
+  await invalidateAnswerCacheForSite(siteId);
 
   return { pages, chunks: rows.length, products: products.length, error };
 }

@@ -13,6 +13,7 @@
  * in crawl.ts) may ever delete facts as part of a crawl.
  */
 import { prisma } from "@/lib/prisma";
+import { invalidateAnswerCacheForSite } from "./answer-cache";
 import { embedText } from "@/lib/ingestion/embed";
 import { planFor } from "@/lib/billing/plans";
 
@@ -72,6 +73,9 @@ export async function saveFact(
       fact.id
     );
   }
+  // The owner just corrected the bot: nothing answered before this may be
+  // served again, or the correction doesn't stick for up to a day.
+  await invalidateAnswerCacheForSite(siteId);
   return fact;
 }
 
@@ -85,6 +89,7 @@ export async function listFacts(siteId: string): Promise<Fact[]> {
 
 export async function deleteFact(siteId: string, id: string): Promise<boolean> {
   const { count } = await prisma.siteFact.deleteMany({ where: { id, siteId } });
+  if (count > 0) await invalidateAnswerCacheForSite(siteId);
   return count > 0;
 }
 

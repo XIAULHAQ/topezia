@@ -305,15 +305,17 @@ function guessLangFromFiller(text: string): Lang {
 
 /**
  * Cosine distance under which a taught answer is "the same question". Voyage
- * puts paraphrases of one question around 0.05–0.12 and different questions
- * on one topic around 0.2+; 0.15 is the strategy's starting point. Tunable
- * without a deploy — read the WidgetQuestion log before tightening or
- * loosening, and remember rule 0 of the prompt still applies above the line:
- * the model sees the fact either way, this only decides who phrases it.
+ * puts paraphrases of one question around 0.03–0.15 and different questions
+ * on one topic around 0.2+. The strategy said 0.15; measured 2026-08-19, a
+ * question and its Spanish translation sit at 0.142, and serving the owner's
+ * English sentence to a Spanish visitor is a visible defect (rule 4b) —
+ * a missed paraphrase is only a paid call. So 0.12. Tunable without a deploy;
+ * rule 0 of the prompt still applies above the line — the model sees the
+ * fact either way, this only decides who phrases it.
  */
 export function taughtExactDistance(): number {
   const n = Number(process.env.WIDGET_TAUGHT_EXACT_DISTANCE);
-  return Number.isFinite(n) && n > 0 && n < 1 ? n : 0.15;
+  return Number.isFinite(n) && n > 0 && n < 1 ? n : 0.12;
 }
 
 /**

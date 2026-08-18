@@ -113,7 +113,8 @@ const facts = (d: number) => [{ question: "What are your opening hours?", answer
 check("taught: close match, first turn → served", taughtShortcut(facts(0.08), chat("what are your hours"), {})?.kind ?? null, "taught");
 check("taught: reply is the owner's words", taughtShortcut(facts(0.08), chat("what are your hours"), {})?.answer.reply, "We're open 9–5 Monday to Friday.");
 check("taught: sources empty, no handoff", taughtShortcut(facts(0.08), chat("q"), {})?.answer, { reply: "We're open 9–5 Monday to Friday.", sources: [], products: [], handoff: false });
-check("taught: at threshold → model", taughtShortcut(facts(0.15), chat("q"), {}), null);
+check("taught: at threshold → model", taughtShortcut(facts(0.12), chat("q"), {}), null);
+check("taught: cross-language distance (0.142) → model", taughtShortcut(facts(0.142), chat("q"), {}), null);
 check("taught: far → model", taughtShortcut(facts(0.3), chat("q"), {}), null);
 check("taught: second turn still allowed", taughtShortcut(facts(0.08), chat("hi", "Hi!", "hours?"), {})?.kind ?? null, "taught");
 check("taught: third turn → model", taughtShortcut(facts(0.08), chat("a", "b", "c", "d", "hours?"), {}), null);

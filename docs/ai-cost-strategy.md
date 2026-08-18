@@ -68,7 +68,7 @@ Ordered by expected saving per hour of work.
 
 ### 3.1 Widget: answer without the model when the model would add nothing
 
-**Status: shipped 2026-08-18** — `lib/widget/shortcut.ts` (small talk, contact-only, "talk to a person" run in the chat route *before* the monthly cap is spent; the taught near-exact rule runs in `answerFromSite` after retrieval, threshold `WIDGET_TAUGHT_EXACT_DISTANCE`, default 0.15). Each avoided call is recorded as a `widget.shortcut` row with `model = rule:<kind>` so `/hq/ai-cost` shows the share ("Widget replies without a model" tile). Tests: `npx tsx test/shortcut.test.ts`. Also fixed in passing: the widget's own opening greeting no longer rides in the retrieval embedding of the first question.
+**Status: shipped 2026-08-18** — `lib/widget/shortcut.ts` (small talk, contact-only, "talk to a person" run in the chat route *before* the monthly cap is spent; the taught near-exact rule runs in `answerFromSite` after retrieval, threshold `WIDGET_TAUGHT_EXACT_DISTANCE`, default 0.12 — lowered from 0.15 on 2026-08-19 after measuring a question vs its Spanish translation at 0.142). Each avoided call is recorded as a `widget.shortcut` row with `model = rule:<kind>` so `/hq/ai-cost` shows the share ("Widget replies without a model" tile). Tests: `npx tsx test/shortcut.test.ts`. Also fixed in passing: the widget's own opening greeting no longer rides in the retrieval embedding of the first question.
 
 Insert a deterministic layer *before* the model call in `answerFromSite`. Each of these returns the same or better answer than Haiku would, at zero cost:
 
@@ -80,6 +80,8 @@ Insert a deterministic layer *before* the model call in `answerFromSite`. Each o
 Expected: 15–30% of widget messages never reach the model. Measure the share on `LlmUsage` once §2 lands.
 
 ### 3.2 Widget: reuse recent answers to the same question (semantic answer cache)
+
+**Status: shipped 2026-08-19** — `lib/widget/answer-cache.ts` + `WidgetAnswerCache` (migration 081, applied). Lookup runs in `answerFromSite` right after the question embedding, before retrieval; first-turn only, no order/contact context, brand-scoped, 24h TTL, distance `WIDGET_ANSWER_CACHE_DISTANCE` (default 0.08). Answers that leaned on a product are only reused on the same page; the rest site-wide. Invalidated on recrawl and on any taught-fact write. Hits are `cache:answer` rows on `/hq/ai-cost`. Verified live against rodeo.graphics (paraphrase 0.031 hits; Ireland/Canada 0.275 misses).
 
 The question is already embedded (for retrieval). Add a `WidgetAnswerCache` (siteId, question embedding, normalized pageUrl or null, reply, sources, products, expiresAt). On a first-turn question with no order/contact context: nearest cached entry for this brand within cosine distance `< 0.08` and younger than 24h → serve it, still counting it against the plan's reply cap (the customer still got an AI answer) but making no model call. Invalidate the site's cache on recrawl and on any `SiteFact` change.
 

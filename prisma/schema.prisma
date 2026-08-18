@@ -1315,6 +1315,7 @@ model WidgetSite {
   products     SiteProduct[]
   questions    WidgetQuestion[]
   facts        SiteFact[]
+  answerCache  WidgetAnswerCache[]
   inquiries    CompanyInquiry[]
   wpConnects   WpConnect[]
   createdAt    DateTime @default(now())
@@ -1394,6 +1395,33 @@ model SiteFact {
   updatedAt DateTime   @default(now())
 
   @@index([siteId])
+}
+
+// Recent answers, kept 24h, so the same first question from the next visitor
+// is served from here instead of the model (strategy §3.2). Brand-scoped like
+// retrieval; emptied on recrawl and on any taught-fact change. See
+// lib/widget/answer-cache.ts.
+model WidgetAnswerCache {
+  id            String     @id @default(uuid())
+  siteId        String
+  site          WidgetSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  /// The visitor's page (origin+path) when this was answered, if known.
+  pageUrl       String?
+  /// True when the answer leaned on the page (product cards / page product):
+  /// then it is only reused on the same page. False = reusable site-wide.
+  pageSensitive Boolean    @default(false)
+  question      String
+  // vector(1024) of the question alone, written via raw SQL like SiteFact:
+  // embedding Unsupported("vector(1024)")?
+  reply         String
+  sources       Json
+  products      Json
+  handoff       Boolean    @default(false)
+  hits          Int        @default(0)
+  createdAt     DateTime   @default(now())
+  expiresAt     DateTime
+
+  @@index([siteId, expiresAt])
 }
 
 // Rolling log of what visitors asked the AI — feeds the weekly digest and

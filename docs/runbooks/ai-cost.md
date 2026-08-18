@@ -25,14 +25,15 @@ Companion to `docs/ai-cost-strategy.md` (Phase 0, shipped 2026-08-18).
 |---|---|
 | `ANTHROPIC_API_KEY` | Fallback key for every bucket (what exists today). |
 | `ANTHROPIC_API_KEY_WIDGET` / `_INGESTION` / `_MEMBER` / `_OPS` | Optional per-bucket keys. Create them in the Anthropic console (Settings → API keys, one per bucket, named the same) and the console's own usage report splits by bucket with no further work. |
-| `WIDGET_TAUGHT_EXACT_DISTANCE` | Phase 1 §3.1: below this cosine distance the nearest owner-taught answer is served verbatim, no model. Default `0.15`. Loosen towards `0.2` if `rule:taught` stays near zero on a site with many taught answers; tighten if owners report a taught answer showing up for the wrong question. |
+| `WIDGET_TAUGHT_EXACT_DISTANCE` | Phase 1 §3.1: below this cosine distance the nearest owner-taught answer is served verbatim, no model. Default `0.12` (a question and its translation measure ~0.14 — going above that risks an English taught answer for a Spanish visitor). Tighten if owners report a taught answer showing up for the wrong question. |
+| `WIDGET_ANSWER_CACHE_DISTANCE` | Phase 1 §3.2: below this distance a first-turn question reuses the last 24h's answer to the same question (`cache:answer` rows). Default `0.08`; measured 2026-08-19: paraphrases 0.03–0.05, "ship to Ireland" vs "ship to Canada" 0.28. To bypass the cache without a deploy set it to `0.0001`. Invalidated on recrawl and on any taught-fact write. |
 | `AI_DISABLED` | Kill switch. Comma-separated buckets and/or features: `widget`, `resume.tailor,ingestion`, or `all`. Takes effect on the next request — no redeploy. Every feature falls back to its no-model path (canned reply, provisional match score, "not available right now" 503, rules-only ingestion). |
 
 ## Reading the page
 
 - **"Widget replies without a model" tile** = Phase 1 at work: the count and
   share of widget replies answered by a rule (`smalltalk`, `contact`, `human`,
-  `taught`) instead of Haiku. These rows sit in `LlmUsage` with
+  `taught`) or served from the 24h answer cache (`answer`) instead of Haiku. These rows sit in `LlmUsage` with
   `model = rule:<kind>` and cost 0; the $ figures exclude them. If the share is
   ~0 after a week, either traffic is all substantive questions (fine) or a
   rule is not firing — check `test/shortcut.test.ts` against real

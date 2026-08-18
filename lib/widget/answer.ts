@@ -33,6 +33,8 @@ import { embedText } from "@/lib/ingestion/embed";
 import { buyOptions, type BuyOption } from "./checkout";
 import { brandSiteIds } from "./brand";
 import { taughtShortcut } from "./shortcut";
+import { lookupCachedAnswer, storeCachedAnswer } from "./answer-cache";
+import { inBackground } from "@/lib/background";
 
 const TOP_K = 8;
 const HISTORY_TURNS = 8;
@@ -177,6 +179,20 @@ export async function answerFromSite(
   const qEmbedding = await embedText(recent ? `${recent}\n${question}` : question);
   if (!qEmbedding) return { ...HANDOFF_FALLBACK, ...EMPTY };
   const qVector = `[${qEmbedding.join(",")}]`;
+
+  // SEEN THIS QUESTION TODAY? A first-turn question with nothing else in play
+  // (no order, no lead just captured) is a pure function of the site's content
+  // — so the last visitor's answer is this visitor's answer, for a day, or
+  // until the content changes (see answer-cache.ts). Same cap, no model.
+  const cacheable = !recent && !opts.order && !opts.contactCaptured;
+  if (cacheable) {
+    const hit = await lookupCachedAnswer(siteIds, qVector, opts.pageUrl ?? null);
+    if (hit) {
+      opts.onDelta?.(hit.reply);
+      recordNoModel("widget.shortcut", "cache:answer", { siteId: site.id }, Date.now() - startedAt);
+      return hit;
+    }
+  }
 
   const [chunks, retrieved, pageProduct, facts] = await Promise.all([
     /**
@@ -378,13 +394,28 @@ export async function answerFromSite(
         return p ? [{ name: p.name, price: p.price, image: p.image, url: p.url, buy: buyOptions(site, p) }] : [];
       })
       .slice(0, 3);
-    return {
+    const answer: WidgetAnswer = {
       reply,
       // Only URLs that actually came from retrieval — a cited page must exist.
       sources: (Array.isArray(meta.sources) ? meta.sources : []).filter((u): u is string => typeof u === "string" && allowed.has(u)).slice(0, 3),
       products: productCards,
       handoff: Boolean(meta.handoff),
     };
+    if (cacheable) {
+      inBackground(
+        storeCachedAnswer({
+          siteId: site.id,
+          question,
+          qVector,
+          pageUrl: opts.pageUrl ?? null,
+          // The page shaped this reply if a product was on the shelf because
+          // of it, or made it into the cards. Otherwise it's good site-wide.
+          pageSensitive: Boolean(pageProduct) || productCards.length > 0,
+          answer,
+        })
+      );
+    }
+    return answer;
   } catch (err) {
     console.error("[widget] answer failed:", err instanceof Error ? err.message : err);
     return { ...HANDOFF_FALLBACK, ...EMPTY };
