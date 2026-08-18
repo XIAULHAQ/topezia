@@ -23,6 +23,7 @@
  * auth callback is a phishing primitive.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { adoptMatchScores } from "@/lib/matching/match-version";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
@@ -131,7 +132,11 @@ export async function GET(req: NextRequest) {
         await prisma.profile.update({ where: { id: anonProfile.id }, data: { userId } });
         hasProfile = true;
       } else {
-        await prisma.matchScore.deleteMany({ where: { profileId: anonProfile.id } });
+        // The scores were paid for; carry them over. They only serve if the
+        // surviving profile hashes the same (match-version.ts).
+        const mine = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
+        if (mine) await adoptMatchScores(anonProfile.id, mine.id);
+        else await prisma.matchScore.deleteMany({ where: { profileId: anonProfile.id } });
         await prisma.profileSkill.deleteMany({ where: { profileId: anonProfile.id } });
         await prisma.profile.delete({ where: { id: anonProfile.id } });
       }

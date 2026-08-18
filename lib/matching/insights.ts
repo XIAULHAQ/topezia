@@ -261,8 +261,9 @@ async function scopeToVertical(
  * Why it exists: one dashboard load calls this TWICE concurrently (the
  * insights endpoint and the career score both need it), and the computation
  * is the most expensive read in the product — a corpus scan across the
- * field's live postings. Keyed by profileId + matchVersion so any profile
- * edit (which bumps matchVersion) gets fresh numbers immediately; the TTL
+ * field's live postings. Keyed by profileId + updatedAt so any profile
+ * edit gets fresh numbers immediately (matchVersion no longer moves on every
+ * save — it is the reranker's content hash, see match-version.ts); the TTL
  * only bounds how long a static profile rides one corpus snapshot. Honest
  * limitation, same as lib/rate-limit.ts: per-instance memory, so two
  * concurrent requests on different lambdas still each compute once.
@@ -271,13 +272,13 @@ const INSIGHTS_TTL_MS = 5 * 60 * 1000;
 const insightsCache = new Map<string, { at: number; p: Promise<ProfileInsights | null> }>();
 
 export async function getProfileInsights(profileId: string): Promise<ProfileInsights | null> {
-  const mv = await prisma.profile.findUnique({ where: { id: profileId }, select: { matchVersion: true } });
+  const mv = await prisma.profile.findUnique({ where: { id: profileId }, select: { updatedAt: true } });
   if (!mv) return null;
-  const key = `${profileId}:${mv.matchVersion}`;
+  const key = `${profileId}:${mv.updatedAt.getTime()}`;
   const now = Date.now();
   const hit = insightsCache.get(key);
   if (hit && now - hit.at < INSIGHTS_TTL_MS) return hit.p;
-  // One live entry per profile — an edit's new matchVersion evicts the old.
+  // One live entry per profile — an edit's new updatedAt evicts the old.
   for (const k of insightsCache.keys()) if (k.startsWith(`${profileId}:`)) insightsCache.delete(k);
   const p = computeProfileInsights(profileId).catch((e) => { insightsCache.delete(key); throw e; });
   insightsCache.set(key, { at: now, p });

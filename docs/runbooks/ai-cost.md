@@ -46,8 +46,11 @@ Companion to `docs/ai-cost-strategy.md` (Phase 0, shipped 2026-08-18).
   table** = the free-allowance question in strategy §4.
 - **`ingest.extract` dominating** = do strategy §3.4 (Batch API + rules-first)
   first.
-- **`match.rerank` high with few members** = profile edits are invalidating the
-  cache; strategy §3.3.
+- **`match.rerank` high with few members** = since §3.3 shipped, edits to
+  non-rerank fields no longer evict scores, so look for: a bumped
+  `RERANK_PROMPT_VERSION` (everyone re-scores once — expected), many *new*
+  members, or a loop hitting `/api/matches/rerank` (now 8/min/user, check
+  429s). Legacy profiles re-score once on their first save after 2026-08-19.
 
 Costs are estimates (list price × tokens, stamped at write time). The
 Anthropic console is the invoice; this page is the breakdown.

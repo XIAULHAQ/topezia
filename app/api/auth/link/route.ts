@@ -7,6 +7,7 @@
  * the account has a profile (so the client can route to /feed vs /onboard).
  */
 import { NextResponse } from "next/server";
+import { adoptMatchScores } from "@/lib/matching/match-version";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
@@ -33,7 +34,11 @@ export async function POST() {
       } else {
         // Account already has a profile — discard the anon one (MVP: keep the
         // account's; a smarter merge is a later refinement).
-        await prisma.matchScore.deleteMany({ where: { profileId: anonProfile.id } });
+        // The scores were paid for; carry them over. They only serve if the
+        // surviving profile hashes the same (match-version.ts).
+        const mine = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
+        if (mine) await adoptMatchScores(anonProfile.id, mine.id);
+        else await prisma.matchScore.deleteMany({ where: { profileId: anonProfile.id } });
         await prisma.profileSkill.deleteMany({ where: { profileId: anonProfile.id } });
         await prisma.profile.delete({ where: { id: anonProfile.id } });
       }

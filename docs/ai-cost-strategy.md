@@ -89,6 +89,8 @@ Repeated FAQs ("opening hours", "do you ship to X", "how much is Y") are a large
 
 ### 3.3 Rerank: invalidate on what the reranker actually reads
 
+**Status: shipped 2026-08-19** — `lib/matching/match-version.ts`: `matchVersion` is now `h:<sha256>` of exactly the candidate block (`RERANK_PROMPT_VERSION` + headline role, seniority, years, skills name/tier/proficiency, industries, location, salary target/period, work authorization), recomputed at the end of both profile write paths. Insights cache re-keyed on `Profile.updatedAt` (any edit still refreshes it). Anon→account merge now re-keys scores (`adoptMatchScores`) instead of deleting them. `/api/matches/rerank` rate-limited 8/min/user. Job snippet 2,000 → 1,200 chars. Legacy UUID versions are replaced lazily on each profile's next save (one last full rerank each). Tests: `npx tsx test/match-version.test.ts`. **When editing `RERANK_PROMPT`, the model, or the snippet, bump `RERANK_PROMPT_VERSION`.**
+
 `updateProfileFields` sets `matchVersion = randomUUID()` on **every** edit — full name, employment types, relocate toggle — and the whole top-12 gets re-scored (~$0.013) plus the insights cache evicts. The reranker only reads: headline, seniority, years, core/secondary skills, industries, location, salary target/period, work authorization.
 
 Fix: compute `matchVersion` as a stable hash of exactly those fields (plus the prompt version) instead of a random UUID. Edits that don't change them keep the cache warm; reverting an edit hits the old rows again; a prompt change bumps everything by design. Same change makes `scoreOneJob` and the insights cache more stable for free.

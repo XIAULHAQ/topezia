@@ -10,6 +10,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { getMatches, eligibleLiveCount } from "@/lib/matching/match";
+import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 
 export const maxDuration = 60;
 
@@ -18,6 +19,10 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: "no-profile" }, { status: 401 });
   const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true, country: true } });
   if (!profile) return NextResponse.json({ error: "no-profile" }, { status: 401 });
+  // A handful a minute is plenty — the score cache absorbs legitimate reloads;
+  // anything faster is a loop paying for a fresh rerank each time. Per-instance
+  // (lib/rate-limit.ts), so soft, but it turns a runaway into a trickle.
+  if (!rateLimit(`rerank:${userId}`, 8, 60 * 1000)) return NextResponse.json(RATE_LIMITED, { status: 429 });
 
   // ?kind=PROJECT (+ period/currency) mirrors GET /api/matches — enriches the
   // /projects view. Whitelisted the same way.

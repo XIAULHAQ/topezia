@@ -15,6 +15,7 @@ import { resolveRole, resolveSkillsMap } from "@/lib/ingestion/resolve-taxonomy"
 import { extractCountry } from "@/lib/ingestion/normalize-rules";
 import { embedText, writeProfileEmbedding } from "@/lib/ingestion/embed";
 import type { ParsedResume } from "./parse-resume";
+import { refreshMatchVersion } from "./match-version";
 
 export interface ProfilePreferences {
   employmentTypes: EmploymentType[];
@@ -90,10 +91,6 @@ export async function createOrUpdateProfile(params: {
     bySkill.set(id, { confidence: Math.max(prev?.confidence ?? 0, s.confidence), proficiency, tier });
   }
 
-  // New match version on every save → transparently invalidates cached
-  // rerank scores for this profile (spec §5, see match.ts).
-  const matchVersion = randomUUID();
-
   // Where they are, as a country — this is what scopes their feed. Derived from
   // the resume's own location line, so most people never answer a question for
   // it. null just means we don't know, and the matcher then filters nothing.
@@ -125,7 +122,6 @@ export async function createOrUpdateProfile(params: {
       workAuthorization: preferences.workAuthorization ?? "NOT_SPECIFIED",
       verticalsOptIn: preferences.verticalsOptIn ?? [],
       entryPath,
-      matchVersion,
     },
     update: {
       resumeText,
@@ -151,7 +147,6 @@ export async function createOrUpdateProfile(params: {
       workAuthorization: preferences.workAuthorization ?? "NOT_SPECIFIED",
       verticalsOptIn: preferences.verticalsOptIn ?? [],
       entryPath,
-      matchVersion,
     },
     select: { id: true },
   });
@@ -180,6 +175,10 @@ export async function createOrUpdateProfile(params: {
   }
 
   await ensurePublicSlug(profile.id, parsed.fullName); // stable /p/{slug} URL
+
+  // The cache key for rerank scores is a hash of what the reranker reads —
+  // recomputed now that the row and its skills are written (match-version.ts).
+  await refreshMatchVersion(profile.id);
 
   return { profileId: profile.id, embedded: Boolean(embedding) };
 }
@@ -333,8 +332,9 @@ function cleanPhotoUrl(v: string | null): string | null {
  * Distinct from createOrUpdateProfile, which rebuilds everything from a fresh
  * resume parse. This applies a partial edit to an existing profile: only the
  * keys present in `edit` change. Any edit that touches the matcher's inputs
- * (headline, skills) re-embeds; every edit bumps matchVersion so cached scores
- * are invalidated (§5). Skills edited by hand are marked source=MANUAL and
+ * (headline, skills) re-embeds; matchVersion is recomputed at the end as a hash
+ * of the reranker's inputs, so cached scores survive edits the reranker never
+ * reads (name, links, visibility, relocation — see match-version.ts). Skills edited by hand are marked source=MANUAL and
  * confidence 1.0 — the user asserting a skill is the strongest signal there is.
  */
 export async function updateProfileFields(
@@ -347,7 +347,10 @@ export async function updateProfileFields(
   });
   if (!existing) return null;
 
-  const data: Prisma.ProfileUpdateInput = { matchVersion: randomUUID() };
+  // updatedAt always moves, even for a skills-only edit: the insights cache
+  // keys on it (lib/matching/insights.ts), so "any edit refreshes insights"
+  // stays true now that matchVersion no longer changes on every save.
+  const data: Prisma.ProfileUpdateInput = { updatedAt: new Date() };
 
   if (edit.fullName !== undefined) data.fullName = edit.fullName;
   if (edit.headline !== undefined) {
@@ -478,6 +481,8 @@ export async function updateProfileFields(
       embedded = true;
     }
   }
+
+  await refreshMatchVersion(existing.id);
 
   return { profileId: existing.id, embedded };
 }

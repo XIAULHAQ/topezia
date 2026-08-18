@@ -13,8 +13,8 @@
  *
  * Resumable (only touches embedding IS NULL). Dry-run by default; pass --apply.
  */
-import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { refreshMatchVersion } from "@/lib/matching/match-version";
 import { embedText, writeProfileEmbedding } from "@/lib/ingestion/embed";
 import { buildProfileEmbeddingInput } from "@/lib/matching/profile";
 import type { ParsedResume } from "@/lib/matching/parse-resume";
@@ -62,7 +62,7 @@ async function main() {
     if (apply) {
       const vec = await embedText(input);
       if (!vec) { console.log(`    ! embedText returned null (Voyage not configured?) — stopping`); break; }
-      await prisma.profile.update({ where: { id }, data: { matchVersion: randomUUID() } });
+      await refreshMatchVersion(id); // hash of rerank inputs; the embedding is not one of them
       await writeProfileEmbedding(prisma, id, vec);
       embedded++;
       await sleep(delayMs);

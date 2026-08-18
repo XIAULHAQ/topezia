@@ -403,6 +403,9 @@ export function cleanWhyLine(line: string): string {
   return out.charAt(0).toUpperCase() + out.slice(1) + (/[.!?]$/.test(out) ? "" : ".");
 }
 
+// Editing this prompt, RERANK_MODEL or the snippet above changes what a
+// cached score means — bump RERANK_PROMPT_VERSION in match-version.ts so
+// every profile re-scores once, on purpose.
 const RERANK_PROMPT = `You are an honest job-matching reranker for a job seeker. For each job, score fit 0-100 and explain it. Return ONLY a JSON array, one object per job, in the same order:
 [ { "jobId": string, "score": number, "matchedSkills": string[], "gapSkills": string[], "whyLine": string } ]
 
@@ -448,7 +451,9 @@ async function rerankBatch(
   const jobsPayload = jobs.map((j) => ({
     jobId: j.id,
     title: j.titleNormalized || j.titleRaw,
-    description: stripToSnippet(j.descriptionRaw, 2000),
+    // 1,200 chars is enough for a fit score — skills and seniority live in the
+    // first third of a posting. Was 2,000; ~35% fewer input tokens per batch.
+    description: stripToSnippet(j.descriptionRaw, 1200),
   }));
 
   const userMsg = `CANDIDATE:
