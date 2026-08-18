@@ -34,6 +34,12 @@ export default function AiCostClient() {
 
   const buckets = data ? Object.entries(data.byBucket).sort((a, b) => b[1].costUsd - a[1].costUsd) : [];
   const failed = data ? data.failures.reduce((a, f) => a + f.calls, 0) : 0;
+  // Widget replies that never reached the model (Phase 1 of the strategy):
+  // shown as a share of ALL widget replies, paid + spared, because that ratio
+  // is what each Phase 1 step is trying to move.
+  const spared = data ? data.noModel.reduce((a, n) => a + n.calls, 0) : 0;
+  const widgetAnswers = data ? data.byFeature.find((f) => f.feature === "widget.answer")?.calls ?? 0 : 0;
+  const sparedShare = spared + widgetAnswers > 0 ? Math.round((spared / (spared + widgetAnswers)) * 100) : 0;
 
   // Daily stacked bars: one column per day, one segment per bucket.
   const dayMap = new Map<string, Record<string, number>>();
@@ -74,6 +80,14 @@ export default function AiCostClient() {
                 <div style={S.mut}>{num(v.calls)} calls · {data.totalUsd > 0 ? Math.round((v.costUsd / data.totalUsd) * 100) : 0}%</div>
               </div>
             ))}
+            <div style={{ ...S.tile, ...(spared > 0 ? S.tileGood : {}) }}>
+              <div style={S.tileLabel}>Widget replies without a model</div>
+              <div style={S.tileBig}>{num(spared)}</div>
+              <div style={S.mut}>
+                {spared + widgetAnswers > 0 ? `${sparedShare}% of widget replies` : "no widget replies yet"}
+                {data.noModel.length > 0 && ` · ${data.noModel.map((n) => `${n.how.replace(/^(rule|cache):/, "")}×${num(n.calls)}`).join(" · ")}`}
+              </div>
+            </div>
             <div style={{ ...S.tile, ...(failed > 0 ? S.tileWarn : {}) }}>
               <div style={S.tileLabel}>Failed calls</div>
               <div style={S.tileBig}>{num(failed)}</div>
@@ -174,6 +188,7 @@ const S: Record<string, CSSProperties> = {
   tiles: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 30 },
   tile: { background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, padding: "12px 14px" },
   tileWarn: { borderColor: "#FECACA", background: "#FEF2F2" },
+  tileGood: { borderColor: "#BBF7D0", background: "#F0FDF4" },
   tileLabel: { fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: "#64748B" },
   tileBig: { fontSize: 24, fontWeight: 800, color: "#0F172A", margin: "4px 0 2px", fontVariantNumeric: "tabular-nums" },
   chart: { display: "flex", alignItems: "flex-end", gap: 4, height: 140, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, padding: "12px 12px 6px", overflowX: "auto" },

@@ -28,10 +28,11 @@
  * well under a second instead of after the full generation.
  */
 import { prisma } from "@/lib/prisma";
-import { llm, llmStream, llmAvailable, type LlmFeature, type LlmMessage } from "@/lib/llm";
+import { llm, llmStream, llmAvailable, recordNoModel, type LlmFeature, type LlmMessage } from "@/lib/llm";
 import { embedText } from "@/lib/ingestion/embed";
 import { buyOptions, type BuyOption } from "./checkout";
 import { brandSiteIds } from "./brand";
+import { taughtShortcut } from "./shortcut";
 
 const TOP_K = 8;
 const HISTORY_TURNS = 8;
@@ -144,6 +145,7 @@ export async function answerFromSite(
   history: ChatTurn[],
   opts: AnswerOptions = {}
 ): Promise<WidgetAnswer> {
+  const startedAt = Date.now();
   const question = history.filter((t) => t.role === "visitor").at(-1)?.text ?? "";
   if (!question.trim() || !llmAvailable("widget.answer")) {
     return { ...HANDOFF_FALLBACK, ...EMPTY };
@@ -164,7 +166,14 @@ export async function answerFromSite(
   // Retrieval query = the question PLUS the previous exchange. "Where can I
   // buy that?" embeds as nothing on its own — the referent lives in the turn
   // before, and follow-ups are how people actually talk to these things.
-  const recent = history.slice(-4, -1).map((t) => t.text.slice(0, 300)).join("\n");
+  //
+  // Minus the widget's own opening line: whatever the bot said before the
+  // visitor's first word is a greeting, never a referent, and carrying it
+  // into every first question's embedding only pulled retrieval towards
+  // "hi, ask me anything" — and kept a first question from ever reading as a
+  // near-exact match to a taught one (see taughtShortcut).
+  const firstVisitor = Math.max(0, history.findIndex((t) => t.role === "visitor"));
+  const recent = history.slice(firstVisitor).slice(-4, -1).map((t) => t.text.slice(0, 300)).join("\n");
   const qEmbedding = await embedText(recent ? `${recent}\n${question}` : question);
   if (!qEmbedding) return { ...HANDOFF_FALLBACK, ...EMPTY };
   const qVector = `[${qEmbedding.join(",")}]`;
@@ -242,6 +251,16 @@ export async function answerFromSite(
   const productRows: ProductRow[] = pageProduct && !retrieved.some((p) => p.url === pageProduct.url)
     ? [pageProduct, ...retrieved].slice(0, 6)
     : retrieved;
+
+  // THE OWNER ALREADY ANSWERED THIS EXACT QUESTION. Rule 0 below makes a
+  // taught answer final anyway; when the match is this close the model would
+  // only be rewording the owner's sentence. Serve the sentence. (Phase 1 §3.1
+  // of docs/ai-cost-strategy.md — the threshold lives in shortcut.ts.)
+  const taughtHit = taughtShortcut(facts, history, { orderInPlay: Boolean(opts.order), contactCaptured: opts.contactCaptured });
+  if (taughtHit) {
+    recordNoModel("widget.shortcut", "rule:taught", { siteId: site.id }, Date.now() - startedAt);
+    return taughtHit.answer;
+  }
 
   // A loose cutoff only — it drops facts that are nowhere near the question
   // (the model is also told they may not all apply). Tightening this is how

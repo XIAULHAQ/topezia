@@ -68,6 +68,8 @@ Ordered by expected saving per hour of work.
 
 ### 3.1 Widget: answer without the model when the model would add nothing
 
+**Status: shipped 2026-08-18** — `lib/widget/shortcut.ts` (small talk, contact-only, "talk to a person" run in the chat route *before* the monthly cap is spent; the taught near-exact rule runs in `answerFromSite` after retrieval, threshold `WIDGET_TAUGHT_EXACT_DISTANCE`, default 0.15). Each avoided call is recorded as a `widget.shortcut` row with `model = rule:<kind>` so `/hq/ai-cost` shows the share ("Widget replies without a model" tile). Tests: `npx tsx test/shortcut.test.ts`. Also fixed in passing: the widget's own opening greeting no longer rides in the retrieval embedding of the first question.
+
 Insert a deterministic layer *before* the model call in `answerFromSite`. Each of these returns the same or better answer than Haiku would, at zero cost:
 
 - **Owner-taught answer, near-exact match.** Retrieval already pulls `SiteFact` rows with distances. Rule 0 of the prompt says a taught answer is final anyway. When the best fact is within a tight distance (start at `< 0.15`, tune from logs), the conversation is one or two turns, and there's no order/contact context in play — return the fact's answer verbatim, `handoff:false`, sources empty. The owner wrote it; the model was only paraphrasing.

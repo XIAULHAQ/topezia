@@ -34,6 +34,9 @@ export type LlmBucket = "widget" | "ingestion" | "member" | "ops";
 
 export type LlmFeature =
   | "widget.answer"
+  /** A widget reply served WITHOUT a model call (deterministic rule or cache).
+   *  Recorded so the cost page can show what the model was spared. */
+  | "widget.shortcut"
   | "widget.digest"
   | "widget.intake"
   | "widget.draft"
@@ -49,6 +52,7 @@ export type LlmFeature =
 
 export const FEATURE_BUCKET: Record<LlmFeature, LlmBucket> = {
   "widget.answer": "widget",
+  "widget.shortcut": "widget",
   "widget.digest": "widget",
   "widget.intake": "widget",
   "widget.draft": "widget",
@@ -80,6 +84,8 @@ const PRICES: Record<string, { in: number; out: number; cacheRead: number; cache
 };
 
 export function estimateCostUsd(model: string, u: LlmUsageTokens): number | null {
+  // No tokens, no cost — whatever the "model" was (rule:/cache: rows).
+  if (!u.inputTokens && !u.outputTokens && !u.cacheReadTokens && !u.cacheWriteTokens) return 0;
   const p = PRICES[model];
   if (!p) return null;
   return (
@@ -210,6 +216,22 @@ function record(
 }
 
 const ZERO: LlmUsageTokens = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+
+/**
+ * A reply that would have been a model call and wasn't — a deterministic rule
+ * or a cache hit answered instead. Lands as a zero-token, zero-cost row whose
+ * `model` names the mechanism ("rule:smalltalk", "cache:answer") so the cost
+ * page can report the avoided share next to the paid calls. lib/llm-report.ts
+ * keeps these out of the $ and $/call figures by that prefix.
+ */
+export function recordNoModel(
+  feature: LlmFeature,
+  how: `rule:${string}` | `cache:${string}`,
+  attribution: { siteId?: string | null; companyId?: string | null; profileId?: string | null } = {},
+  latencyMs = 0
+): void {
+  record(feature, how, { messages: [], max_tokens: 0, ...attribution }, ZERO, true, null, latencyMs, false);
+}
 
 function usageFrom(u: unknown, prev: LlmUsageTokens = ZERO): LlmUsageTokens {
   const o = (u ?? {}) as Record<string, unknown>;

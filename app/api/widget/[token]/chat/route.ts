@@ -22,7 +22,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit, clientIp, RATE_LIMITED } from "@/lib/rate-limit";
-import { answerFromSite, type ChatTurn } from "@/lib/widget/answer";
+import { answerFromSite, type ChatTurn, type WidgetAnswer } from "@/lib/widget/answer";
+import { preRetrievalShortcut } from "@/lib/widget/shortcut";
+import { recordNoModel } from "@/lib/llm";
 import { brandStoreSiteId } from "@/lib/widget/brand";
 import { consumeAiReply } from "@/lib/widget/caps";
 import { detectContact, detectContactInChat, leadMessageFromChat } from "@/lib/widget/contact";
@@ -229,6 +231,46 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
           order?.state === "found" || order?.state === "no_match" || order?.state === "need_details";
         const captured = identityOnly ? null : await captureFromChat(site!, history, ip);
 
+        // Remember BOTH SIDES of the exchange. A lead carries its own full
+        // transcript; this is the only record of the conversations that never
+        // leave an address — which is most of them — and the reason one of
+        // them could only be half-reconstructed. After the send, and a
+        // failure here must never break the answer the visitor got.
+        const remember = async (answer: WidgetAnswer) => {
+          const question = history.filter((t) => t.role === "visitor").at(-1)?.text.slice(0, 1000);
+          if (!question) return;
+          await prisma.widgetQuestion
+            .create({
+              data: {
+                siteId: site!.id,
+                question,
+                answer: answer.reply.slice(0, 2000),
+                sessionId,
+                answered: !answer.handoff,
+                pageUrl,
+              },
+            })
+            .catch(() => { /* telemetry, not the product */ });
+        };
+
+        // ── Things that never needed a model ───────────────────────────────
+        // "hi", "thanks", a bare email the lead capture above already took,
+        // "can I talk to a person" — each has one right reply and it is not
+        // worth a retrieval, a model call, or one of the site's monthly AI
+        // replies. Runs BEFORE the cap for exactly that reason. See
+        // lib/widget/shortcut.ts for what qualifies (deliberately little).
+        const shortcut = preRetrievalShortcut(history, {
+          companyName: site!.company.name,
+          contactCaptured: captured ? { name: captured.name, already: captured.already } : null,
+          orderInPlay: Boolean(order),
+        });
+        if (shortcut) {
+          recordNoModel("widget.shortcut", `rule:${shortcut.kind}`, { siteId: site!.id });
+          send({ t: "done", ...shortcut.answer, handoff: shortcut.answer.handoff && !captured, capped: false, captured: captured ?? undefined });
+          await remember(shortcut.answer);
+          return;
+        }
+
         // Budget spent → honest message-taker mode, not a dead bubble. The
         // lead above still went through: the AI is what's capped, never the
         // path from a visitor to the company.
@@ -265,26 +307,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
         // Their details are already with the team — offering the message
         // form on top of that is a dead end, not a handoff.
         send({ t: "done", ...answer, handoff: answer.handoff && !captured, capped: false, captured: captured ?? undefined });
-        // Remember BOTH SIDES of the exchange. A lead carries its own full
-        // transcript; this is the only record of the conversations that never
-        // leave an address — which is most of them — and the reason one of
-        // them could only be half-reconstructed. After the send, and a
-        // failure here must never break the answer the visitor got.
-        const question = history.filter((t) => t.role === "visitor").at(-1)?.text.slice(0, 1000);
-        if (question) {
-          await prisma.widgetQuestion
-            .create({
-              data: {
-                siteId: site!.id,
-                question,
-                answer: answer.reply.slice(0, 2000),
-                sessionId,
-                answered: !answer.handoff,
-                pageUrl,
-              },
-            })
-            .catch(() => { /* telemetry, not the product */ });
-        }
+        await remember(answer);
       } catch (err) {
         console.error("[widget/chat] stream failed:", err instanceof Error ? err.message : err);
         send({
