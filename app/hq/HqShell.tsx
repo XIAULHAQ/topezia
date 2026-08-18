@@ -33,6 +33,7 @@ const NAV = [
   { href: "/hq/spam", label: "Review queue", key: "queue" as const },
   { href: "/hq/pending", label: "Waiting on a category", key: "pending" as const },
   { href: "/hq/errors", label: "Error log", key: "errors" as const },
+  { href: "/hq/ai-cost", label: "AI cost", key: null },
 ];
 
 async function signOut() {

@@ -21,6 +21,7 @@ import { userEmail } from "@/lib/company/owner";
 import { sendEmail, siteUrl, escapeHtml } from "@/lib/alerts/send";
 import { INQUIRY_FROM } from "@/lib/company/inquiries";
 import { completion } from "./answer";
+import { llmAvailable } from "@/lib/llm";
 import { planFor } from "@/lib/billing/plans";
 
 const WINDOW_DAYS = 7;
@@ -128,7 +129,7 @@ async function collect(siteId: string, companyId: string, since: Date): Promise<
  * and the email simply omits the section.
  */
 async function themesFor(companyName: string, siteId: string, since: Date): Promise<DigestData["themes"]> {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
+  if (!llmAvailable("widget.digest")) return null;
   const rows = await prisma.widgetQuestion.findMany({
     where: { siteId, createdAt: { gte: since } },
     orderBy: { createdAt: "desc" },
@@ -145,7 +146,9 @@ async function themesFor(companyName: string, siteId: string, since: Date): Prom
         `Output ONLY a single JSON object, no prose: {"themes":[{"label":"...","count":N}]}.`,
         `3 to 5 themes, labels under 8 words, counts sum to at most the number of questions, ordered by count descending.`,
       ].join("\n"),
-      [{ role: "user", content: rows.map((r, i) => `${i + 1}. ${r.question.slice(0, 200)}`).join("\n") }]
+      [{ role: "user", content: rows.map((r, i) => `${i + 1}. ${r.question.slice(0, 200)}`).join("\n") }],
+      "widget.digest",
+      { siteId }
     );
     const parsed = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as { themes?: unknown };
     const themes = (Array.isArray(parsed.themes) ? parsed.themes : [])

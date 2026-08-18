@@ -17,12 +17,13 @@ import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
 import { sanitizeContent, type ResumeContent } from "@/lib/resume/doc";
 import { consumeAssist, blockedMessage } from "@/lib/resume/assist-quota";
+import { llm, llmAvailable, HAIKU } from "@/lib/llm";
 
 export const maxDuration = 60;
 
 // Same model tier as resume parsing — drafting three bullets doesn't need a
 // frontier model, and this endpoint fires per click.
-const MODEL = "claude-haiku-4-5-20251001";
+const MODEL = HAIKU;
 
 const SYSTEM = `You draft resume content. You will be given the person's current resume draft (JSON) and possibly the raw text of an earlier resume they uploaded.
 
@@ -34,26 +35,16 @@ Hard rules:
 
 type AssistBody = { kind: "summary" | "bullets"; roleIndex?: number; content?: unknown };
 
-async function callModel(user: string, maxTokens: number): Promise<Record<string, unknown>> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: maxTokens,
-      temperature: 0.4, // some phrasing variety; facts are constrained by the prompt
-      system: SYSTEM,
-      messages: [{ role: "user", content: user }],
-    }),
+async function callModel(user: string, maxTokens: number, profileId: string): Promise<Record<string, unknown>> {
+  const { text } = await llm("resume.assist", {
+    model: MODEL,
+    max_tokens: maxTokens,
+    temperature: 0.4, // some phrasing variety; facts are constrained by the prompt
+    system: SYSTEM,
+    messages: [{ role: "user", content: user }],
+    profileId,
   });
-  if (!res.ok) throw new Error(`assist model call failed: ${res.status}`);
-  const data = await res.json();
-  const text = data.content?.find((b: { type: string }) => b.type === "text")?.text || "{}";
-  return JSON.parse(text.replace(/```json|```/g, "").trim());
+  return JSON.parse((text || "{}").replace(/```json|```/g, "").trim());
 }
 
 export async function POST(req: NextRequest) {
@@ -61,7 +52,7 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: "No profile." }, { status: 401 });
   const profile = await prisma.profile.findUnique({ where: { userId }, select: { id: true, resumeText: true, tier: true } });
   if (!profile) return NextResponse.json({ error: "No profile." }, { status: 404 });
-  if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "Writing help isn't available right now." }, { status: 503 });
+  if (!llmAvailable("resume.assist")) return NextResponse.json({ error: "Writing help isn't available right now." }, { status: 503 });
 
   let body: AssistBody;
   try {
@@ -100,7 +91,8 @@ export async function POST(req: NextRequest) {
     if (body.kind === "summary") {
       const out = await callModel(
         `Write a 2–3 sentence professional summary for this resume. Return {"summary": string}.\n\nCURRENT DRAFT:\n${JSON.stringify(draft)}${source}`,
-        400
+        400,
+        profile.id
       );
       const summary = typeof out.summary === "string" ? out.summary.trim() : null;
       if (!summary) throw new Error("no summary in response");
@@ -111,7 +103,8 @@ export async function POST(req: NextRequest) {
       const role = draft.experience[roleIdx];
       const out = await callModel(
         `Write 3–4 achievement bullets for this role: ${JSON.stringify(role)}. Use the draft and original text for context. Return {"bullets": string[]}.\n\nCURRENT DRAFT:\n${JSON.stringify(draft)}${source}`,
-        600
+        600,
+        profile.id
       );
       const bullets = Array.isArray(out.bullets) ? out.bullets.filter((b): b is string => typeof b === "string" && !!b.trim()).slice(0, 4) : [];
       if (bullets.length === 0) throw new Error("no bullets in response");

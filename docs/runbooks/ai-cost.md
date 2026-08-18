@@ -1,0 +1,59 @@
+# AI cost — how it's tracked and controlled
+
+Companion to `docs/ai-cost-strategy.md` (Phase 0, shipped 2026-08-18).
+
+## What exists
+
+- **`lib/llm.ts`** — the only place the app calls Anthropic. Every call names a
+  feature (`widget.answer`, `ingest.extract`, `match.rerank`, `resume.parse`,
+  `resume.parse_scanned`, `resume.assist`, `resume.tailor`, `posting.assist`,
+  `widget.digest`, `widget.intake`, `widget.draft`, `seo.intro`,
+  `script.canonicalize`) and each feature belongs to a bucket:
+  `widget` · `ingestion` · `member` · `ops`.
+- **`LlmUsage`** table (migration 080, applied) — one row per call: tokens,
+  estimated cost at list price, latency, ok/status, feature, bucket, and the
+  site/company/profile it was for. Written fire-and-forget via `waitUntil`.
+- **`/hq/ai-cost`** — total, per-bucket tiles, daily bars, per-feature table
+  (cost, share, $/call, tokens, latency, failures), top-20 sites by widget
+  spend with plan, and failure counts by HTTP status. 7 / 30 / 90 days.
+- **Monday error digest** now ends with one line: AI spend last 7 days, split
+  by bucket, plus failed-call count.
+
+## Environment variables (Vercel)
+
+| Var | Purpose |
+|---|---|
+| `ANTHROPIC_API_KEY` | Fallback key for every bucket (what exists today). |
+| `ANTHROPIC_API_KEY_WIDGET` / `_INGESTION` / `_MEMBER` / `_OPS` | Optional per-bucket keys. Create them in the Anthropic console (Settings → API keys, one per bucket, named the same) and the console's own usage report splits by bucket with no further work. |
+| `AI_DISABLED` | Kill switch. Comma-separated buckets and/or features: `widget`, `resume.tailor,ingestion`, or `all`. Takes effect on the next request — no redeploy. Every feature falls back to its no-model path (canned reply, provisional match score, "not available right now" 503, rules-only ingestion). |
+
+## Reading the page
+
+- **A wall of `400` failures with $0 spend** = the Anthropic balance is empty
+  (this was the state on 2026-08-18 when Phase 0 shipped — top up before
+  expecting any spend to appear). Same diagnosis as the 2026-08-16 incident.
+- **`widget` bucket dominating, with FREE-plan sites at the top of the site
+  table** = the free-allowance question in strategy §4.
+- **`ingest.extract` dominating** = do strategy §3.4 (Batch API + rules-first)
+  first.
+- **`match.rerank` high with few members** = profile edits are invalidating the
+  cache; strategy §3.3.
+
+Costs are estimates (list price × tokens, stamped at write time). The
+Anthropic console is the invoice; this page is the breakdown.
+
+## Two things only Brandon can do
+
+1. **Console spend limit + alert** — Anthropic console → Settings → Limits:
+   set a monthly cap and an email alert at ~60 %. The one control that works
+   even if everything in the app regresses.
+2. **Create the per-bucket keys** (optional but recommended) and paste them
+   into Vercel. Until then everything runs on `ANTHROPIC_API_KEY`, and the
+   in-app page is the only breakdown.
+
+## Adding a new model call
+
+Never `fetch` Anthropic directly. Add the feature name to `LlmFeature` and
+`FEATURE_BUCKET` in `lib/llm.ts`, then call `llm(feature, {...})` or
+`llmStream(...)`. Guard with `llmAvailable(feature)` and keep the caller's
+no-model fallback — that is what the kill switch relies on.

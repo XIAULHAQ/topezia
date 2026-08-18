@@ -8,8 +8,9 @@
  */
 
 import type { Seniority, SkillProficiency } from "@prisma/client";
+import { llm, HAIKU } from "@/lib/llm";
 
-const PARSE_MODEL = "claude-haiku-4-5-20251001";
+const PARSE_MODEL = HAIKU;
 
 const VALID_PROFICIENCY: SkillProficiency[] = ["FAMILIAR", "PROFICIENT", "ADVANCED", "EXPERT"];
 
@@ -81,37 +82,23 @@ Base everything strictly on the resume text. Do not invent skills or roles the r
 
 /** One call to the parse model; returns the raw JSON object the model produced. */
 async function callParseModel(
+  feature: "resume.parse" | "resume.parse_scanned",
   system: string,
-  content: unknown,
+  content: string | unknown[],
   maxTokens: number
 ): Promise<Record<string, unknown>> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: PARSE_MODEL,
-      max_tokens: maxTokens,
-      temperature: 0,
-      system,
-      messages: [{ role: "user", content }],
-    }),
+  const { text } = await llm(feature, {
+    model: PARSE_MODEL,
+    max_tokens: maxTokens,
+    temperature: 0,
+    system,
+    messages: [{ role: "user", content }],
   });
-
-  if (!res.ok) {
-    throw new Error(`Resume parse failed: ${res.status} ${await res.text()}`);
-  }
-
-  const data = await res.json();
-  const text = data.content?.find((b: { type: string }) => b.type === "text")?.text || "{}";
-  return JSON.parse(text.replace(/```json|```/g, "").trim()) as Record<string, unknown>;
+  return JSON.parse((text || "{}").replace(/```json|```/g, "").trim()) as Record<string, unknown>;
 }
 
 export async function parseResume(resumeText: string): Promise<ParsedResume> {
-  const parsed = (await callParseModel(PARSE_PROMPT, resumeText.slice(0, 12000), 1500)) as Partial<ParsedResume>;
+  const parsed = (await callParseModel("resume.parse", PARSE_PROMPT, resumeText.slice(0, 12000), 1500)) as Partial<ParsedResume>;
   return normalizeParsed(parsed);
 }
 
@@ -145,6 +132,7 @@ export async function parseScannedResume(
     `If the pages are illegible or clearly not a resume, return {"transcription": ""}.`;
 
   const raw = await callParseModel(
+    "resume.parse_scanned",
     system,
     [
       {

@@ -2207,3 +2207,29 @@ model ErrorLog {
 
   @@index([status, lastSeenAt])
 }
+
+/// One row per model call — see lib/llm.ts. Read by /hq/ai-cost and the
+/// Monday digest. Never joined to on a hot path; append-only.
+model LlmUsage {
+  id               String   @id @default(uuid())
+  createdAt        DateTime @default(now())
+  feature          String   // LlmFeature, e.g. "widget.answer"
+  bucket           String   // "widget" | "ingestion" | "member" | "ops"
+  model            String
+  inputTokens      Int      @default(0)
+  outputTokens     Int      @default(0)
+  cacheReadTokens  Int      @default(0)
+  cacheWriteTokens Int      @default(0)
+  costUsd          Float?   // estimated at write time from list price; null = unknown model
+  latencyMs        Int
+  ok               Boolean
+  status           Int?     // HTTP status; null = network failure
+  stream           Boolean  @default(false)
+  siteId           String?
+  companyId        String?
+  profileId        String?
+
+  @@index([createdAt])
+  @@index([feature, createdAt])
+  @@index([siteId, createdAt])
+}

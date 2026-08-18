@@ -13,6 +13,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { sendEmail, siteUrl, escapeHtml } from "@/lib/alerts/send";
+import { spendLine } from "@/lib/llm-report";
 
 export const DIGEST_TO = process.env.ERROR_DIGEST_TO ?? "brandon@tiltmediaco.com";
 export const DIGEST_FROM = process.env.ERROR_DIGEST_FROM ?? "Topezia <alerts@mail.topezia.com>";
@@ -25,6 +26,7 @@ export async function sendErrorDigest(now = new Date()): Promise<{ open: number;
     prisma.errorLog.count({ where: { status: "RESOLVED", resolvedAt: { gte: weekAgo } } }),
   ]);
   const totalOpen = await prisma.errorLog.count({ where: { status: "OPEN" } });
+  const aiSpend = await spendLine(7);
 
   const url = `${siteUrl()}/hq/errors`;
   const subject = totalOpen === 0
@@ -47,6 +49,7 @@ export async function sendErrorDigest(now = new Date()): Promise<{ open: number;
       ? `<p>Nothing open. The reporters are wired and writing (this email reads the same table they write), so this is a genuinely clean week.</p>`
       : `<table style="border-collapse:collapse;width:100%">${rows}</table>${totalOpen > open.length ? `<p style="color:#666;font-size:12px">…and ${totalOpen - open.length} more.</p>` : ""}`}
     <p style="margin:18px 0 0"><a href="${url}" style="display:inline-block;background:#4F46E5;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700">Review and resolve →</a></p>
+    ${aiSpend ? `<p style="margin:22px 0 0;padding-top:14px;border-top:1px solid #eee;font-size:13px;color:#333">${escapeHtml(aiSpend)} <a href="${siteUrl()}/hq/ai-cost" style="color:#4F46E5;font-weight:700;text-decoration:none">Breakdown →</a></p>` : ""}
     <p style="margin:18px 0 0;font-size:12px;color:#888">Fix, mark resolved with a note, then clear. Anything resolved that fires again reopens itself.</p>
   </div>`;
 

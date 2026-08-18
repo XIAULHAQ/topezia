@@ -21,6 +21,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { llm } from "@/lib/llm";
 
 const MODEL = "claude-sonnet-5"; // Haiku over-merged badly (grouped "2D Animation" with "3D animation", "Accounts Payable" with "Accounts Receivable")
 const BATCH = 150; // skill names per LLM call (300 truncated the response)
@@ -75,26 +76,15 @@ NEVER group skills that are merely related or overlapping — these must stay se
 Return ONLY a JSON array of groups; each group is an array of the exact input names (2+ entries). Skills with no variants are simply omitted. No prose.`;
 
 async function llmGroups(names: string[]): Promise<string[][]> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 8000,
-      // no temperature: Sonnet 5 rejects the param ("deprecated for this model")
-      system: SYSTEM,
-      messages: [{ role: "user", content: names.map((n, i) => `${i + 1}. ${n}`).join("\n") }],
-    }),
+  const { text, stopReason } = await llm("script.canonicalize", {
+    model: MODEL,
+    max_tokens: 8000,
+    // no temperature: Sonnet 5 rejects the param ("deprecated for this model")
+    system: SYSTEM,
+    messages: [{ role: "user", content: names.map((n, i) => `${i + 1}. ${n}`).join("\n") }],
   });
-  if (!res.ok) throw new Error(`canonicalize LLM failed: ${res.status} ${await res.text()}`);
-  const data = await res.json();
-  if (data.stop_reason === "max_tokens") throw new Error("canonicalize LLM output truncated — lower BATCH");
-  const text = data.content?.find((b: { type: string }) => b.type === "text")?.text || "[]";
-  const arr = JSON.parse(text.replace(/```json|```/g, "").trim()) as string[][];
+  if (stopReason === "max_tokens") throw new Error("canonicalize LLM output truncated — lower BATCH");
+  const arr = JSON.parse((text || "[]").replace(/```json|```/g, "").trim()) as string[][];
   // Map the model's echoes back to exact DB names case-/whitespace-insensitively
   // (an exact-string check silently dropped everything the model re-cased,
   // which is how a run "found" zero groups). A key with several originals means

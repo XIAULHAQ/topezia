@@ -29,10 +29,11 @@ import { currentIdentity } from "@/lib/identity";
 import { sanitizeContent, asJson } from "@/lib/resume/doc";
 import { loadResumeProfile, loadMainResumeContent } from "@/lib/resume/load";
 import { jobDescriptionText } from "@/lib/sanitize";
+import { llm, llmAvailable, HAIKU } from "@/lib/llm";
 
 export const maxDuration = 60;
 
-const MODEL = "claude-haiku-4-5-20251001";
+const MODEL = HAIKU;
 
 const SYSTEM = `You tailor a resume to one specific job posting. You will be given the person's current resume (JSON), possibly the raw text of an earlier resume they uploaded, and the job posting's title, description and requested skills.
 
@@ -43,26 +44,16 @@ Hard rules:
 - summary: 2-3 sentences, written for THIS job specifically, grounded in what the person has actually done. Do not use the words "passionate", "results-driven", "dynamic" or "synergy".
 - Return ONLY valid JSON: {"skills": string[], "experience": [{"title": string, "company": string, "years": string, "bullets": string[]}], "summary": string}, no prose around it.`;
 
-async function callModel(user: string): Promise<Record<string, unknown>> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1500,
-      temperature: 0.3,
-      system: SYSTEM,
-      messages: [{ role: "user", content: user }],
-    }),
+async function callModel(user: string, profileId: string): Promise<Record<string, unknown>> {
+  const { text } = await llm("resume.tailor", {
+    model: MODEL,
+    max_tokens: 1500,
+    temperature: 0.3,
+    system: SYSTEM,
+    messages: [{ role: "user", content: user }],
+    profileId,
   });
-  if (!res.ok) throw new Error(`tailor model call failed: ${res.status}`);
-  const data = await res.json();
-  const text = data.content?.find((b: { type: string }) => b.type === "text")?.text || "{}";
-  return JSON.parse(text.replace(/```json|```/g, "").trim());
+  return JSON.parse((text || "{}").replace(/```json|```/g, "").trim());
 }
 
 export async function POST(req: NextRequest) {
@@ -70,7 +61,7 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: "No profile." }, { status: 401 });
   const profile = await loadResumeProfile(userId);
   if (!profile) return NextResponse.json({ error: "No profile." }, { status: 404 });
-  if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "Tailoring isn't available right now." }, { status: 503 });
+  if (!llmAvailable("resume.tailor")) return NextResponse.json({ error: "Tailoring isn't available right now." }, { status: 503 });
   if (profile.tier !== "PREMIUM") {
     return NextResponse.json({ error: "Tailoring a resume to a specific job is a Premium feature.", upgrade: true }, { status: 402 });
   }
@@ -104,7 +95,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const out = await callModel(
-      `Tailor this resume to the job below. Return {"skills": string[], "experience": [...], "summary": string} as specified.\n\nCURRENT RESUME:\n${JSON.stringify({ skills: main.skills, experience: main.experience, summary: main.summary })}\n\nJOB:\n${jobText}${source}`
+      `Tailor this resume to the job below. Return {"skills": string[], "experience": [...], "summary": string} as specified.\n\nCURRENT RESUME:\n${JSON.stringify({ skills: main.skills, experience: main.experience, summary: main.summary })}\n\nJOB:\n${jobText}${source}`,
+      profile.id
     );
 
     const skills = Array.isArray(out.skills) ? out.skills.filter((s): s is string => typeof s === "string" && !!s.trim()) : main.skills;

@@ -28,11 +28,11 @@
  * well under a second instead of after the full generation.
  */
 import { prisma } from "@/lib/prisma";
+import { llm, llmStream, llmAvailable, type LlmFeature, type LlmMessage } from "@/lib/llm";
 import { embedText } from "@/lib/ingestion/embed";
 import { buyOptions, type BuyOption } from "./checkout";
 import { brandSiteIds } from "./brand";
 
-const ANSWER_MODEL = "claude-haiku-4-5-20251001"; // same tier as the reranker
 const TOP_K = 8;
 const HISTORY_TURNS = 8;
 const META_MARKER = "<<<META>>>";
@@ -145,7 +145,7 @@ export async function answerFromSite(
   opts: AnswerOptions = {}
 ): Promise<WidgetAnswer> {
   const question = history.filter((t) => t.role === "visitor").at(-1)?.text ?? "";
-  if (!question.trim() || !process.env.ANTHROPIC_API_KEY) {
+  if (!question.trim() || !llmAvailable("widget.answer")) {
     return { ...HANDOFF_FALLBACK, ...EMPTY };
   }
 
@@ -335,9 +335,10 @@ export async function answerFromSite(
   });
 
   try {
+    const attribution = { siteId: site.id };
     const text = opts.onDelta
-      ? await streamCompletion(system, messages, opts.onDelta)
-      : await completion(system, messages);
+      ? await streamCompletion(system, messages, opts.onDelta, attribution)
+      : await completion(system, messages, "widget.answer", attribution);
 
     const markerAt = text.indexOf(META_MARKER);
     const reply = unmark((markerAt >= 0 ? text.slice(0, markerAt) : text).trim()).slice(0, 2000);
@@ -371,41 +372,34 @@ export async function answerFromSite(
   }
 }
 
-export type ModelMessage = { role: "user" | "assistant"; content: string };
+export type ModelMessage = LlmMessage;
+type Attribution = { siteId?: string | null; companyId?: string | null };
 
-/** Non-streaming Haiku call, shared with the inbox draft engine. */
-export async function completion(system: string, messages: ModelMessage[]): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({ model: ANSWER_MODEL, max_tokens: 600, system, messages }),
-  });
-  if (!res.ok) throw new Error(`Anthropic ${res.status}`);
-  const data = await res.json();
-  return data.content?.[0]?.text ?? "";
+/**
+ * Non-streaming Haiku call, shared with the digest, the lead brief and the
+ * inbox draft — each names its own feature so the cost page tells them apart.
+ */
+export async function completion(
+  system: string,
+  messages: ModelMessage[],
+  feature: LlmFeature = "widget.answer",
+  attribution: Attribution = {}
+): Promise<string> {
+  const r = await llm(feature, { system, messages, max_tokens: 600, ...attribution });
+  return r.text;
 }
 
 /**
- * Same call with stream: true, relaying text deltas as they arrive — minus a
- * small tail buffer so the meta marker never flashes on screen — and
- * returning the assembled full text for the shared meta parse.
+ * Same call streamed, relaying text deltas as they arrive — minus a small
+ * tail buffer so the meta marker never flashes on screen — and returning the
+ * assembled full text for the shared meta parse.
  */
-async function streamCompletion(system: string, messages: ModelMessage[], onDelta: (t: string) => void): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({ model: ANSWER_MODEL, max_tokens: 600, system, messages, stream: true }),
-  });
-  if (!res.ok || !res.body) throw new Error(`Anthropic ${res.status}`);
-
+async function streamCompletion(
+  system: string,
+  messages: ModelMessage[],
+  onDelta: (t: string) => void,
+  attribution: Attribution
+): Promise<string> {
   const HOLDBACK = META_MARKER.length + 2;
   let full = "";
   let emitted = 0;
@@ -427,27 +421,10 @@ async function streamCompletion(system: string, messages: ModelMessage[], onDelt
     }
   };
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    let nl;
-    while ((nl = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (!line.startsWith("data:")) continue;
-      try {
-        const ev = JSON.parse(line.slice(5));
-        if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta" && typeof ev.delta.text === "string") {
-          full += ev.delta.text;
-          flushSafe();
-        }
-      } catch { /* keep-alives and partial frames */ }
-    }
-  }
+  await llmStream("widget.answer", { system, messages, max_tokens: 600, ...attribution }, (delta) => {
+    full += delta;
+    flushSafe();
+  });
   // Whatever the tail held back that turned out not to be the marker.
   if (!markerSeen && full.length > emitted) onDelta(full.slice(emitted));
   return full;

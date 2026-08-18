@@ -10,8 +10,9 @@
  *     as an inflated match score.
  */
 import { prisma } from "@/lib/prisma";
+import { llm, HAIKU } from "@/lib/llm";
 
-export const INTRO_MODEL = "claude-haiku-4-5-20251001";
+export const INTRO_MODEL = HAIKU;
 export const INTRO_MAX_AGE_DAYS = 30; // §7: "regenerated monthly"
 
 export interface IntroContext {
@@ -48,25 +49,13 @@ Live jobs on this page: ${ctx.jobCount}
 Example job titles: ${ctx.sampleTitles.slice(0, 6).join("; ") || "(none)"}
 Example employers: ${[...new Set(ctx.sampleCompanies)].slice(0, 6).join("; ") || "(none)"}`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: INTRO_MODEL,
-      max_tokens: 300,
-      temperature: 0.7, // some variety, or every page reads identically
-      system: PROMPT,
-      messages: [{ role: "user", content: user }],
-    }),
+  const { text } = await llm("seo.intro", {
+    model: INTRO_MODEL,
+    max_tokens: 300,
+    temperature: 0.7, // some variety, or every page reads identically
+    system: PROMPT,
+    messages: [{ role: "user", content: user }],
   });
-  if (!res.ok) throw new Error(`Intro generation failed: ${res.status} ${await res.text()}`);
-
-  const data = await res.json();
-  const text: string = data.content?.find((b: { type: string }) => b.type === "text")?.text ?? "";
   const clean = text.trim().replace(/^["']|["']$/g, "");
   if (!clean) throw new Error("Intro generation returned empty text");
   return clean;

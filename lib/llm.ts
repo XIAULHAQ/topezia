@@ -1,0 +1,357 @@
+/**
+ * The one place Topezia talks to Anthropic.
+ *
+ * Every model call used to be its own hand-rolled fetch — nine of them, no two
+ * alike, none of them reading the `usage` block the API returns. The bill was
+ * one number in the console with no way to say which feature it came from.
+ * This module exists to make cost visible and controllable, per feature:
+ *
+ * 1. ATTRIBUTION. Every call names a `feature` (see LlmFeature). Each feature
+ *    belongs to a BUCKET — widget / ingestion / member — and each bucket can
+ *    carry its own API key (ANTHROPIC_API_KEY_WIDGET etc., falling back to
+ *    ANTHROPIC_API_KEY). Separate keys make the console's own cost report
+ *    split by bucket with zero further work.
+ * 2. ACCOUNTING. The response's token usage, latency and outcome go to
+ *    LlmUsage — one row per call, fire-and-forget (a lost row is fine; a
+ *    slow insert must never delay a reply). /hq/ai-cost reads it.
+ * 3. KILL SWITCHES. AI_DISABLED="widget,resume.tailor" turns off a bucket
+ *    or a feature without a deploy. Callers already degrade gracefully when
+ *    the key is missing (canned reply, rules-only extraction, provisional
+ *    scores); a disabled feature reuses exactly that path via llmAvailable().
+ * 4. FAILURES ARE NEVER FATAL to the product — but they ARE thrown from here,
+ *    with the HTTP status attached, so a caller's existing catch keeps its
+ *    behaviour and the failure is still recorded (an empty balance shows up
+ *    as a wall of 400s on the cost page instead of a mystery — see the
+ *    2026-08-16 incident).
+ *
+ * Deliberately raw fetch, not the SDK: that's what every call site used, it
+ * keeps the bundle small on the edge-adjacent routes, and the two request
+ * shapes we need (plain + streamed text) are a few dozen lines.
+ */
+import { prisma } from "@/lib/prisma";
+
+export type LlmBucket = "widget" | "ingestion" | "member" | "ops";
+
+export type LlmFeature =
+  | "widget.answer"
+  | "widget.digest"
+  | "widget.intake"
+  | "widget.draft"
+  | "ingest.extract"
+  | "match.rerank"
+  | "resume.parse"
+  | "resume.parse_scanned"
+  | "resume.assist"
+  | "resume.tailor"
+  | "posting.assist"
+  | "seo.intro"
+  | "script.canonicalize";
+
+export const FEATURE_BUCKET: Record<LlmFeature, LlmBucket> = {
+  "widget.answer": "widget",
+  "widget.digest": "widget",
+  "widget.intake": "widget",
+  "widget.draft": "widget",
+  "ingest.extract": "ingestion",
+  "match.rerank": "member",
+  "resume.parse": "member",
+  "resume.parse_scanned": "member",
+  "resume.assist": "member",
+  "resume.tailor": "member",
+  "posting.assist": "member",
+  "seo.intro": "ops",
+  "script.canonicalize": "ops",
+};
+
+/** The default for everything; a call site that wants another says so. */
+export const HAIKU = "claude-haiku-4-5-20251001";
+
+/**
+ * List price per million tokens, USD. Used to stamp an estimated cost on
+ * each usage row at write time — so a later price change never rewrites
+ * history, and the cost page needs no join. Unknown model → cost null, tokens
+ * still recorded.
+ */
+const PRICES: Record<string, { in: number; out: number; cacheRead: number; cacheWrite: number }> = {
+  "claude-haiku-4-5-20251001": { in: 1, out: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+  "claude-haiku-4-5": { in: 1, out: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+  "claude-sonnet-5": { in: 3, out: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  "claude-opus-5": { in: 5, out: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+};
+
+export function estimateCostUsd(model: string, u: LlmUsageTokens): number | null {
+  const p = PRICES[model];
+  if (!p) return null;
+  return (
+    (u.inputTokens * p.in + u.outputTokens * p.out + u.cacheReadTokens * p.cacheRead + u.cacheWriteTokens * p.cacheWrite) /
+    1_000_000
+  );
+}
+
+export type LlmUsageTokens = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+};
+
+export type LlmMessage = { role: "user" | "assistant"; content: string | unknown[] };
+
+export type LlmRequest = {
+  model?: string;
+  system?: string;
+  messages: LlmMessage[];
+  max_tokens: number;
+  temperature?: number;
+  /** Who this call was for — lands on the usage row for per-site/per-member views. */
+  siteId?: string | null;
+  companyId?: string | null;
+  profileId?: string | null;
+};
+
+export type LlmResult = {
+  text: string;
+  stopReason: string | null;
+  usage: LlmUsageTokens;
+  model: string;
+};
+
+export class LlmError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "LlmError";
+    this.status = status;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Keys and switches
+// ---------------------------------------------------------------------------
+
+function keyFor(bucket: LlmBucket): string | undefined {
+  const specific = process.env[`ANTHROPIC_API_KEY_${bucket.toUpperCase()}`];
+  return specific || process.env.ANTHROPIC_API_KEY || undefined;
+}
+
+/**
+ * AI_DISABLED is a comma-separated list of buckets and/or features:
+ *   AI_DISABLED="widget"                 → every widget feature off
+ *   AI_DISABLED="resume.tailor,ingestion" → one feature and one bucket off
+ *   AI_DISABLED="all"                    → everything off
+ * Read on every call so a Vercel env change takes effect on the next request.
+ */
+function disabled(feature: LlmFeature): boolean {
+  const raw = process.env.AI_DISABLED;
+  if (!raw) return false;
+  const set = new Set(raw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
+  return set.has("all") || set.has(feature) || set.has(FEATURE_BUCKET[feature]);
+}
+
+/**
+ * Can this feature call the model right now? False when the bucket has no key
+ * or the feature is switched off — the caller takes its no-model path either
+ * way. Replaces the `if (!process.env.ANTHROPIC_API_KEY)` checks.
+ */
+export function llmAvailable(feature: LlmFeature): boolean {
+  return !!keyFor(FEATURE_BUCKET[feature]) && !disabled(feature);
+}
+
+// ---------------------------------------------------------------------------
+// Accounting
+// ---------------------------------------------------------------------------
+
+function record(
+  feature: LlmFeature,
+  model: string,
+  req: LlmRequest,
+  usage: LlmUsageTokens,
+  ok: boolean,
+  status: number | null,
+  latencyMs: number,
+  stream: boolean
+): void {
+  // Fire-and-forget: never awaited by the caller, never allowed to throw into
+  // the request. On Vercel the insert is handed to waitUntil (same pattern as
+  // lib/errors/log.ts) so the function stays alive until it lands even after
+  // the response has gone out; elsewhere it simply runs while the process
+  // lives. A lost row costs nothing but a slightly low number on the report.
+  const insert = prisma.llmUsage
+    .create({
+      data: {
+        feature,
+        bucket: FEATURE_BUCKET[feature],
+        model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        cacheReadTokens: usage.cacheReadTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+        costUsd: ok ? estimateCostUsd(model, usage) : 0,
+        latencyMs,
+        ok,
+        status,
+        stream,
+        siteId: req.siteId ?? null,
+        companyId: req.companyId ?? null,
+        profileId: req.profileId ?? null,
+      },
+    })
+    .then(() => undefined)
+    .catch((err: unknown) => {
+      console.error("[llm] usage row not written:", err instanceof Error ? err.message : err);
+    });
+  try {
+    if (process.env.VERCEL) {
+      void import("@vercel/functions").then((m) => m.waitUntil(insert)).catch(() => {});
+    }
+  } catch {
+    /* no platform hook — the promise still runs while the process lives */
+  }
+}
+
+const ZERO: LlmUsageTokens = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+
+function usageFrom(u: unknown, prev: LlmUsageTokens = ZERO): LlmUsageTokens {
+  const o = (u ?? {}) as Record<string, unknown>;
+  const n = (k: string, fallback: number) => (typeof o[k] === "number" ? (o[k] as number) : fallback);
+  return {
+    inputTokens: n("input_tokens", prev.inputTokens),
+    outputTokens: n("output_tokens", prev.outputTokens),
+    cacheReadTokens: n("cache_read_input_tokens", prev.cacheReadTokens),
+    cacheWriteTokens: n("cache_creation_input_tokens", prev.cacheWriteTokens),
+  };
+}
+
+function headers(key: string): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    "x-api-key": key,
+    "anthropic-version": "2023-06-01",
+  };
+}
+
+function body(req: LlmRequest, model: string, stream: boolean): string {
+  return JSON.stringify({
+    model,
+    max_tokens: req.max_tokens,
+    ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+    ...(req.system ? { system: req.system } : {}),
+    messages: req.messages,
+    ...(stream ? { stream: true } : {}),
+  });
+}
+
+async function errorText(res: Response): Promise<string> {
+  try {
+    const t = await res.text();
+    return t.slice(0, 500);
+  } catch {
+    return "";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The two calls
+// ---------------------------------------------------------------------------
+
+/**
+ * One non-streaming call. Returns the concatenated text blocks. Throws
+ * LlmError (with .status) on a non-2xx response, and a plain Error if the
+ * feature is unavailable — callers keep their own catch/fallback.
+ */
+export async function llm(feature: LlmFeature, req: LlmRequest): Promise<LlmResult> {
+  const bucket = FEATURE_BUCKET[feature];
+  const key = keyFor(bucket);
+  if (!key || disabled(feature)) throw new Error(`[llm] ${feature} unavailable (${!key ? "no key" : "disabled"})`);
+  const model = req.model ?? HAIKU;
+  const t0 = Date.now();
+
+  let res: Response;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: headers(key), body: body(req, model, false) });
+  } catch (err) {
+    record(feature, model, req, ZERO, false, null, Date.now() - t0, false);
+    throw err;
+  }
+  if (!res.ok) {
+    const detail = await errorText(res);
+    record(feature, model, req, ZERO, false, res.status, Date.now() - t0, false);
+    throw new LlmError(res.status, `Anthropic ${res.status}${detail ? `: ${detail}` : ""}`);
+  }
+  const data = (await res.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string; usage?: unknown; model?: string };
+  const usage = usageFrom(data.usage);
+  record(feature, model, req, usage, true, res.status, Date.now() - t0, false);
+  return {
+    text: (data.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join(""),
+    stopReason: data.stop_reason ?? null,
+    usage,
+    model: data.model ?? model,
+  };
+}
+
+/**
+ * Same call with stream: true. `onText` receives each text delta as it
+ * arrives; the resolved value is the full text plus usage (input tokens come
+ * on message_start, output tokens on the final message_delta).
+ */
+export async function llmStream(feature: LlmFeature, req: LlmRequest, onText: (delta: string) => void): Promise<LlmResult> {
+  const bucket = FEATURE_BUCKET[feature];
+  const key = keyFor(bucket);
+  if (!key || disabled(feature)) throw new Error(`[llm] ${feature} unavailable (${!key ? "no key" : "disabled"})`);
+  const model = req.model ?? HAIKU;
+  const t0 = Date.now();
+
+  let res: Response;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: headers(key), body: body(req, model, true) });
+  } catch (err) {
+    record(feature, model, req, ZERO, false, null, Date.now() - t0, true);
+    throw err;
+  }
+  if (!res.ok || !res.body) {
+    const detail = res.ok ? "" : await errorText(res);
+    record(feature, model, req, ZERO, false, res.status, Date.now() - t0, true);
+    throw new LlmError(res.status, `Anthropic ${res.status}${detail ? `: ${detail}` : ""}`);
+  }
+
+  let full = "";
+  let usage: LlmUsageTokens = ZERO;
+  let stopReason: string | null = null;
+  let servedModel = model;
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line.startsWith("data:")) continue;
+        try {
+          const ev = JSON.parse(line.slice(5));
+          if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta" && typeof ev.delta.text === "string") {
+            full += ev.delta.text;
+            onText(ev.delta.text);
+          } else if (ev.type === "message_start" && ev.message) {
+            usage = usageFrom(ev.message.usage, usage);
+            if (typeof ev.message.model === "string") servedModel = ev.message.model;
+          } else if (ev.type === "message_delta") {
+            usage = usageFrom(ev.usage, usage);
+            if (typeof ev.delta?.stop_reason === "string") stopReason = ev.delta.stop_reason;
+          }
+        } catch {
+          /* keep-alives and partial frames */
+        }
+      }
+    }
+  } finally {
+    // Whatever arrived is billed whether or not the stream finished cleanly.
+    record(feature, model, req, usage, true, res.status, Date.now() - t0, true);
+  }
+  return { text: full, stopReason, usage, model: servedModel };
+}

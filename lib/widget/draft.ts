@@ -107,7 +107,7 @@ export async function draftReply(
     `Write the reply draft now.`,
   ].filter(Boolean).join("\n");
 
-  const draft = (await completion(system, [{ role: "user", content: user }]))
+  const draft = (await completion(system, [{ role: "user", content: user }], "widget.draft", { companyId: company.id, siteId: thread.siteId ?? null }))
     .trim()
     .slice(0, INQUIRY_LIMITS.reply);
   if (!draft) throw new Error("empty draft");

@@ -11,10 +11,11 @@ import { prisma } from "@/lib/prisma";
 import { activeCompany, ownedCompanyById } from "@/lib/company/active";
 import { currentIdentity } from "@/lib/identity";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
+import { llm, llmAvailable, HAIKU } from "@/lib/llm";
 
 export const maxDuration = 60;
 
-const MODEL = "claude-haiku-4-5-20251001";
+const MODEL = HAIKU;
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
   if (!rateLimit(`postings-assist:${userId}`, 20, 60 * 60 * 1000)) {
     return NextResponse.json(RATE_LIMITED, { status: 429 });
   }
-  if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "AI writing isn't available right now." }, { status: 503 });
+  if (!llmAvailable("posting.assist")) return NextResponse.json({ error: "AI writing isn't available right now." }, { status: 503 });
 
   let body: Record<string, unknown>;
   try {
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
   // Same "post as" choice the posting form sends to /api/postings: a company
   // id, "self", or nothing (= the active company, or yourself if none).
   const postAs = typeof body.postAs === "string" ? body.postAs : "";
-  const companySelect = { name: true, tagline: true, about: true, location: true } as const;
+  const companySelect = { id: true, name: true, tagline: true, about: true, location: true } as const;
   const company =
     postAs === "self" ? null
     : postAs ? await ownedCompanyById(userId, postAs, companySelect)
@@ -62,14 +63,15 @@ Employer's notes:
 ${notes}`;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: MODEL, max_tokens: 900, temperature: 0.4, system, messages: [{ role: "user", content: user }] }),
+    const { text } = await llm("posting.assist", {
+      model: MODEL,
+      max_tokens: 900,
+      temperature: 0.4,
+      system,
+      messages: [{ role: "user", content: user }],
+      companyId: company?.id ?? null,
     });
-    if (!res.ok) throw new Error(`api ${res.status}`);
-    const data = await res.json();
-    const draft = (data.content?.find((b: { type: string }) => b.type === "text")?.text ?? "").trim();
+    const draft = text.trim();
     if (!draft) throw new Error("empty");
     return NextResponse.json({ draft });
   } catch (err) {

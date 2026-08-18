@@ -16,6 +16,7 @@
  * lead is delivered exactly as it was before this existed.
  */
 import { completion } from "./answer";
+import { llmAvailable } from "@/lib/llm";
 import type { ChatTurn } from "./answer";
 
 export type Brief = {
@@ -38,7 +39,7 @@ export async function buildBrief(
   message: string,
   who: { name: string | null; email: string }
 ): Promise<Brief | null> {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
+  if (!llmAvailable("widget.intake")) return null;
   // Nothing to summarize: a lead with no chat behind it is just its message,
   // which the owner already reads in full.
   if (transcript.filter((t) => t.role === "visitor").length === 0) return null;
@@ -66,7 +67,7 @@ export async function buildBrief(
   const user = `<chat>\n${convo}\n</chat>\n\n<message_they_left>\n${message.slice(0, 1500)}\n</message_they_left>`;
 
   try {
-    const text = await completion(system, [{ role: "user", content: user }]);
+    const text = await completion(system, [{ role: "user", content: user }], "widget.intake");
     const parsed = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as Record<string, unknown>;
 
     const str = (v: unknown, max: number) =>

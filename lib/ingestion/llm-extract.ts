@@ -12,9 +12,10 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { llm, HAIKU } from "@/lib/llm";
 import crypto from "crypto";
 
-const EXTRACTION_MODEL = "claude-haiku-4-5-20251001";
+const EXTRACTION_MODEL = HAIKU;
 
 // The vertical slugs the model may classify into (must match seeded
 // Vertical.slug values, minus the "unsorted" fallback which the pipeline
@@ -112,37 +113,17 @@ export async function extractWithLlm(
 
   const truncatedDescription = descriptionText.slice(0, 4000); // cap tokens in
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: EXTRACTION_MODEL,
-      max_tokens: 500,
-      temperature: 0,
-      system: EXTRACTION_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: `Title: ${titleRaw}\n\nDescription:\n${truncatedDescription}`,
-        },
-      ],
-    }),
+  const { text } = await llm("ingest.extract", {
+    model: EXTRACTION_MODEL,
+    max_tokens: 500,
+    temperature: 0,
+    system: EXTRACTION_PROMPT,
+    messages: [{ role: "user", content: `Title: ${titleRaw}\n\nDescription:\n${truncatedDescription}` }],
   });
-
-  if (!res.ok) {
-    throw new Error(`LLM extraction failed: ${res.status} ${await res.text()}`);
-  }
-
-  const data = await res.json();
-  const text = data.content?.find((b: { type: string }) => b.type === "text")?.text || "{}";
 
   // Model occasionally wraps JSON in a code fence despite instructions —
   // strip defensively rather than let one malformed response kill the run.
-  const cleaned = text.replace(/```json|```/g, "").trim();
+  const cleaned = (text || "{}").replace(/```json|```/g, "").trim();
 
   try {
     return JSON.parse(cleaned) as LlmExtraction;

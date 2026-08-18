@@ -14,6 +14,7 @@ import { requireCompanyOwner } from "@/lib/company/owner";
 import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 import { draftReply, type DraftThread } from "@/lib/widget/draft";
 import { planFor } from "@/lib/billing/plans";
+import { llmAvailable } from "@/lib/llm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (!auth.ok) return auth.response;
   const { userId, companyId, name: companyName } = auth.owner;
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!llmAvailable("widget.draft")) {
     return NextResponse.json({ error: "Drafting isn't available right now." }, { status: 503 });
   }
   // A drafted reply is a model call per press — it carries the plan.

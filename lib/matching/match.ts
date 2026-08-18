@@ -15,12 +15,13 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { llm, llmAvailable, HAIKU } from "@/lib/llm";
 import { decodeHtmlEntities } from "@/lib/sanitize";
 import { REGION_MEMBERS } from "@/lib/ingestion/normalize-rules";
 import { workContext, eligibilityParams, eligibilitySql, eligibleIn, geoNote } from "@/lib/matching/eligibility";
 import type { EmploymentType, RemoteType, SalaryPeriod } from "@prisma/client";
 
-const RERANK_MODEL = "claude-haiku-4-5-20251001";
+const RERANK_MODEL = HAIKU;
 
 export interface JobMatch {
   jobId: string;
@@ -285,7 +286,8 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
         salaryPeriod: profile.salaryPeriod,
         workAuthorization: profile.workAuthorization,
       },
-      uncached
+      uncached,
+      profileId
     );
     for (const [jobId, r] of fresh) scores.set(jobId, r);
     // Write the cache in two batched statements instead of one upsert per job
@@ -437,10 +439,11 @@ async function rerankBatch(
     salaryPeriod: string | null;
     workAuthorization: string;
   },
-  jobs: { id: string; titleRaw: string; titleNormalized: string | null; descriptionRaw: string }[]
+  jobs: { id: string; titleRaw: string; titleNormalized: string | null; descriptionRaw: string }[],
+  profileId?: string
 ): Promise<Map<string, RerankResult>> {
   const out = new Map<string, RerankResult>();
-  if (jobs.length === 0 || !process.env.ANTHROPIC_API_KEY) return out;
+  if (jobs.length === 0 || !llmAvailable("match.rerank")) return out;
 
   const jobsPayload = jobs.map((j) => ({
     jobId: j.id,
@@ -463,25 +466,15 @@ JOBS (${jobs.length}):
 ${JSON.stringify(jobsPayload)}`;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY!,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: RERANK_MODEL,
-        max_tokens: 2000,
-        temperature: 0,
-        system: RERANK_PROMPT,
-        messages: [{ role: "user", content: userMsg }],
-      }),
+    const { text } = await llm("match.rerank", {
+      model: RERANK_MODEL,
+      max_tokens: 2000,
+      temperature: 0,
+      system: RERANK_PROMPT,
+      messages: [{ role: "user", content: userMsg }],
+      profileId,
     });
-    if (!res.ok) return out; // fall back to similarity scores
-    const data = await res.json();
-    const text = data.content?.find((b: { type: string }) => b.type === "text")?.text || "[]";
-    const cleaned = text.replace(/```json|```/g, "").trim();
+    const cleaned = (text || "[]").replace(/```json|```/g, "").trim();
     const arr = JSON.parse(cleaned) as (RerankResult & { jobId: string })[];
     for (const r of arr) {
       if (!r?.jobId) continue;
@@ -575,7 +568,8 @@ export async function scoreOneJob(profileId: string, jobId: string): Promise<One
       salaryPeriod: profile.salaryPeriod,
       workAuthorization: profile.workAuthorization,
     },
-    [job]
+    [job],
+    profileId
   );
   const r = fresh.get(jobId);
   if (r) {

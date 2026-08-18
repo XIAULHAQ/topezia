@@ -13,6 +13,7 @@
 import { prisma } from "@/lib/prisma";
 import { listPublishedPages, resolveSeoPage } from "@/lib/seo/pages";
 import { generateIntro, saveIntro, INTRO_MAX_AGE_DAYS } from "@/lib/seo/intro";
+import { llmAvailable } from "@/lib/llm";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -30,8 +31,8 @@ async function main() {
   const limitArg = process.argv.find((a) => a.startsWith("--limit="));
   const limit = limitArg ? parseInt(limitArg.split("=")[1], 10) : undefined;
 
-  if (!dryRun && !process.env.ANTHROPIC_API_KEY) {
-    console.error("ANTHROPIC_API_KEY not set — refusing to run without --dry-run.");
+  if (!dryRun && !llmAvailable("seo.intro")) {
+    console.error("Anthropic key not set (or seo.intro disabled via AI_DISABLED) — refusing to run without --dry-run.");
     process.exit(1);
   }
 
