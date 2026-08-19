@@ -41,6 +41,7 @@
  * for motion designers.
  */
 import { prisma } from "@/lib/prisma";
+import { unstable_cache } from "next/cache";
 
 export type SkillHub = {
   slug: string;
@@ -101,40 +102,60 @@ const group = (terms: string[]) => `\\y(${terms.join("|")})\\y`;
  * Ids only. The caller re-reads full rows through the normal select so hub
  * cards carry exactly the same fields as every other listing card.
  *
- * PERFORMANCE — read before editing the SQL. The naive form of this query put
- * `descriptionRaw ~* excludeBody` in the top-level WHERE, so every LIVE row's
- * full HTML description went through a case-insensitive regex: 1173ms of DB
- * execution on 14.5k rows, and it was the single slowest thing in the app
- * (hit by /jobs, /, /about and all 456 SEO pages via SeoPageView).
+ * PERFORMANCE — read before editing the SQL. This is the most expensive
+ * query in the app, and it has been rewritten twice; the measurements below
+ * are from the live DB on 2026-08-19 (7.5k live projects, 17.7k live jobs).
  *
- * The MATERIALIZED CTE below narrows on the CHEAP predicates first — title
- * regexes, which run against short strings — and only then applies the
- * description regexes to the survivors plus the ~900 projects. Same rows, same
- * order, 246ms. MATERIALIZED is load-bearing: without it the planner inlines
- * the CTE and collapses back to the slow plan.
+ * The cost is regex evaluation, ~45 µs per row per pattern, and nothing
+ * else: the trigram index on titleRaw is used, but pg_trgm cannot build a
+ * tight bitmap from a multi-term `\y(a|b|c|...)\y` alternation over
+ * descriptions (tested: combined, chunked, with and without \y — every form
+ * returned 50-99% of all projects and rechecked them with the regex anyway),
+ * and per-term index scans make the recheck evaluate all N patterns per row,
+ * which is slower still. So the shape below minimises regex evaluations:
+ *
+ *  1. Jobs enter only via the title regex, which the trigram index narrows to
+ *     ~3k candidates before the regex runs on short strings (27 survive).
+ *     The previous version ran three title regexes over all 26k rows: 348 ms.
+ *     Now 68 ms for the whole candidate stage, projects included.
+ *  2. Each project gets the positive body regex ONCE; the exclusion regex
+ *     runs only on rows that already matched (CASE forces that order — a
+ *     plain AND lets the planner evaluate the exclusion on every row first).
+ *
+ * 835 ms → 490 ms, byte-identical ids in identical order (1189 rows, full
+ * set, verified). MATERIALIZED is load-bearing: without it the planner
+ * inlines the CTE and re-evaluates the description regex per output row.
+ *
+ * The remaining ~400 ms is one regex pass over every live project brief and
+ * cannot be cut further without changing the matching engine (full-text
+ * search would be ~10 ms but has different word-boundary semantics, so it
+ * would change which projects a hub page shows). Hence the 1-hour cache in
+ * hubMatchIds(): hub membership only moves when ingestion runs (twice a
+ * day), and the browse-hub directory already re-asks every 15 minutes.
  *
  * Logically identical to the original predicate:
  *   LIVE ∧ ¬(title~exT) ∧ ¬(title~exB) ∧ ¬(desc~exB)
  *        ∧ (title~T ∨ (PROJECT ∧ desc~B))
- * The CTE's `(title~T ∨ kind='PROJECT')` pre-filter is implied by that final
- * clause, so it can never drop a row that would have matched. Verified against
- * live data: 166 rows, byte-identical ids in identical order.
  */
-export async function hubMatchIds(hub: SkillHub): Promise<{ jobIds: string[]; projectIds: string[] }> {
+async function computeHubMatchIds(slug: string): Promise<{ jobIds: string[]; projectIds: string[] }> {
+  const hub = hubBySlug(slug);
+  if (!hub) return { jobIds: [], projectIds: [] };
   const rows = await prisma.$queryRawUnsafe<{ id: string; kind: string }[]>(
     `WITH cand AS MATERIALIZED (
-       SELECT j.id, j.kind, j."descriptionRaw", j."lastVerifiedAt",
-              (j."titleRaw" ~* $1) AS title_hit
+       SELECT j.id, j.kind, j."titleRaw", j."descriptionRaw", j."lastVerifiedAt", true AS title_hit
          FROM "Job" j
-        WHERE j.status = 'LIVE'
-          AND NOT (j."titleRaw" ~* $3)
-          AND NOT (j."titleRaw" ~* $4)
-          AND ( j."titleRaw" ~* $1 OR j.kind = 'PROJECT' )
+        WHERE j.status = 'LIVE' AND j.kind = 'JOB' AND j."titleRaw" ~* $1
+       UNION ALL
+       SELECT j.id, j.kind, j."titleRaw", j."descriptionRaw", j."lastVerifiedAt", (j."titleRaw" ~* $1) AS title_hit
+         FROM "Job" j
+        WHERE j.status = 'LIVE' AND j.kind = 'PROJECT'
      )
      SELECT id, kind::text AS kind
        FROM cand
-      WHERE NOT ("descriptionRaw" ~* $4)
-        AND ( title_hit OR (kind = 'PROJECT' AND "descriptionRaw" ~* $2) )
+      WHERE NOT ("titleRaw" ~* $3)
+        AND NOT ("titleRaw" ~* $4)
+        AND CASE WHEN title_hit OR (kind = 'PROJECT' AND "descriptionRaw" ~* $2)
+                 THEN NOT ("descriptionRaw" ~* $4) ELSE false END
       ORDER BY title_hit DESC, "lastVerifiedAt" DESC
       LIMIT 200`,
     group(hub.title),
@@ -147,4 +168,28 @@ export async function hubMatchIds(hub: SkillHub): Promise<{ jobIds: string[]; pr
     jobIds: rows.filter((r) => r.kind === "JOB").map((r) => r.id),
     projectIds: rows.filter((r) => r.kind === "PROJECT").map((r) => r.id),
   };
+}
+
+/**
+ * Cross-request cache, same discipline as cachedBrowseHub in pages.ts. Keyed
+ * by slug (unstable_cache args must be serialisable; the rules are looked up
+ * inside). One hour: hub pages themselves revalidate hourly, ingestion runs
+ * twice a day, and the Next data cache serves stale-while-revalidating, so a
+ * visitor never waits on the regex pass once the entry exists.
+ */
+const cachedHubMatchIds = unstable_cache(computeHubMatchIds, ["hub-match-ids-v1"], {
+  revalidate: 3600,
+  tags: ["browse-hub"],
+});
+
+export async function hubMatchIds(hub: SkillHub): Promise<{ jobIds: string[]; projectIds: string[] }> {
+  try {
+    return await cachedHubMatchIds(hub.slug);
+  } catch (err) {
+    // Outside a Next request (scripts/generate-page-intros.ts imports this via
+    // pages.ts) unstable_cache throws "Invariant: incrementalCache missing".
+    // Degrade to the direct query there; any real DB error surfaces from it.
+    if (err instanceof Error && /incrementalCache/.test(err.message)) return computeHubMatchIds(hub.slug);
+    throw err;
+  }
 }
