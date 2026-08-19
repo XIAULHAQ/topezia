@@ -19,6 +19,7 @@ import { llm, llmAvailable, HAIKU } from "@/lib/llm";
 import { decodeHtmlEntities } from "@/lib/sanitize";
 import { REGION_MEMBERS } from "@/lib/ingestion/normalize-rules";
 import { workContext, eligibilityParams, eligibilitySql, eligibleIn, geoNote } from "@/lib/matching/eligibility";
+import { profileEmbeddingText, jobDistanceSql, jobSimilaritySql, withVectorSearch } from "@/lib/matching/vector";
 import type { EmploymentType, RemoteType, SalaryPeriod } from "@prisma/client";
 
 const RERANK_MODEL = HAIKU;
@@ -167,18 +168,27 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
       j."salaryPeriod", j."locationState", j.country, j."remoteScope", j."lastVerifiedAt", j."descriptionRaw",
       v.slug AS "verticalSlug", v."cardLayout"::text AS "cardLayout"`;
 
-  let candidates = await prisma.$queryRawUnsafe<CandidateRow[]>(
-    `SELECT ${selectCols}, 1 - (j.embedding <=> p.embedding) AS similarity
-     FROM "Job" j
-     JOIN "Vertical" v ON v.id = j."verticalId"
-     CROSS JOIN "Profile" p
-     WHERE p.id = $1 AND p.embedding IS NOT NULL AND j.status = 'LIVE' AND j.embedding IS NOT NULL
-       ${kindSql}
-       AND ${eligSql}
-     ORDER BY j.embedding <=> p.embedding
-     LIMIT 100`,
-    profileId, elTargets, elRegions, elSponsor, elRx, elAnywhere, elAuthorized
-  );
+  // The profile vector is bound as $1 (not joined in) so the planner can use
+  // job_embedding_hnsw_idx — see lib/matching/vector.ts for why that matters
+  // (3 s brute-force scans before). No embedding yet → fall through to the
+  // recency fallback below, exactly as the old `p.embedding IS NOT NULL` did.
+  const profileVec = await profileEmbeddingText(profileId);
+  let candidates: CandidateRow[] = [];
+  if (profileVec) {
+    candidates = await withVectorSearch((tx) =>
+      tx.$queryRawUnsafe<CandidateRow[]>(
+        `SELECT ${selectCols}, ${jobSimilaritySql(1)} AS similarity
+         FROM "Job" j
+         JOIN "Vertical" v ON v.id = j."verticalId"
+         WHERE j.status = 'LIVE' AND j.embedding IS NOT NULL
+           ${kindSql}
+           AND ${eligSql}
+         ORDER BY ${jobDistanceSql(1)}
+         LIMIT 100`,
+        profileVec, elTargets, elRegions, elSponsor, elRx, elAnywhere, elAuthorized
+      )
+    );
+  }
 
   // Guarantee the user's field is represented. The general retrieval ranks by
   // raw similarity, and a confused embedding (e.g. a marketer with heavy
@@ -186,18 +196,19 @@ export async function getMatches(profileId: string, opts: MatchOptions = {}): Pr
   // few in-field jobs never make the top-100, and a post-hoc boost has nothing
   // to promote. Pull the nearest jobs WITHIN the chosen field explicitly and
   // merge them in; the field-first sort below then surfaces them.
-  if (fieldVerticalSlug && candidates.length > 0) {
-    const fieldCandidates = await prisma.$queryRawUnsafe<CandidateRow[]>(
-      `SELECT ${selectCols}, 1 - (j.embedding <=> p.embedding) AS similarity
-       FROM "Job" j
-       JOIN "Vertical" v ON v.id = j."verticalId"
-       CROSS JOIN "Profile" p
-       WHERE p.id = $1 AND p.embedding IS NOT NULL AND j.status = 'LIVE' AND j.embedding IS NOT NULL
-         ${kindSql}
-         AND v.slug = $8 AND ${eligSql}
-       ORDER BY j.embedding <=> p.embedding
-       LIMIT 40`,
-      profileId, elTargets, elRegions, elSponsor, elRx, elAnywhere, elAuthorized, fieldVerticalSlug
+  if (fieldVerticalSlug && profileVec && candidates.length > 0) {
+    const fieldCandidates = await withVectorSearch((tx) =>
+      tx.$queryRawUnsafe<CandidateRow[]>(
+        `SELECT ${selectCols}, ${jobSimilaritySql(1)} AS similarity
+         FROM "Job" j
+         JOIN "Vertical" v ON v.id = j."verticalId"
+         WHERE j.status = 'LIVE' AND j.embedding IS NOT NULL
+           ${kindSql}
+           AND v.slug = $8 AND ${eligSql}
+         ORDER BY ${jobDistanceSql(1)}
+         LIMIT 40`,
+        profileVec, elTargets, elRegions, elSponsor, elRx, elAnywhere, elAuthorized, fieldVerticalSlug
+      )
     );
     const seen = new Set(candidates.map((c) => c.id));
     for (const c of fieldCandidates) if (!seen.has(c.id)) candidates.push(c);

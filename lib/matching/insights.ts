@@ -13,6 +13,7 @@
  * then — don't fake it now.
  */
 import { prisma } from "@/lib/prisma";
+import { profileEmbeddingText, jobDistanceSql, withVectorSearch } from "@/lib/matching/vector";
 import { REGION_MEMBERS } from "@/lib/ingestion/normalize-rules";
 import { workContext, targetCountries, regionsCovering, type WorkContext } from "@/lib/matching/eligibility";
 
@@ -213,26 +214,31 @@ async function targetJobIds(p: {
   // matcher already finds closest to them. Skill-count inference mislabels
   // (a marketer's business-development skills swamp into sales); the embedding
   // knows they're marketing because it matched them to marketing jobs.
-  if (p.profileId) {
-    const rows = await prisma.$queryRawUnsafe<{ verticalId: string; n: number }[]>(
-      `SELECT j."verticalId", COUNT(*)::int AS n
-       FROM "Job" j CROSS JOIN "Profile" p
-       WHERE p.id = $1 AND p.embedding IS NOT NULL AND j.status = 'LIVE' AND j.embedding IS NOT NULL
-       AND (
-         cardinality($2::text[]) = 0 OR j."remoteScope" = 'GLOBAL' OR j.country = ANY($2::text[])
-         OR j."remoteScope" = ANY($2::text[]) OR j."remoteScope" = ANY($3::text[])
-         OR (j.country IS NULL AND j."remoteScope" IS NULL)
-       )
-       AND j."verticalId" IN (
-         SELECT "verticalId" FROM "Job" j2
-         WHERE j2.id IN (
-           SELECT j3.id FROM "Job" j3 CROSS JOIN "Profile" p3
-           WHERE p3.id = $1 AND p3.embedding IS NOT NULL AND j3.status = 'LIVE' AND j3.embedding IS NOT NULL
-           ORDER BY j3.embedding <=> p3.embedding LIMIT 50
+  const profileVec = p.profileId ? await profileEmbeddingText(p.profileId) : null;
+  if (profileVec) {
+    // Vector bound as $1 so the nearest-50 subquery can use
+    // job_embedding_hnsw_idx (lib/matching/vector.ts).
+    const rows = await withVectorSearch((tx) =>
+      tx.$queryRawUnsafe<{ verticalId: string; n: number }[]>(
+        `SELECT j."verticalId", COUNT(*)::int AS n
+         FROM "Job" j
+         WHERE j.status = 'LIVE' AND j.embedding IS NOT NULL
+         AND (
+           cardinality($2::text[]) = 0 OR j."remoteScope" = 'GLOBAL' OR j.country = ANY($2::text[])
+           OR j."remoteScope" = ANY($2::text[]) OR j."remoteScope" = ANY($3::text[])
+           OR (j.country IS NULL AND j."remoteScope" IS NULL)
          )
-       )
-       GROUP BY j."verticalId" ORDER BY n DESC LIMIT 1`,
-      p.profileId, targets, regionsCovering(targets)
+         AND j."verticalId" IN (
+           SELECT "verticalId" FROM "Job" j2
+           WHERE j2.id IN (
+             SELECT j3.id FROM "Job" j3
+             WHERE j3.status = 'LIVE' AND j3.embedding IS NOT NULL
+             ORDER BY ${jobDistanceSql(1, "j3")} LIMIT 50
+           )
+         )
+         GROUP BY j."verticalId" ORDER BY n DESC LIMIT 1`,
+        profileVec, targets, regionsCovering(targets)
+      )
     );
     if (rows[0]) {
       const vName = (await prisma.vertical.findUnique({ where: { id: rows[0].verticalId }, select: { name: true, slug: true } }));
