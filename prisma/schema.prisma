@@ -184,6 +184,11 @@ model Job {
 
   descriptionRaw     String
   descriptionHash    String   // sha256 — dedup + cache key, never re-LLM identical text
+  // Full-text vector of descriptionRaw for PROJECT rows only (NULL for jobs),
+  // kept current by DB trigger job_description_tsv_sync (migration 084) —
+  // never written from Prisma. Read only by lib/seo/hubs.ts. Declared so
+  // `migrate diff` knows it exists and does not try to drop it.
+  descriptionTsv     Unsupported("tsvector")?
 
   skills             JobSkill[]
   seniority          Seniority @default(NOT_APPLICABLE)

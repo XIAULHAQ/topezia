@@ -21,8 +21,13 @@
  *
  * MATCHING RULES — read before editing TERMS
  *
- * Every pattern is applied with Postgres `~*` and \y word boundaries. This is
- * not decoration. A plain `contains` search for "kling" (the AI video tool)
+ * Title and exclusion patterns are applied with Postgres `~*` and \y word
+ * boundaries. Body terms are applied as full-text PHRASES against
+ * Job.descriptionTsv (migration 084) — whole-word matching is built in, and
+ * each term is translated by termToTsquery() below, which accepts only plain
+ * words, `[- ]` and a trailing `\w*` and throws on anything else, so a rule
+ * edit that FTS cannot express fails loudly instead of matching differently.
+ * The word-boundary rule is not decoration. A plain `contains` search for "kling" (the AI video tool)
  * matched 139 job descriptions because "tackling" contains it, which made a
  * CDL truck driver look like an AI video specialist. Substring matching on
  * short brand names is unusable here.
@@ -99,43 +104,49 @@ export const hubBySlug = (slug: string): SkillHub | null =>
 const group = (terms: string[]) => `\\y(${terms.join("|")})\\y`;
 
 /**
+ * Body term (authored regex fragment) → tsquery. Supported: words, spaces,
+ * `[- ]` (hyphen-or-space, becomes a phrase step — the parser splits
+ * hyphenated words into parts at consecutive positions, so `ai <-> generated`
+ * matches both "ai generated" and "ai-generated"), trailing `\w*` (prefix
+ * match). Anything else throws: see MATCHING RULES above.
+ */
+export function termToTsquery(term: string): string {
+  const words = term.split(/\[- \]| /).map((w) => {
+    if (/^[a-z0-9]+$/i.test(w)) return w.toLowerCase();
+    if (/^[a-z0-9]+\\w\*$/i.test(w)) return `${w.slice(0, -3).toLowerCase()}:*`;
+    throw new Error(`hub body term is not FTS-translatable: "${term}" (at "${w}") — see lib/seo/hubs.ts MATCHING RULES`);
+  });
+  return words.length === 1 ? words[0] : `(${words.join(" <-> ")})`;
+}
+const bodyQuery = (terms: string[]) => terms.map(termToTsquery).join(" | ");
+
+/**
  * Ids only. The caller re-reads full rows through the normal select so hub
  * cards carry exactly the same fields as every other listing card.
  *
- * PERFORMANCE — read before editing the SQL. This is the most expensive
- * query in the app, and it has been rewritten twice; the measurements below
- * are from the live DB on 2026-08-19 (7.5k live projects, 17.7k live jobs).
+ * PERFORMANCE — read before editing the SQL. This was the most expensive
+ * query in the app (pg_stat_statements mean 891 ms). Live-DB measurements,
+ * 2026-08-19, 7.5k live projects / 17.7k live jobs:
  *
- * The cost is regex evaluation, ~45 µs per row per pattern, and nothing
- * else: the trigram index on titleRaw is used, but pg_trgm cannot build a
- * tight bitmap from a multi-term `\y(a|b|c|...)\y` alternation over
- * descriptions (tested: combined, chunked, with and without \y — every form
- * returned 50-99% of all projects and rechecked them with the regex anyway),
- * and per-term index scans make the recheck evaluate all N patterns per row,
- * which is slower still. So the shape below minimises regex evaluations:
+ *  - Jobs enter only via the title regex, which job_title_trgm_idx narrows
+ *    to ~3k candidates before the regex runs on short strings (27 survive).
+ *    The old form ran three title regexes over all 26k rows: 348 ms.
+ *  - Projects enter via the title regex OR a full-text phrase match on
+ *    descriptionTsv (GIN, partial on kind = 'PROJECT'). The old form ran the
+ *    body regex over every project brief: ~400 ms, and pg_trgm could not
+ *    index it (every multi-term alternation form returned most projects and
+ *    rechecked them with the regex). FTS is ~10 ms and, with the slash
+ *    normalisation in the trigger, a strict superset of the regex on live
+ *    data: 806 → 814, the 8 extra being "motion-graphics"-style hyphenations
+ *    and "UGC/video" that the regex rule's literal space missed.
+ *  - Exclusions stay regex and run only on the ~1.2k survivors.
  *
- *  1. Jobs enter only via the title regex, which the trigram index narrows to
- *     ~3k candidates before the regex runs on short strings (27 survive).
- *     The previous version ran three title regexes over all 26k rows: 348 ms.
- *     Now 68 ms for the whole candidate stage, projects included.
- *  2. Each project gets the positive body regex ONCE; the exclusion regex
- *     runs only on rows that already matched (CASE forces that order — a
- *     plain AND lets the planner evaluate the exclusion on every row first).
+ * MATERIALIZED is load-bearing: without it the planner inlines the CTE and
+ * re-evaluates the regexes per output row.
  *
- * 835 ms → 490 ms, byte-identical ids in identical order (1189 rows, full
- * set, verified). MATERIALIZED is load-bearing: without it the planner
- * inlines the CTE and re-evaluates the description regex per output row.
- *
- * The remaining ~400 ms is one regex pass over every live project brief and
- * cannot be cut further without changing the matching engine (full-text
- * search would be ~10 ms but has different word-boundary semantics, so it
- * would change which projects a hub page shows). Hence the 1-hour cache in
- * hubMatchIds(): hub membership only moves when ingestion runs (twice a
- * day), and the browse-hub directory already re-asks every 15 minutes.
- *
- * Logically identical to the original predicate:
+ * Predicate:
  *   LIVE ∧ ¬(title~exT) ∧ ¬(title~exB) ∧ ¬(desc~exB)
- *        ∧ (title~T ∨ (PROJECT ∧ desc~B))
+ *        ∧ (title~T ∨ (PROJECT ∧ tsv @@ B))
  */
 async function computeHubMatchIds(slug: string): Promise<{ jobIds: string[]; projectIds: string[] }> {
   const hub = hubBySlug(slug);
@@ -149,17 +160,17 @@ async function computeHubMatchIds(slug: string): Promise<{ jobIds: string[]; pro
        SELECT j.id, j.kind, j."titleRaw", j."descriptionRaw", j."lastVerifiedAt", (j."titleRaw" ~* $1) AS title_hit
          FROM "Job" j
         WHERE j.status = 'LIVE' AND j.kind = 'PROJECT'
+          AND ( j."titleRaw" ~* $1 OR j."descriptionTsv" @@ to_tsquery('simple', $2) )
      )
      SELECT id, kind::text AS kind
        FROM cand
       WHERE NOT ("titleRaw" ~* $3)
         AND NOT ("titleRaw" ~* $4)
-        AND CASE WHEN title_hit OR (kind = 'PROJECT' AND "descriptionRaw" ~* $2)
-                 THEN NOT ("descriptionRaw" ~* $4) ELSE false END
+        AND NOT ("descriptionRaw" ~* $4)
       ORDER BY title_hit DESC, "lastVerifiedAt" DESC
       LIMIT 200`,
     group(hub.title),
-    group(hub.body),
+    bodyQuery(hub.body),
     group(hub.excludeTitle),
     group(hub.excludeBody),
   );
