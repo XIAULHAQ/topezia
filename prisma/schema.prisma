@@ -1402,6 +1402,27 @@ model SiteFact {
   @@index([siteId])
 }
 
+// A resume parsed once is parsed for good: the same file (or pasted text)
+// re-uploaded — a second draft, a retry after a glitch, the same person on a
+// second device — returns the stored result instead of a second model call
+// (strategy §3.5). Keyed by content hash + prompt version, never by person;
+// no file is stored, only the structured output. Rows expire after 30 days so
+// a parse that never became a profile doesn't linger. See
+// lib/matching/parse-cache.ts.
+model ResumeParseCache {
+  /// sha256 of (prompt version + kind + content) — text or PDF bytes.
+  hash          String   @id
+  kind          String   // "text" | "scanned"
+  parsed        Json
+  transcription String?
+  photoBox      Json?
+  hits          Int      @default(0)
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime
+
+  @@index([expiresAt])
+}
+
 // Recent answers, kept 24h, so the same first question from the next visitor
 // is served from here instead of the model (strategy §3.2). Brand-scoped like
 // retrieval; emptied on recrawl and on any taught-fact change. See

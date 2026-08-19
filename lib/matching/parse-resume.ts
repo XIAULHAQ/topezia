@@ -9,6 +9,9 @@
 
 import type { Seniority, SkillProficiency } from "@prisma/client";
 import { llm, HAIKU } from "@/lib/llm";
+import { recordNoModel } from "@/lib/llm";
+import { inBackground } from "@/lib/background";
+import { lookupParse, storeParse, parseCacheKey } from "./parse-cache";
 
 const PARSE_MODEL = HAIKU;
 
@@ -98,8 +101,49 @@ async function callParseModel(
 }
 
 export async function parseResume(resumeText: string): Promise<ParsedResume> {
-  const parsed = (await callParseModel("resume.parse", PARSE_PROMPT, resumeText.slice(0, 12000), 1500)) as Partial<ParsedResume>;
+  const text = resumeText.slice(0, 12000);
+  // Same text, same answer — a re-upload of the same draft never pays twice
+  // (parse-cache.ts; keyed by content + prompt version, not by person).
+  const key = parseCacheKey("text", text);
+  const hit = await lookupParse(key);
+  if (hit) {
+    recordNoModel("resume.parse", "cache:parse");
+    return normalizeParsed(hit.parsed as Partial<ParsedResume>);
+  }
+  const parsed = (await callParseModel("resume.parse", PARSE_PROMPT, text, 1500)) as Partial<ParsedResume>;
+  inBackground(storeParse(key, "text", { parsed, transcription: null, photoBox: null }));
   return normalizeParsed(parsed);
+}
+
+/** How many pages of a scanned PDF the model reads. A resume is one or two;
+ *  three covers the long ones, and anything past that is appendices,
+ *  certificates, or not a resume — and was the most expensive input in the
+ *  product (the whole file, up to 4 MB, as a document block). */
+export function scannedPageLimit(): number {
+  const n = Number(process.env.RESUME_SCAN_MAX_PAGES);
+  return Number.isInteger(n) && n >= 1 && n <= 20 ? n : 3;
+}
+
+/**
+ * The first N pages of a PDF as a new PDF, or the original when it is
+ * already within the limit (or can't be read — the model then gets the
+ * whole file, as before, rather than nothing). Pure page copy, no rendering.
+ */
+export async function firstPagesOf(pdfBuffer: Buffer, maxPages: number): Promise<{ buffer: Buffer; pages: number; kept: number }> {
+  try {
+    const { PDFDocument } = await import("pdf-lib");
+    const src = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+    const pages = src.getPageCount();
+    if (pages <= maxPages) return { buffer: pdfBuffer, pages, kept: pages };
+    const out = await PDFDocument.create();
+    const copied = await out.copyPages(src, Array.from({ length: maxPages }, (_, i) => i));
+    for (const p of copied) out.addPage(p);
+    const bytes = await out.save({ useObjectStreams: false });
+    return { buffer: Buffer.from(bytes), pages, kept: maxPages };
+  } catch (err) {
+    console.error("[parse] could not trim scanned PDF, sending whole file:", err instanceof Error ? err.message : err);
+    return { buffer: pdfBuffer, pages: -1, kept: -1 };
+  }
 }
 
 /** Tight box around the headshot on a scanned page — fractions of page size. */
@@ -131,18 +175,36 @@ export async function parseScannedResume(
     `                            // null when there is no photo of the person (logos/icons don't count).\n` +
     `If the pages are illegible or clearly not a resume, return {"transcription": ""}.`;
 
-  const raw = await callParseModel(
-    "resume.parse_scanned",
-    system,
-    [
-      {
-        type: "document",
-        source: { type: "base64", media_type: "application/pdf", data: pdfBuffer.toString("base64") },
-      },
-      { type: "text", text: "Parse this scanned resume into the JSON schema." },
-    ],
-    4000 // transcription + parse for a few pages
-  );
+  // Same scan, same answer (parse-cache.ts). Keyed on the ORIGINAL bytes,
+  // so the trim below never has to be byte-stable.
+  const key = parseCacheKey("scanned", pdfBuffer);
+  const hit = await lookupParse(key);
+  let raw: Record<string, unknown>;
+  if (hit) {
+    recordNoModel("resume.parse_scanned", "cache:parse");
+    raw = { ...(hit.parsed as Record<string, unknown>), transcription: hit.transcription ?? "", photoBox: hit.photoBox };
+  } else {
+    // Only the first few pages go to the model — see scannedPageLimit().
+    const { buffer: trimmed } = await firstPagesOf(pdfBuffer, scannedPageLimit());
+    raw = await callParseModel(
+      "resume.parse_scanned",
+      system,
+      [
+        {
+          type: "document",
+          source: { type: "base64", media_type: "application/pdf", data: trimmed.toString("base64") },
+        },
+        { type: "text", text: "Parse this scanned resume into the JSON schema." },
+      ],
+      4000 // transcription + parse for a few pages
+    );
+    const { transcription: t, photoBox: pb, ...rest } = raw;
+    // Only a readable scan is worth remembering — an illegible one should be
+    // retried with a better copy, not served again.
+    if (typeof t === "string" && t.trim().length >= 100) {
+      inBackground(storeParse(key, "scanned", { parsed: rest, transcription: t.trim(), photoBox: pb ?? null }));
+    }
+  }
 
   const transcription = typeof raw.transcription === "string" ? raw.transcription.trim() : "";
 

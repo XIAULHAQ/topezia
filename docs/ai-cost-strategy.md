@@ -111,6 +111,8 @@ Expected: 50% off the model portion from batching, plus whatever share the rules
 
 ### 3.5 Resume parse: cache by content hash
 
+**Status: shipped 2026-08-19** — `lib/matching/parse-cache.ts` + `ResumeParseCache` (migration 082, applied): both parse paths are keyed by sha256(content + `PARSE_PROMPT_VERSION`), 30-day TTL, no file stored, hits are `cache:parse` rows. Scanned PDFs are trimmed to the first `RESUME_SCAN_MAX_PAGES` (default 3) with pdf-lib before going to the model; illegible scans (transcription < 100 chars) are never cached so a better copy re-parses. `/api/resume/tailor` rate-limited 20/hr/user (the §1 note). Verified live: 5-page PDF → 3, API accepts the trimmed document, second upload of the same file/text is a $0 cache hit. **Bump `PARSE_PROMPT_VERSION` when editing `PARSE_PROMPT`.**
+
 Hash `resumeText` (or the PDF bytes for scanned uploads) and store the parse. Same file uploaded twice — very common when someone re-uploads to "refresh" — costs nothing the second time. For scanned PDFs, today the *entire* file goes to the model as a document block (up to 4 MB): split the PDF and send only the first 3 pages (a resume that long is an appendix; the structured fields are on pages 1–2), and reject/limit files above ~1.5 MB on the upload path. Since `/api/parse` is anonymous by design, move its 10/hr/IP limit to a durable store (same as the widget, §4) — it is the one unauthenticated endpoint that can be made to spend money.
 
 ### 3.6 Widget prompt diet (no behaviour change)

@@ -26,6 +26,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentIdentity } from "@/lib/identity";
+import { rateLimit, RATE_LIMITED } from "@/lib/rate-limit";
 import { sanitizeContent, asJson } from "@/lib/resume/doc";
 import { loadResumeProfile, loadMainResumeContent } from "@/lib/resume/load";
 import { jobDescriptionText } from "@/lib/sanitize";
@@ -59,6 +60,9 @@ async function callModel(user: string, profileId: string): Promise<Record<string
 export async function POST(req: NextRequest) {
   const { userId } = await currentIdentity();
   if (!userId) return NextResponse.json({ error: "No profile." }, { status: 401 });
+  // Premium, but ~$0.013 a click with no quota — 20 an hour is generous for a
+  // person tailoring to a handful of jobs and a wall for a loop (strategy §1).
+  if (!rateLimit(`tailor:${userId}`, 20, 60 * 60 * 1000)) return NextResponse.json(RATE_LIMITED, { status: 429 });
   const profile = await loadResumeProfile(userId);
   if (!profile) return NextResponse.json({ error: "No profile." }, { status: 404 });
   if (!llmAvailable("resume.tailor")) return NextResponse.json({ error: "Tailoring isn't available right now." }, { status: 503 });
