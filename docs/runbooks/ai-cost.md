@@ -32,6 +32,11 @@ Companion to `docs/ai-cost-strategy.md` (Phase 0, shipped 2026-08-18).
 
 ## Reading the page
 
+- **`widget.answer` avg input tokens creeping up** = someone edited the
+  prompt or the excerpt budget. `npx tsx scripts/measure-widget-prompt.ts`
+  gives the exact number for 5 typical questions (3,650 after §3.6 on
+  2026-08-19; 5,188 before). Run it before and after any prompt edit.
+
 - **"Widget replies without a model" tile** = Phase 1 at work: the count and
   share of widget replies answered by a rule (`smalltalk`, `contact`, `human`,
   `taught`) or served from the 24h answer cache (`answer`) instead of Haiku. These rows sit in `LlmUsage` with

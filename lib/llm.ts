@@ -530,3 +530,21 @@ export async function llmBatch(
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Token counting — free, for measuring a prompt diet before and after
+// ---------------------------------------------------------------------------
+
+/** Exact input-token count for a request, via /v1/messages/count_tokens.
+ *  Not a model call: nothing is generated, nothing is billed, nothing is
+ *  recorded. Throws when the feature's bucket has no key. */
+export async function llmCountTokens(feature: LlmFeature, req: LlmRequest): Promise<number> {
+  const key = keyFor(FEATURE_BUCKET[feature]);
+  if (!key) throw new Error(`[llm] ${feature} unavailable (no key)`);
+  const { max_tokens: _mt, ...rest } = params(req, req.model ?? HAIKU, false);
+  void _mt;
+  const res = await fetch("https://api.anthropic.com/v1/messages/count_tokens", { method: "POST", headers: headers(key), body: JSON.stringify(rest) });
+  if (!res.ok) throw new LlmError(res.status, `Anthropic count_tokens ${res.status}: ${await errorText(res)}`);
+  const data = (await res.json()) as { input_tokens: number };
+  return data.input_tokens;
+}

@@ -117,6 +117,8 @@ Hash `resumeText` (or the PDF bytes for scanned uploads) and store the parse. Sa
 
 ### 3.6 Widget prompt diet (no behaviour change)
 
+**Status: shipped 2026-08-19 — measured −30%** (`scripts/measure-widget-prompt.ts`, real retrieval on rodeo.graphics, 5 typical questions, exact counts from `count_tokens`: **5,188 → 3,650 avg input tokens**; system 1,248 → 918). What did it: (a) `tidy()` collapses the blank-line/indent runs crawled text is full of — no re-crawl, no information lost; (b) `selectExcerpts()` — retrieve 12, show ≤8, ≤2 per page, ≤1,500 chars each, ≤7,500 total (the distance cutoff in the original plan was dropped: measured distances are flat with no gap to cut on, while the same page took 3 of the 8 slots — so the cap is per page, not per distance); (c) history 6 × 600 chars, latest turn in full; (d) the ~200-token voice-buttons rule only when the last two visitor turns mention voice/audio/hear/etc.; (e) every rule reworded tighter, none removed, `ORDER_RULES` included. Behaviour spot-checked live (grounded answers, honest handoffs, voice rule fires correctly, product cards + one qualifying question). Tests: `npx tsx test/widget-prompt.test.ts`.
+
 Per reply today: 8 excerpts × up to 1,800 chars, 6 products × 300, 8 history turns × up to 1,500 chars, and a ~1.8k-token rule block.
 - Drop excerpts past a distance cutoff (log the distance of the excerpt the model actually cited — cited ones cluster tightly; the 7th and 8th are rarely used).
 - Cap excerpts at 1,200 chars, history at 6 turns × 600 chars (older turns matter for continuity, not verbatim).
