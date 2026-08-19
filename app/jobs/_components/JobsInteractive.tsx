@@ -27,7 +27,7 @@ import type { SeoJob } from "@/lib/seo/pages";
  * 1,888KB uncompressed. The JSON-LD does need the description, but that is
  * built server-side in SeoPageView from the full row before it is narrowed here.
  */
-export type CardJob = Omit<SeoJob, "descriptionRaw">;
+export type CardJob = Omit<SeoJob, "descriptionSnippet">;
 import { placeLabel, salaryText, freshness, salaryBandOf, SALARY_BAND_ORDER, label } from "@/lib/seo/job-display";
 
 type SortKey = "newest" | "salary" | "company";

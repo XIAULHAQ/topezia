@@ -37,7 +37,9 @@ const perRequest: typeof reactCache =
   typeof reactCache === "function" ? reactCache : (<T,>(fn: T): T => fn) as typeof reactCache;
 
 import { prisma } from "@/lib/prisma";
-import type { EmploymentType, JobKind, Prisma, RemoteType, SalaryPeriod } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { EmploymentType, JobKind, RemoteType, SalaryPeriod } from "@prisma/client";
+import { decodeHtmlEntities } from "@/lib/sanitize";
 import { hubBySlug, hubMatchIds, HUBS, type SkillHub } from "./hubs";
 import { getCachedIntro } from "./intro";
 import { COUNTRY_NAMES, countryName, countrySlugFor } from "@/lib/countries";
@@ -109,7 +111,10 @@ export interface SeoJob {
   postedAt: Date | null;
   source: string;
   sourceUrl: string;
-  descriptionRaw: string;
+  /** Plain-text description prefix (<= 800 chars) for the ItemList ld+json —
+   * only the first LD_ITEMS jobs of a page carry one; the rest are "". Never
+   * the full descriptionRaw: see withSnippets(). */
+  descriptionSnippet: string;
 }
 
 export interface SeoPage {
@@ -171,8 +176,64 @@ export interface SeoPage {
 const JOB_SELECT = {
   id: true, titleRaw: true, companyName: true, locationRaw: true, locationState: true, country: true, remoteScope: true, remoteType: true,
   employmentType: true, salaryMin: true, salaryMax: true, salaryPeriod: true, salaryCurrency: true, kind: true,
-  lastVerifiedAt: true, postedAt: true, source: true, sourceUrl: true, descriptionRaw: true,
+  lastVerifiedAt: true, postedAt: true, source: true, sourceUrl: true,
 } as const;
+type JobRow = Prisma.JobGetPayload<{ select: typeof JOB_SELECT }>;
+
+/** How many jobs the ItemList ld+json describes (SeoPageView slices to this). */
+const LD_ITEMS = 25;
+/** Raw chars to pull per described job — enough HTML to yield 800 chars of
+ * plain text even for entity-encoded Greenhouse markup. */
+const SNIPPET_RAW_CHARS = 6000;
+const SNIPPET_CHARS = 800;
+
+/** Plain text for structured data — decode BEFORE stripping tags (Greenhouse
+ * serves entity-encoded HTML; strip-first fed Google literal "&lt;div ...").
+ * Same transform SeoPageView used to apply inline; moved here with the fetch. */
+const snippetText = (html: string) =>
+  decodeHtmlEntities(html).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+/**
+ * Median posting age in days over every row matching `whereSql` — postedAt
+ * when the source gave one, else when we first saw it (an upper bound on
+ * freshness, never an invention). Computed in SQL: this used to ship 3-4k
+ * (postedAt, firstSeenAt) rows per page render just to take a median in JS
+ * (~20M rows / month out of Supabase). percentile_disc picks a real row's
+ * value, like the old upper-median index did. Null when nothing matches.
+ */
+export async function medianPostingAgeDays(whereSql: Prisma.Sql): Promise<number | null> {
+  const rows = await prisma.$queryRaw<{ days: number | null }[]>`
+    SELECT percentile_disc(0.5) WITHIN GROUP (
+      ORDER BY EXTRACT(EPOCH FROM (now() - COALESCE("postedAt", "firstSeenAt"))) / 86400
+    )::float8 AS days
+    FROM "Job" WHERE ${whereSql}`;
+  const d = rows[0]?.days;
+  return d == null ? null : Math.round(d);
+}
+
+/**
+ * Attach descriptionSnippet to the first LD_ITEMS rows, via ONE raw query that
+ * pulls only a prefix of descriptionRaw for those ids.
+ *
+ * Why not just select descriptionRaw in JOB_SELECT: every list page used to
+ * pull the full 6 KB description for 25 companies x 6 jobs when the only
+ * consumer (itemListLd) keeps 800 chars of 25 of them. Across hourly ISR on a
+ * few hundred pages that was ~7 GB/month of Supabase egress — most of the bill.
+ */
+async function withSnippets(rows: JobRow[]): Promise<SeoJob[]> {
+  const ids = rows.slice(0, LD_ITEMS).map((r) => r.id);
+  const byId = new Map<string, string>();
+  if (ids.length > 0) {
+    const prefixes = await prisma.$queryRaw<{ id: string; prefix: string }[]>`
+      SELECT id, left("descriptionRaw", ${SNIPPET_RAW_CHARS}::int) AS prefix FROM "Job" WHERE id IN (${Prisma.join(ids)})`;
+    for (const p of prefixes) {
+      // A prefix can end mid-tag; drop the dangling "<div cla" so plainText
+      // doesn't leak it as literal text.
+      byId.set(p.id, snippetText(p.prefix.replace(/<[^>]*$/, "")).slice(0, SNIPPET_CHARS));
+    }
+  }
+  return rows.map((r) => ({ ...r, descriptionSnippet: byId.get(r.id) ?? "" }));
+}
 
 const WEEK_MS = 7 * 24 * 3600 * 1000;
 
@@ -206,7 +267,7 @@ async function buildListing(where: Prisma.JobWhereInput, total: number): Promise
     )
   );
   return {
-    jobs: perCompany.flat(),
+    jobs: await withSnippets(perCompany.flat()),
     stats: { companies: companyGroups.length, remoteSharePct: Math.round((remoteCount / total) * 100), postedLast7d },
   };
 }
@@ -276,8 +337,10 @@ async function buildHubPage(hub: SkillHub): Promise<BuiltPage | null> {
   if (total === 0) return null;
 
   const [jobs, projects] = await Promise.all([
-    prisma.job.findMany({ where: { id: { in: jobIds } }, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
-    prisma.job.findMany({ where: { id: { in: projectIds } }, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }),
+    prisma.job.findMany({ where: { id: { in: jobIds } }, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 }).then(withSnippets),
+    // Projects never feed the ItemList ld, so no snippet fetch for them.
+    prisma.job.findMany({ where: { id: { in: projectIds } }, select: JOB_SELECT, orderBy: { lastVerifiedAt: "desc" }, take: 50 })
+      .then((rows) => rows.map((r) => ({ ...r, descriptionSnippet: "" }))),
   ]);
 
   return {
@@ -745,11 +808,11 @@ async function computeBrowseHub(): Promise<BrowseHub> {
   let verticals, roles, totalLive, vCounts, rCounts, states, countries;
   let globalRemote = 0;
   let postedLast7d = 0;
-  let ageRows: { postedAt: Date | null; firstSeenAt: Date }[] = [];
+  let medianAgeDays: number | null = null;
   let pairCounts: { roleId: string | null; country: string | null; _count: { id: number } }[] = [];
   const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
   {
-    [verticals, roles, totalLive, vCounts, rCounts, states, countries, globalRemote, postedLast7d, ageRows, pairCounts] = await Promise.all([
+    [verticals, roles, totalLive, vCounts, rCounts, states, countries, globalRemote, postedLast7d, medianAgeDays, pairCounts] = await Promise.all([
       prisma.vertical.findMany({ select: { id: true, name: true, slug: true } }),
       prisma.role.findMany({ select: { id: true, name: true, slug: true } }),
       prisma.job.count({ where: { status: "LIVE", kind: "JOB" } }),
@@ -761,7 +824,7 @@ async function computeBrowseHub(): Promise<BrowseHub> {
       // postedAt (the source date), not firstSeenAt: after a full re-ingest
       // every job is "newly seen", which would just restate the total.
       prisma.job.count({ where: { status: "LIVE", kind: "JOB", postedAt: { gt: weekAgo } } }),
-      prisma.job.findMany({ where: { status: "LIVE", kind: "JOB" }, select: { postedAt: true, firstSeenAt: true }, take: 4000 }),
+      medianPostingAgeDays(Prisma.sql`status = 'LIVE' AND kind = 'JOB'`),
       prisma.job.groupBy({ by: ["roleId", "country"], where: { status: "LIVE", kind: "JOB", roleId: { not: null }, country: { not: null } }, _count: { id: true } }),
     ]);
   }
@@ -808,16 +871,6 @@ async function computeBrowseHub(): Promise<BrowseHub> {
     .map((iso) => ({ href: `/jobs/${countrySlug(iso)}`, label: countryName(iso), count: (locatedByCountry.get(iso) ?? 0) + globalRemote, iso }))
     .filter((l) => keep(l.count))
     .sort(desc);
-
-  // Median posting age in days — postedAt when the source gave one, else when
-  // we first saw it (an upper bound on freshness, never an invention).
-  let medianAgeDays: number | null = null;
-  if (ageRows.length > 0) {
-    const days = ageRows
-      .map((a) => (Date.now() - new Date(a.postedAt ?? a.firstSeenAt).getTime()) / 86400000)
-      .sort((x, y) => x - y);
-    medianAgeDays = Math.round(days[Math.floor(days.length / 2)]);
-  }
 
   // "Popular searches" must be real destinations. A role x country page is
   // built from LOCATED jobs only (not the country page's eligibility rule), so

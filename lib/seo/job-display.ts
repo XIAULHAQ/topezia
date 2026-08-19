@@ -11,7 +11,7 @@ import type { SeoJob } from "./pages";
  * component, which deliberately never receives descriptions — see CardJob in
  * app/jobs/_components/JobsInteractive.tsx. A full SeoJob still satisfies this.
  */
-type DisplayJob = Omit<SeoJob, "descriptionRaw">;
+type DisplayJob = Omit<SeoJob, "descriptionSnippet">;
 
 export const label = (s: string) =>
   s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Us", "US");

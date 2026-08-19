@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import type { SeoPage, SeoJob, HubLink, BrowseHub } from "@/lib/seo/pages";
 import { countrySlugFor, countryName, getBrowseHub } from "@/lib/seo/pages";
-import { decodeHtmlEntities } from "@/lib/sanitize";
 import { safeJsonLd } from "@/lib/seo/json-ld";
 import { placeLabel, salaryText, freshness, label } from "@/lib/seo/job-display";
 import { buildSeoCopy, buildFaqs, buildBreadcrumbs, collectionPageLd, breadcrumbLd, faqPageLd } from "@/lib/seo/content-block";
@@ -16,10 +15,6 @@ import { SiteFooter } from "@/app/_components/SiteChrome";
 const INDIGO = "#4f46e5";
 const INK = "#1a1a2e";
 const MUTED = "#6b7280";
-
-/** Plain text for structured data — decode BEFORE stripping tags. */
-const plainText = (html: string) =>
-  decodeHtmlEntities(html).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
 /**
  * ItemList of JobPosting items (§3.2).
@@ -39,11 +34,11 @@ function itemListLd(page: SeoPage) {
     const ld = jobPostingLd({
       kind: j.kind,
       titleRaw: j.titleRaw,
-      // Decode first: Greenhouse serves entity-encoded HTML, so strip-first
-      // fed Google 800 chars of literal "&lt;div class=&quot;...&quot;&gt;".
-      // Truncated here (unlike the detail page) to keep 25 descriptions from
-      // dominating the HTML payload.
-      descriptionClean: plainText(j.descriptionRaw).slice(0, 800),
+      // Already decoded + stripped + truncated to 800 chars server-side
+      // (lib/seo/pages.ts withSnippets) — Greenhouse serves entity-encoded
+      // HTML, so decode-before-strip matters; truncation keeps 25
+      // descriptions from dominating the HTML payload.
+      descriptionClean: j.descriptionSnippet,
       postedAt: j.postedAt,
       lastVerifiedAt: j.lastVerifiedAt,
       employmentType: j.employmentType,
@@ -231,8 +226,8 @@ export default async function SeoPageView({ page }: { page: SeoPage }) {
    * here costs nothing and removes the single largest thing in the payload —
    * see CardJob for the numbers.
    */
-  const cardJobs: CardJob[] = page.jobs.map(({ descriptionRaw: _drop, ...j }) => j);
-  const cardProjects: CardJob[] = (page.projects ?? []).map(({ descriptionRaw: _drop, ...j }) => j);
+  const cardJobs: CardJob[] = page.jobs.map(({ descriptionSnippet: _drop, ...j }) => j);
+  const cardProjects: CardJob[] = (page.projects ?? []).map(({ descriptionSnippet: _drop, ...j }) => j);
 
   const alertSlot = (
     <div id="alerts">

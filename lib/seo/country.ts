@@ -9,6 +9,8 @@
  * page: located in the country + globally-remote roles hireable from anywhere.
  */
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
+import { medianPostingAgeDays } from "./pages";
 
 export interface CountryExtras {
   totalEligible: number;
@@ -35,14 +37,15 @@ export async function getCountryExtras(iso: string): Promise<CountryExtras> {
   const where = eligibleWhere(iso);
   const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
 
-  const [total, last7d, remoteGlobal, verticals, vCounts, v7dCounts, ages, seniorSalaried, fresh] = await Promise.all([
+  const [total, last7d, remoteGlobal, verticals, vCounts, v7dCounts, medianAgeDays, seniorSalaried, fresh] = await Promise.all([
     prisma.job.count({ where }),
     prisma.job.count({ where: { ...where, firstSeenAt: { gt: weekAgo } } }),
     prisma.job.count({ where: { ...where, remoteScope: "GLOBAL" } }),
     prisma.vertical.findMany({ select: { id: true, name: true, slug: true } }),
     prisma.job.groupBy({ by: ["verticalId"], where, _count: { id: true } }),
     prisma.job.groupBy({ by: ["verticalId"], where: { ...where, firstSeenAt: { gt: weekAgo } }, _count: { id: true } }),
-    prisma.job.findMany({ where, select: { postedAt: true, firstSeenAt: true }, take: 3000 }),
+    // Same predicate as eligibleWhere(iso), in SQL — keep the two in step.
+    medianPostingAgeDays(Prisma.sql`status = 'LIVE' AND kind = 'JOB' AND (country = ${iso} OR "remoteScope" = 'GLOBAL')`),
     prisma.job.findMany({
       where: { ...where, seniority: { in: ["SENIOR", "LEAD", "EXEC"] }, salaryMin: { not: null }, salaryPeriod: "YEAR", salaryCurrency: "USD" },
       select: { salaryMin: true, salaryMax: true },
@@ -72,16 +75,6 @@ export async function getCountryExtras(iso: string): Promise<CountryExtras> {
     .filter((f): f is NonNullable<typeof f> => !!f)
     .sort((a, b) => b.count - a.count)
     .slice(0, 6);
-
-  // Median posting age in days (postedAt when the source gave one, else first
-  // seen by us — an upper bound on freshness, not an invention).
-  let medianAgeDays: number | null = null;
-  if (ages.length > 0) {
-    const days = ages
-      .map((a) => (Date.now() - new Date(a.postedAt ?? a.firstSeenAt).getTime()) / 86400000)
-      .sort((x, y) => x - y);
-    medianAgeDays = Math.round(days[Math.floor(days.length / 2)]);
-  }
 
   // Snapshot lines — each rendered only when the underlying data exists.
   const snapshot: { big: string; text: string }[] = [];

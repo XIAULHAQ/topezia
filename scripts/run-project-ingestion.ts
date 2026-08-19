@@ -81,7 +81,7 @@ async function processProject(p: CrawledProject, verticalId: string, skipEmbeddi
   });
 
   if (existing && existing.descriptionHash === descriptionHash) {
-    await prisma.job.update({ where: { id: existing.id }, data: { lastVerifiedAt: new Date() } });
+    await prisma.job.updateMany({ where: { id: existing.id }, data: { lastVerifiedAt: new Date() } });
     return "already-current" as const;
   }
 
@@ -89,7 +89,7 @@ async function processProject(p: CrawledProject, verticalId: string, skipEmbeddi
   if (!existing) {
     const byHash = await prisma.job.findFirst({ where: { descriptionHash }, select: { id: true } });
     if (byHash) {
-      await prisma.job.update({ where: { id: byHash.id }, data: { lastVerifiedAt: new Date() } });
+      await prisma.job.updateMany({ where: { id: byHash.id }, data: { lastVerifiedAt: new Date() } });
       return "already-current" as const;
     }
   }

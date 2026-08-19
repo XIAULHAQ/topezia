@@ -1,0 +1,19 @@
+-- Drop the ivfflat index on Job.embedding (migrations 000/002).
+--
+-- Facts from pg_stat_user_indexes on the live DB, 2026-08-19 (stats since
+-- 2026-07-16): idx_scan = 0, size = 212 MB — 38% of the whole database, on a
+-- 500 MB plan. The planner never uses it: the only vector query
+-- (lib/matching/match.ts) is a Profile ⋈ Job join ordered by
+-- `j.embedding <=> p.embedding`, which ivfflat cannot serve, and the index was
+-- built on an empty table so its list centroids were meaningless anyway. At
+-- ~26k rows the brute-force cosine scan the planner already does is fine.
+--
+-- The `embedding` COLUMN and its data are untouched. When a query actually
+-- needs ANN (e.g. "similar jobs" on Job alone at 100k+ rows), add an HNSW
+-- index then — do not recreate this one.
+--
+-- HAND-WRITTEN and applied to the live DB directly, then
+-- `prisma migrate resolve --applied 082_drop_unused_embedding_index`.
+-- The embedding columns are Unsupported() and commented out in schema.prisma,
+-- so `migrate dev` must never run against this DB (see 020_portfolio).
+DROP INDEX IF EXISTS job_embedding_idx;

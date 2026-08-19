@@ -112,8 +112,11 @@ async function prepareJob(job: CrawledJob, source: SourceInfo, key: string): Pro
       await prisma.job.findFirst({ where: { sourceUrl: job.sourceUrl }, select: { id: true, descriptionHash: true } });
 
   // Known posting, unchanged text: just say we saw it. No LLM, no write churn.
+  // updateMany, NOT update: Prisma's update() appends RETURNING * and this
+  // touch runs ~600k times a month from GitHub runners — each one shipped the
+  // full 6 KB descriptionRaw back out of Supabase (~4 GB/mo of pure egress).
   if (existing && existing.descriptionHash === descriptionHash) {
-    await prisma.job.update({ where: { id: existing.id }, data: { lastVerifiedAt: new Date() } });
+    await prisma.job.updateMany({ where: { id: existing.id }, data: { lastVerifiedAt: new Date() } });
     return { status: "already-current" };
   }
 
@@ -122,7 +125,7 @@ async function prepareJob(job: CrawledJob, source: SourceInfo, key: string): Pro
   if (!existing) {
     const existingByHash = await prisma.job.findFirst({ where: { descriptionHash }, select: { id: true } });
     if (existingByHash) {
-      await prisma.job.update({ where: { id: existingByHash.id }, data: { lastVerifiedAt: new Date() } });
+      await prisma.job.updateMany({ where: { id: existingByHash.id }, data: { lastVerifiedAt: new Date() } });
       return { status: "already-current" };
     }
   }
