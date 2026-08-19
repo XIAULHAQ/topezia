@@ -180,14 +180,25 @@ export type ExtractManyResult = Map<string, { extraction: LlmExtraction; via: Ex
  * `batch: false` keeps the old per-posting synchronous path (still cache and
  * rules first) — for smoke tests and for when a batch is the wrong tool.
  */
+/**
+ * The most postings the synchronous fallback will do at full price in one
+ * run. On 2026-08-19 a batch failure fell back to 2,304 synchronous calls
+ * ($5.23, full price) inside a run the 60-minute timeout then killed before
+ * anything was written — the exact bill the batch exists to avoid. Past this
+ * many, the rest are left un-extracted (and therefore unwritten), so the
+ * next run picks them up through a batch again. Tunable per run.
+ */
+export const SYNC_FALLBACK_MAX = 200;
+
 export async function extractMany(
   items: ExtractItem[],
-  opts: { batch?: boolean; concurrency?: number; waitMs?: number; log?: (line: string) => void } = {}
+  opts: { batch?: boolean; concurrency?: number; waitMs?: number; syncFallbackMax?: number; log?: (line: string) => void } = {}
 ): Promise<ExtractManyResult> {
   const out: ExtractManyResult = new Map();
   const log = opts.log ?? (() => {});
   const concurrency = Math.max(1, opts.concurrency ?? 8);
   const useBatch = opts.batch !== false;
+  const syncMax = opts.syncFallbackMax ?? SYNC_FALLBACK_MAX;
 
   // Pass 1: cache and rules, concurrently.
   const needModel: ExtractItem[] = [];
@@ -208,26 +219,39 @@ export async function extractMany(
     return out;
   }
 
-  // Pass 2: the batch.
+  // Pass 2: the batch. One retry on a submission failure before giving up
+  // on it — a transient 5xx or a network blip should not turn a $0.40 batch
+  // into a $5 synchronous run.
   let leftover = needModel;
   if (useBatch) {
-    try {
-      const outcome = await llmBatch(
-        "ingest.extract",
-        needModel.map((it) => ({ id: it.key, req: extractionRequest(it.titleRaw, it.descriptionText) })),
-        { waitMs: opts.waitMs, log }
-      );
-      const byKey = new Map(needModel.map((it) => [it.key, it]));
-      for (const [key, r] of outcome.results) out.set(key, { extraction: parseExtraction(r.text, byKey.get(key)!.titleRaw), via: "batch" });
-      for (const [key, err] of outcome.errors) { log(`extraction: batch error for ${key}: ${err}`); }
-      leftover = needModel.filter((it) => !outcome.results.has(it.key));
-      if (leftover.length) log(`extraction: ${leftover.length} not finished by the batch — running synchronously`);
-    } catch (err) {
-      log(`extraction: batch failed (${err instanceof Error ? err.message : err}) — running synchronously`);
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const outcome = await llmBatch(
+          "ingest.extract",
+          needModel.map((it) => ({ id: it.key, req: extractionRequest(it.titleRaw, it.descriptionText) })),
+          { waitMs: opts.waitMs, log }
+        );
+        const byKey = new Map(needModel.map((it) => [it.key, it]));
+        for (const [key, r] of outcome.results) out.set(key, { extraction: parseExtraction(r.text, byKey.get(key)!.titleRaw), via: "batch" });
+        for (const [key, err] of outcome.errors) { log(`extraction: batch error for ${key}: ${err}`); }
+        leftover = needModel.filter((it) => !outcome.results.has(it.key));
+        if (leftover.length) log(`extraction: ${leftover.length} not finished by the batch`);
+        break;
+      } catch (err) {
+        log(`extraction: batch attempt ${attempt} failed (${err instanceof Error ? err.message : err})`);
+      }
     }
   }
 
-  // Pass 3: whatever is left, one call each.
+  // Pass 3: whatever is left, one call each — but bounded. Beyond syncMax the
+  // rest stay un-extracted (so unwritten, so retried next run via a batch);
+  // say so loudly, because this is the line between a cheap run and a bill.
+  if (leftover.length > syncMax) {
+    log(`extraction: ${leftover.length} postings would need synchronous calls at full price — doing ${syncMax}, leaving ${leftover.length - syncMax} for the next run's batch (SYNC_FALLBACK_MAX)`);
+    leftover = leftover.slice(0, syncMax);
+  } else if (leftover.length) {
+    log(`extraction: ${leftover.length} running synchronously`);
+  }
   await pool(leftover, concurrency, async (it) => {
     try {
       const { text } = await llm("ingest.extract", extractionRequest(it.titleRaw, it.descriptionText));

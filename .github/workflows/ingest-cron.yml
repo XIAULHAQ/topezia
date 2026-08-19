@@ -2,7 +2,7 @@
 #
 # Runs here, NOT as a Vercel function: crawling + LLM extraction blows straight
 # past Vercel's serverless timeout. GitHub Actions gives us free minutes and a
-# real 60-minute budget.
+# real time budget (120 min; see timeout-minutes below).
 #
 # Twice daily matches the spec's cadence for deep verticals (§4.4) and keeps
 # `lastVerifiedAt` fresh, which is what lets the feed and SEO pages honestly
@@ -11,7 +11,7 @@
 #
 # Embeddings are NOT done here. Voyage's free tier is 3 RPM and embed.ts backs
 # off 20-40s on a 429, so inline embeddings leave every concurrent worker
-# blocked and would blow the 60-minute budget. `Backfill embeddings` fills them
+# blocked and would blow the time budget. `Backfill embeddings` fills them
 # in out of band; jobs ship LIVE meanwhile and the matcher falls back to
 # recency until they land.
 name: Ingest jobs
@@ -51,7 +51,10 @@ concurrency:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 120, not 60: phase A (crawl) can take ~30 min across all boards and the
+    # batch wait is up to 25 — on 2026-08-19 the 60-minute limit killed a run
+    # after the model had been paid, before a single job was written.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -84,7 +87,7 @@ jobs:
       - name: Run Freelancer.com project ingestion
         # Previously manual-only, so the Projects feed never auto-updated.
         # Same --skip-embeddings deferral as the ATS run above, same reason:
-        # stay well inside the 60-minute budget and let the embeddings-backfill
+        # stay well inside the time budget and let the embeddings-backfill
         # cron pick these up out of band.
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

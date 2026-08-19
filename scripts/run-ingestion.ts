@@ -328,7 +328,7 @@ async function main() {
 
   const startedAt = Date.now();
   let processed = 0;
-  let created = 0, refreshed = 0, duplicates = 0, alreadyCurrent = 0, failed = 0;
+  let created = 0, refreshed = 0, duplicates = 0, alreadyCurrent = 0, failed = 0, deferred = 0;
 
   // ── Phase A: crawl + prepare ─────────────────────────────────────────────
   const perSource: { source: (typeof sources)[number]; pendings: PendingJob[] }[] = [];
@@ -372,7 +372,29 @@ async function main() {
 
   // ── Phase B: extraction — cache, rules, then one batch ───────────────────
   const allPending = perSource.flatMap((p) => p.pendings);
-  console.log(`\n${allPending.length} postings need extraction (${alreadyCurrent} already current).`);
+  const changed = allPending.filter((p) => p.existing);
+  console.log(`\n${allPending.length} postings need extraction — ${allPending.length - changed.length} new, ${changed.length} known postings whose text changed (${alreadyCurrent} already current).`);
+  // A KNOWN posting re-extracting means its normalised text no longer hashes
+  // the same. A few a day is employers editing; hundreds at once is a board
+  // changing its boilerplate or our own normalisation changing — and the
+  // 2026-08-19 02:49Z run re-extracted 2,304 for a reason the log couldn't
+  // show. So show it: where the stored text and the fresh text first differ.
+  if (changed.length > 0) {
+    for (const p of changed.slice(0, 3)) {
+      const stored = await prisma.job.findUnique({ where: { id: p.existing!.id }, select: { descriptionRaw: true, titleRaw: true } });
+      if (!stored) continue;
+      const oldText = applyRulesPass({ titleRaw: stored.titleRaw, descriptionRaw: stored.descriptionRaw, locationRaw: null, officeRaw: null }).descriptionText;
+      const newText = p.rules.descriptionText;
+      let at = 0;
+      while (at < oldText.length && at < newText.length && oldText[at] === newText[at]) at++;
+      console.log(`  changed: "${p.job.titleRaw.slice(0, 60)}" (${p.source.companySlug}) — ${oldText.length} → ${newText.length} chars, first difference at ${at}:`);
+      console.log(`    stored: …${JSON.stringify(oldText.slice(Math.max(0, at - 40), at + 80))}`);
+      console.log(`    fresh:  …${JSON.stringify(newText.slice(Math.max(0, at - 40), at + 80))}`);
+    }
+    if (changed.length > allPending.length * 0.3 && changed.length > 100) {
+      console.warn(`  ! ${changed.length} known postings changed text in one run — check the samples above before trusting this run's extraction bill`);
+    }
+  }
   const extracted = await extractMany(
     allPending.map((p) => ({ key: p.key, titleRaw: p.job.titleRaw, descriptionText: p.rules.descriptionText })),
     { batch: !sync, concurrency, waitMs: batchWaitMs, log: (m) => console.log(`  ${m}`) }
@@ -391,7 +413,9 @@ async function main() {
         const pending = pendings[i];
         try {
           const ex = extracted.get(pending.key);
-          if (!ex) throw new Error("no extraction result");
+          // Left for the next run's batch (SYNC_FALLBACK_MAX) — not written,
+          // not counted as failed; it will be new again next time.
+          if (!ex) { deferred++; continue; }
           const result = await finishJob(pending, ex.extraction, { skipEmbeddings });
           if (result.status === "created") created++;
           else if (result.status === "refreshed") refreshed++;
@@ -413,7 +437,7 @@ async function main() {
 
   const secs = (Date.now() - startedAt) / 1000;
   const perJob = processed ? Math.round((secs / processed) * 1000) : 0;
-  console.log(`\nDone. Created: ${created}, Refreshed: ${refreshed}, Duplicates: ${duplicates}, Already current: ${alreadyCurrent}, Failed: ${failed}`);
+  console.log(`\nDone. Created: ${created}, Refreshed: ${refreshed}, Duplicates: ${duplicates}, Already current: ${alreadyCurrent}, Failed: ${failed}${deferred ? `, Deferred to next run: ${deferred}` : ""}`);
   console.log(`${processed} jobs in ${secs.toFixed(1)}s — ${perJob}ms/job wall-clock at concurrency ${concurrency}.`);
   if (skipEmbeddings) {
     const missing = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
