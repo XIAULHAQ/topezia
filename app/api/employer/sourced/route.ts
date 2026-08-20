@@ -34,8 +34,13 @@ export async function GET(req: NextRequest) {
   });
   if (!job) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
+  // The dashboard wants a taste; the invite screen wants a list to pick from.
+  // Bounded either way so this can't be turned into a profile dump.
+  const asked = Number(req.nextUrl.searchParams.get("limit") ?? 5);
+  const limit = Number.isFinite(asked) ? Math.min(Math.max(Math.trunc(asked), 1), 50) : 5;
+
   const [candidates, poolSize] = await Promise.all([
-    sourceCandidates(job.id, userId, 5),
+    sourceCandidates(job.id, userId, limit),
     openToWorkPoolSize(),
   ]);
 

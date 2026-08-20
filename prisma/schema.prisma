@@ -231,6 +231,7 @@ model Job {
   companyId          String?
   company            Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
   applications       Application[]
+  jobInvites         JobInvite[]
 
   clicks             JobClick[]
   views              JobView[]
@@ -472,6 +473,7 @@ model Profile {
   endorsements      Endorsement[]
   publications      Publication[]
   applications      Application[]
+  jobInvites        JobInvite[]
   // Companies this person was invited onto and accepted (migration 045).
   companyTeams      CompanyTeamMember[]
   companyWorkSaves  CompanyWorkSave[]
@@ -2286,4 +2288,65 @@ model LlmUsage {
   @@index([createdAt])
   @@index([feature, createdAt])
   @@index([siteId, createdAt])
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inviting someone to apply (migration 085)
+//
+// An employer reaching OUT, rather than waiting for applicants. Two kinds of
+// invitee behind one row: a Topezia member (profileId) or someone who isn't
+// one yet (email). Exactly one is set.
+//
+// Members are only ever reachable through the consent-gated sourcing query —
+// openToWork AND publicVisible, see lib/employer/sourcing.ts. This table gives
+// an employer no way to reach anyone who has not opted in to being found.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum JobInviteStatus {
+  PENDING
+  VIEWED
+  APPLIED
+}
+
+model JobInvite {
+  id              String          @id @default(uuid())
+  jobId           String
+  job             Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  /// Who sent it. Kept as the user id rather than a company, because a posting
+  /// can be made under a company OR under a person's own name.
+  invitedByUserId String
+
+  /// An existing member...
+  profileId String?
+  profile   Profile? @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  /// ...or someone who isn't one yet. Exactly one of the two is set.
+  email     String?
+  /// What the employer typed, used to address the mail. Never published.
+  name      String?
+
+  /// The secret in /job/{id}?invite={token} — proves the opener is the person
+  /// who was written to, so the visit can be recorded without a login.
+  token  String          @unique
+  status JobInviteStatus @default(PENDING)
+  /// The employer's optional line, shown in the email.
+  note   String?
+
+  sentAt      DateTime?
+  /// Why delivery failed, when it did — so "sent" is never shown for mail that
+  /// never left.
+  sendError   String?
+  viewedAt    DateTime?
+  respondedAt DateTime?
+  expiresAt   DateTime
+
+  createdAt DateTime @default(now())
+
+  // One invitation per person per posting. Inviting the same candidate to the
+  // same job twice is the behaviour that turns outreach into nagging, so the
+  // database refuses it rather than the UI.
+  @@unique([jobId, profileId])
+  @@unique([jobId, email])
+  @@index([jobId, status])
+  @@index([profileId])
 }

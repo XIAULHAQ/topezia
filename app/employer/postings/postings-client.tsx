@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { C, GRAD, Icon } from "@/app/_components/ui";
+import { jobPath } from "@/lib/seo/job-slug";
 
 type Posting = {
   id: string; kind: string; titleRaw: string; status: string; createdAt: string;
@@ -140,8 +141,29 @@ export default function PostingsClient() {
               )}
             </div>
             <div style={S.actions}>
+              {/* The public page, as a candidate sees it. Drafts and postings
+                  still waiting on a role have no public page — /job/[id]
+                  notFound()s on both — so offering View there would be a
+                  broken link dressed up as a feature. */}
+              {p.status !== "DRAFT" && p.status !== "PENDING_ROLE" && (
+                <a
+                  href={jobPath({ id: p.id, titleRaw: p.titleRaw, companyName: p.companyName ?? "" })}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="View the public posting"
+                  style={S.ghost}
+                >
+                  <Icon name="eye" size={14} />View
+                </a>
+              )}
               <Link href={`/employer/${p.id}/edit`} style={S.ghost}><Icon name="edit" size={14} />Edit</Link>
               <Link href={`/employer/${p.id}`} style={S.ghost}>Pipeline</Link>
+              {/* Only for live postings — the invite endpoint refuses anything
+                  else, since a link to a draft 404s and a closed role wastes
+                  the reader's time. */}
+              {p.status === "LIVE" && (
+                <Link href={`/employer/${p.id}/invite`} style={S.ghost}><Icon name="mail" size={14} />Invite</Link>
+              )}
               {p.status === "DRAFT" ? (
                 <button type="button" disabled={busy === p.id} onClick={() => setStatus(p, "LIVE")} style={S.ghost}>
                   {busy === p.id ? "Publishing…" : "Publish"}

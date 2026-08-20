@@ -21,7 +21,28 @@ import { suppress } from "@/lib/network/invites";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function optOut(token: string | null): Promise<boolean> {
+/**
+ * Two kinds of token arrive here, because both kinds of mail carry the same
+ * promise: `token` from a member's connection invitation, `jobInvite` from an
+ * employer inviting someone to apply. Either one means the same thing — stop
+ * writing to this address — and honouring only one of them would make the
+ * footer a lie in whichever mail was left out.
+ */
+async function optOut(token: string | null, jobInviteToken: string | null): Promise<boolean> {
+  if (jobInviteToken) {
+    const invite = await prisma.jobInvite.findUnique({
+      where: { token: jobInviteToken },
+      select: { id: true, email: true },
+    });
+    // Member invitations carry no address of their own — the member manages
+    // their mail in settings, and suppressing their account address here would
+    // silently cut off everything else Topezia sends them.
+    if (!invite?.email) return false;
+    await suppress(invite.email);
+    await prisma.jobInvite.deleteMany({ where: { id: invite.id, status: "PENDING" } });
+    return true;
+  }
+
   if (!token) return false;
   const invite = await prisma.networkInvite.findUnique({
     where: { token },
@@ -38,12 +59,12 @@ async function optOut(token: string | null): Promise<boolean> {
 }
 
 export async function POST(req: NextRequest) {
-  const ok = await optOut(req.nextUrl.searchParams.get("token"));
+  const ok = await optOut(req.nextUrl.searchParams.get("token"), req.nextUrl.searchParams.get("jobInvite"));
   // Mail providers read the status code, not the body.
   return new NextResponse(ok ? "unsubscribed" : "not found", { status: ok ? 200 : 404 });
 }
 
 export async function GET(req: NextRequest) {
-  const ok = await optOut(req.nextUrl.searchParams.get("token"));
+  const ok = await optOut(req.nextUrl.searchParams.get("token"), req.nextUrl.searchParams.get("jobInvite"));
   return NextResponse.redirect(new URL(`/n/unsubscribed?state=${ok ? "ok" : "bad"}`, req.url));
 }
