@@ -79,11 +79,27 @@ export default function ApplyBox({ jobId, kind, companyName }: { jobId: string; 
   }
 
   if (!signedIn) {
+    // THE ONLY CALL TO ACTION A SIGNED-OUT VISITOR SEES. The rail used to
+    // stack three: a readiness checklist reading Missing / Not started, a
+    // "sign in to tailor your resume" box, and this. All three were the same
+    // sign-in link wearing different hats, in front of somebody who arrived to
+    // apply — often straight from an invitation email. ApplicationReadiness
+    // and TailorButton now render nothing until there is an account.
+    //
+    // Two ways in, because there are genuinely two: people who already have an
+    // account, and people who do not. /onboard takes a resume without one
+    // (anonymous session, see lib/identity.ts) and asks to sign in afterwards,
+    // which is a far gentler first step than a login wall.
     return (
       <div style={S.box}>
         <div style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>{isProject ? "Send a proposal" : "Apply on Topezia"}</div>
         <div style={{ fontSize: 12.5, color: MUTED, margin: "4px 0 10px" }}>This {isProject ? "project" : "job"} was posted here — {companyName} reviews applications on Topezia.</div>
         <Link href={`/login?next=/job/${jobId}`} style={S.btn}>Sign in to {isProject ? "send a proposal" : "apply"} →</Link>
+        <div style={{ fontSize: 12.5, color: MUTED, marginTop: 10, textAlign: "center" }}>
+          New here?{" "}
+          <Link href="/onboard" style={{ color: "#4f46e5", fontWeight: 700 }}>Upload your resume</Link>
+          {" "}— no account needed to start.
+        </div>
       </div>
     );
   }

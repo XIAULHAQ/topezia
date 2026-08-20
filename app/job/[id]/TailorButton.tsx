@@ -127,15 +127,12 @@ export default function TailorButton({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, busy, main, signedIn, jobId]);
 
-  if (!signedIn && status !== "checking") {
-    return (
-      <div style={S.box}>
-        <div style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Tailor your resume for this job</div>
-        <div style={{ fontSize: 12.5, color: MUTED, margin: "4px 0 10px" }}>Reorder your skills and experience to speak to this posting, then download it to apply.</div>
-        <Link href={`/login?next=/job/${jobId}`} style={S.ghostBtn}>Sign in to tailor your resume →</Link>
-      </div>
-    );
-  }
+  // Signed out this used to be a THIRD sign-in prompt in the same rail, beside
+  // the readiness checklist and the apply box — three buttons that all did the
+  // same thing, in front of someone who came here to apply. Tailoring is a
+  // thing you do once you have an account, so it simply isn't offered until
+  // there is one; ApplyBox carries the single call to action.
+  if (!signedIn) return null;
 
   if (upgrade) {
     return (

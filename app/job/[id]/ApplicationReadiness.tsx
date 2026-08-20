@@ -19,6 +19,9 @@ const MUTED = "#64748B";
 type Row = { label: string; ok: boolean | null };
 
 export default function ApplicationReadiness({ jobId }: { jobId: string }) {
+  // null while we don't yet know. A signed-out visitor never sees this list at
+  // all — see the early return below — so it must not flash on first paint.
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [rows, setRows] = useState<Row[]>([
     { label: "Topezia profile", ok: null },
     { label: "Master resume", ok: null },
@@ -30,6 +33,7 @@ export default function ApplicationReadiness({ jobId }: { jobId: string }) {
     createClient().auth.getSession().then(({ data }) => {
       const signedIn = !!data.session;
       if (cancelled) return;
+      setSignedIn(signedIn);
       setRows((r) => r.map((row) => (row.label === "Topezia profile" ? { ...row, ok: signedIn } : row)));
       if (!signedIn) {
         setRows((r) => r.map((row) => (row.label !== "Topezia profile" ? { ...row, ok: false } : row)));
@@ -42,9 +46,14 @@ export default function ApplicationReadiness({ jobId }: { jobId: string }) {
       fetch(`/api/resume?jobId=${encodeURIComponent(jobId)}`)
         .then((r) => { if (!cancelled) setRows((rr) => rr.map((row) => (row.label === "Tailored version" ? { ...row, ok: r.ok } : row))); })
         .catch(() => { if (!cancelled) setRows((r) => r.map((row) => (row.label === "Tailored version" ? { ...row, ok: false } : row))); });
-    }).catch(() => { if (!cancelled) setRows((r) => r.map((row) => ({ ...row, ok: false }))); });
+    }).catch(() => { if (!cancelled) { setSignedIn(false); setRows((r) => r.map((row) => ({ ...row, ok: false }))); } });
     return () => { cancelled = true; };
   }, [jobId]);
+
+  // A checklist of three things you cannot do yet is not help — it is three
+  // more reasons to leave. Signed out, the rail says ONE thing: sign in to
+  // apply. See ApplyBox, which owns that card.
+  if (signedIn !== true) return null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 11, marginBottom: 12 }}>
