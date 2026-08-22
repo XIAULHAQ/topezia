@@ -179,6 +179,67 @@ export async function flushLlmUsage(): Promise<void> {
   await Promise.allSettled([...pendingWrites]);
 }
 
+type UsageRow = {
+  feature: string; bucket: string; model: string;
+  inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number;
+  costUsd: number | null; latencyMs: number; ok: boolean; status: number | null; stream: boolean;
+  siteId: string | null; companyId: string | null; profileId: string | null;
+};
+
+function usageRow(
+  feature: LlmFeature, model: string, req: LlmRequest, usage: LlmUsageTokens,
+  ok: boolean, status: number | null, latencyMs: number, stream: boolean, priceFactor: number
+): UsageRow {
+  return {
+    feature,
+    bucket: FEATURE_BUCKET[feature],
+    model,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+    cacheWriteTokens: usage.cacheWriteTokens,
+    costUsd: ok ? scale(estimateCostUsd(model, usage), priceFactor) : 0,
+    latencyMs,
+    ok,
+    status,
+    stream,
+    siteId: req.siteId ?? null,
+    companyId: req.companyId ?? null,
+    profileId: req.profileId ?? null,
+  };
+}
+
+/**
+ * Write usage rows without ever throwing into the caller, and without ever
+ * starving the caller's own queries: ONE statement per call, however many
+ * rows. On 2026-08-22 a batch of 194 results was recorded as 194 concurrent
+ * inserts; they filled Prisma's pool (default 9 connections, 10 s wait) and
+ * the ingestion's next query timed out and killed the run — after the batch
+ * had been paid for. Rows that belong together go in together.
+ *
+ * On Vercel the write is handed to waitUntil (same pattern as
+ * lib/errors/log.ts) so the function stays alive until it lands even after
+ * the response has gone out; elsewhere it simply runs while the process
+ * lives. A lost row costs nothing but a slightly low number on the report.
+ */
+function writeRows(rows: UsageRow[]): void {
+  if (rows.length === 0) return;
+  const insert = (rows.length === 1 ? prisma.llmUsage.create({ data: rows[0] }) : prisma.llmUsage.createMany({ data: rows }))
+    .then(() => undefined)
+    .catch((err: unknown) => {
+      console.error(`[llm] ${rows.length} usage row(s) not written:`, err instanceof Error ? err.message : err);
+    });
+  pendingWrites.add(insert);
+  void insert.finally(() => pendingWrites.delete(insert));
+  try {
+    if (process.env.VERCEL) {
+      void import("@vercel/functions").then((m) => m.waitUntil(insert)).catch(() => {});
+    }
+  } catch {
+    /* no platform hook — the promise still runs while the process lives */
+  }
+}
+
 function record(
   feature: LlmFeature,
   model: string,
@@ -191,45 +252,9 @@ function record(
   /** 0.5 for Message Batches — half list price, same tokens. */
   priceFactor = 1
 ): void {
-  // Fire-and-forget: never awaited by the caller, never allowed to throw into
-  // the request. On Vercel the insert is handed to waitUntil (same pattern as
-  // lib/errors/log.ts) so the function stays alive until it lands even after
-  // the response has gone out; elsewhere it simply runs while the process
-  // lives. A lost row costs nothing but a slightly low number on the report.
-  const insert = prisma.llmUsage
-    .create({
-      data: {
-        feature,
-        bucket: FEATURE_BUCKET[feature],
-        model,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        cacheReadTokens: usage.cacheReadTokens,
-        cacheWriteTokens: usage.cacheWriteTokens,
-        costUsd: ok ? scale(estimateCostUsd(model, usage), priceFactor) : 0,
-        latencyMs,
-        ok,
-        status,
-        stream,
-        siteId: req.siteId ?? null,
-        companyId: req.companyId ?? null,
-        profileId: req.profileId ?? null,
-      },
-    })
-    .then(() => undefined)
-    .catch((err: unknown) => {
-      console.error("[llm] usage row not written:", err instanceof Error ? err.message : err);
-    });
-  pendingWrites.add(insert);
-  void insert.finally(() => pendingWrites.delete(insert));
-  try {
-    if (process.env.VERCEL) {
-      void import("@vercel/functions").then((m) => m.waitUntil(insert)).catch(() => {});
-    }
-  } catch {
-    /* no platform hook — the promise still runs while the process lives */
-  }
+  writeRows([usageRow(feature, model, req, usage, ok, status, latencyMs, stream, priceFactor)]);
 }
+
 
 const scale = (n: number | null, f: number) => (n === null ? null : n * f);
 
@@ -500,6 +525,7 @@ export async function llmBatch(
     const res = await fetch(url, { headers: headers(key!) });
     if (!res.ok) throw new LlmError(res.status, `Anthropic batch results ${res.status}: ${await errorText(res)}`);
     const text = await res.text();
+    const rows: UsageRow[] = []; // one statement for the whole batch — see writeRows
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
       let row: { custom_id: string; result: { type: string; message?: { content?: { type: string; text?: string }[]; stop_reason?: string; usage?: unknown; model?: string }; error?: { type?: string; message?: string } } };
@@ -510,7 +536,7 @@ export async function llmBatch(
       if (row.result.type === "succeeded" && row.result.message) {
         const m = row.result.message;
         const usage = usageFrom(m.usage);
-        record(feature, model, item.req, usage, true, 200, 0, false, 0.5);
+        rows.push(usageRow(feature, model, item.req, usage, true, 200, 0, false, 0.5));
         out.results.set(item.id, {
           text: (m.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join(""),
           stopReason: m.stop_reason ?? null,
@@ -518,11 +544,12 @@ export async function llmBatch(
           model: m.model ?? model,
         });
       } else if (row.result.type === "errored") {
-        record(feature, model, item.req, ZERO, false, null, 0, false);
+        rows.push(usageRow(feature, model, item.req, ZERO, false, null, 0, false, 1));
         out.errors.set(item.id, `${row.result.error?.type ?? "error"}: ${row.result.error?.message ?? ""}`.trim());
       }
       // expired / canceled fall through to `unfinished` below.
     }
+    writeRows(rows);
   }
 
   for (const it of items) {

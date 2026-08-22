@@ -379,7 +379,7 @@ async function main() {
   // changing its boilerplate or our own normalisation changing — and the
   // 2026-08-19 02:49Z run re-extracted 2,304 for a reason the log couldn't
   // show. So show it: where the stored text and the fresh text first differ.
-  if (changed.length > 0) {
+  if (changed.length > 0) try {
     for (const p of changed.slice(0, 3)) {
       const stored = await prisma.job.findUnique({ where: { id: p.existing!.id }, select: { descriptionRaw: true, titleRaw: true } });
       if (!stored) continue;
@@ -394,6 +394,8 @@ async function main() {
     if (changed.length > allPending.length * 0.3 && changed.length > 100) {
       console.warn(`  ! ${changed.length} known postings changed text in one run — check the samples above before trusting this run's extraction bill`);
     }
+  } catch (err) {
+    console.error("  (diagnostics skipped:", err instanceof Error ? err.message : err, ")"); // diagnostics are never worth a run
   }
   const extracted = await extractMany(
     allPending.map((p) => ({ key: p.key, titleRaw: p.job.titleRaw, descriptionText: p.rules.descriptionText })),
@@ -429,10 +431,14 @@ async function main() {
     };
     await Promise.all(Array.from({ length: Math.min(concurrency, pendings.length) }, worker));
 
-    await prisma.source.update({
-      where: { id: source.id },
-      data: { lastCrawledAt: new Date() },
-    });
+    // Bookkeeping, never fatal: a transient DB error here (on 2026-08-22 a
+    // pool timeout) must not take down a run whose model work is already
+    // paid for — the jobs are written; the timestamp can be a run late.
+    try {
+      await prisma.source.update({ where: { id: source.id }, data: { lastCrawledAt: new Date() } });
+    } catch (err) {
+      console.error(`  could not stamp lastCrawledAt for ${source.companySlug}:`, err instanceof Error ? err.message : err);
+    }
   }
 
   const secs = (Date.now() - startedAt) / 1000;

@@ -203,11 +203,17 @@ export async function extractMany(
   // Pass 1: cache and rules, concurrently.
   const needModel: ExtractItem[] = [];
   await pool(items, concurrency, async (it) => {
-    const hash = hashDescription(`${it.titleRaw}\n${it.descriptionText}`);
-    const cached = await cachedExtraction(hash);
-    if (cached) { recordNoModel("ingest.extract", "cache:extract"); out.set(it.key, { extraction: cached, via: "cache" }); return; }
-    const ruled = await rulesFirstExtraction(it.titleRaw, it.descriptionText);
-    if (ruled) { recordNoModel("ingest.extract", "rule:extract"); out.set(it.key, { extraction: ruled, via: "rules" }); return; }
+    try {
+      const hash = hashDescription(`${it.titleRaw}\n${it.descriptionText}`);
+      const cached = await cachedExtraction(hash);
+      if (cached) { recordNoModel("ingest.extract", "cache:extract"); out.set(it.key, { extraction: cached, via: "cache" }); return; }
+      const ruled = await rulesFirstExtraction(it.titleRaw, it.descriptionText);
+      if (ruled) { recordNoModel("ingest.extract", "rule:extract"); out.set(it.key, { extraction: ruled, via: "rules" }); return; }
+    } catch (err) {
+      // A lookup failing (pool timeout, blip) is not a reason to drop the
+      // posting or the run — the model can still answer it.
+      log(`extraction: lookup failed for ${it.key} (${err instanceof Error ? err.message : err}) — sending to the model`);
+    }
     needModel.push(it);
   });
   log(`extraction: ${items.length} postings — ${items.length - needModel.length} from cache/rules, ${needModel.length} for the model`);

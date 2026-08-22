@@ -30,6 +30,21 @@ Companion to `docs/ai-cost-strategy.md` (Phase 0, shipped 2026-08-18).
 | `RESUME_SCAN_MAX_PAGES` | §3.5: pages of a scanned PDF sent to the vision parse. Default `3`. Raise only if real resumes are losing content (check the parse, not the cost). |
 | `AI_DISABLED` | Kill switch. Comma-separated buckets and/or features: `widget`, `resume.tailor,ingestion`, or `all`. Takes effect on the next request — no redeploy. Every feature falls back to its no-model path (canned reply, provisional match score, "not available right now" 503, rules-only ingestion). |
 
+## When the ingest workflow FAILS (not times out)
+
+`main()` exits 1 on any uncaught error. Read the step timing on the Actions
+run and the `LlmUsage` rows for that window before the log:
+
+- Batch rows present (`$/call ≈ 0.0011`), then death within ~10 s, 0 jobs
+  created = something threw right after the batch. 2026-08-22: 194 results
+  were recorded as 194 concurrent inserts, Prisma's pool (9 connections,
+  10 s wait on the runner) timed out, and an un-wrapped `source.update`
+  killed the run. Fixed: usage rows go in ONE `createMany` per batch, and
+  every piece of bookkeeping in the script is non-fatal. The paid batch
+  results are lost (they are not persisted); the next scheduled run redoes
+  them — cost of one batch, nothing else.
+- No batch rows at all = it died in phase A (crawl) — a board's API, or the DB.
+
 ## Reading the page
 
 - **`widget.answer` avg input tokens creeping up** = someone edited the
